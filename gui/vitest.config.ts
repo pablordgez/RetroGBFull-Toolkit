@@ -12,6 +12,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      include: ['src/**/*.{ts,tsx}'],
+      // @ts-expect-error - ignore
+      all: true,
       exclude: [
         'src/main/index.ts',
         'src/preload/**',
