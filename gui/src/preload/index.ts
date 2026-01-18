@@ -3,7 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
-  triggerBackendCounter: () => ipcRenderer.invoke('increment-backend-click')
+  openSpriteEditorWindow: () => ipcRenderer.send('open-sprite-editor-window')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
