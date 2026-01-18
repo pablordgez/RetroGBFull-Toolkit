@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import './style/SpriteEditor.css';
 
 const GB_PALETTE = ['#9bbc0f', '#8bac0f', '#306230', '#0f380f' ];
 const ERASER_COLOR = GB_PALETTE[0];
@@ -264,32 +265,21 @@ export const SpriteEditor = () => {
 
             <div 
                 onWheel={handleWheel}
-                style={{ 
-                    flex: 1, 
-                    overflow: 'auto', 
-                    backgroundColor: '#e0e0e0', 
-                    display: 'flex', 
-                    justifyContent: 'center', 
-                    alignItems: 'center',
-                    padding: '20px',
-                    border: '1px solid #999'
-                }}
+                className='grid-container'
             >
                 <div 
+                    className='grid'
                     style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(${width}, 20px)`,
-                        gridTemplateRows: `repeat(${height}, 20px)`,
-                        gap: '1px',
-                        backgroundColor: '#ccc',
-                        border: '1px solid #000',
+                        gridTemplateColumns: `repeat(${width}, 1fr)`,
+                        gridTemplateRows: `repeat(${height}, 1fr)`,
                         transform: `scale(${zoom})`,
-                        transformOrigin: 'center center'
+                        aspectRatio: `${width} / ${height}`,
                     }}
                     onMouseDownCapture={(e) => startStroke(e)}
                     onMouseUp={endStroke}
                     onMouseLeave={endStroke}
                     onContextMenu={(e) => e.preventDefault()}
+                    
                 >
                     {grid.map((color, index) => (
                         <div
@@ -297,8 +287,8 @@ export const SpriteEditor = () => {
                             onMouseDown={() => handlePaint(index)}
                             onMouseEnter={() => { if(isDrawing.current) handlePaint(index); }}
                             style={{
-                                width: '20px',
-                                height: '20px',
+                                width: '100%',
+                                height: '100%',
                                 backgroundColor: color,
                                 userSelect: 'none'
                             }}
