@@ -1,6 +1,6 @@
 import {HashRouter, Route, Routes} from "react-router-dom";
 import { TemporaryHub } from "./components/TemporaryHub";
-import { SpriteEditor } from "./components/SpriteEditor";
+import { SpriteEditor } from "./components/SpriteEditor/SpriteEditor";
 
 function App() {
   return (

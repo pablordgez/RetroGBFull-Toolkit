@@ -73,8 +73,8 @@ app.on('window-all-closed', () => {
 // code. You can also put them in separate files and require them here.
 ipcMain.on('open-sprite-editor-window', () => {
   const spriteEditorWindow = new BrowserWindow({
-    width: 800,
-    height: 700,
+    width: 1000,
+    height: 1000,
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
