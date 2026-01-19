@@ -1,8 +1,17 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import './style/SpriteEditor.css';
 
-const GB_PALETTE = ['#9bbc0f', '#8bac0f', '#306230', '#0f380f' ];
+const GB_PALETTE = ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'];
 const ERASER_COLOR = GB_PALETTE[0];
+const BASE_100_PERCENT_SIZE = 20;
+
+const MAX_GB_WIDTH = 80;
+const MAX_GB_HEIGHT = 112; 
+const MAX_HARDWARE_SPRITES = 40;
+
+// Increased from 3072 to 4096 for deeper zoom.
+// Since we have the throttle (frameRequest) in place, this is safe.
+const MAX_CANVAS_DIMENSION = 4096; 
 
 type PaintAction = {
     type: 'PAINT';
@@ -18,51 +27,267 @@ type ResizeAction = {
 type HistoryAction = PaintAction | ResizeAction;
 
 export const SpriteEditor = () => {
-    const [width, setWidth] = useState(8);
-    const [height, setHeight] = useState(8);
+    const [width, setWidth] = useState(16);
+    const [height, setHeight] = useState(16);
+    const [inputSize, setInputSize] = useState({ w: '16', h: '16' });
     
-    const [inputSize, setInputSize] = useState({ w: '8', h: '8' });
-    
-    const [grid, setGrid] = useState<string[]>(Array(64).fill(GB_PALETTE[0]));
-    const [selectedColor, setSelectedColor] = useState(GB_PALETTE[0]);
-    const [zoom, setZoom] = useState(1);
-    
+    const [grid, setGrid] = useState<string[]>(Array(256).fill(GB_PALETTE[0]));
+    const [selectedColor, setSelectedColor] = useState(GB_PALETTE[3]);
+    const [zoom, setZoom] = useState(BASE_100_PERCENT_SIZE);
+    const [isAutoZoom, setIsAutoZoom] = useState(true);
     const [history, setHistory] = useState<HistoryAction[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
 
     const isDrawing = useRef(false);
-    const strokeChanges = useRef<Map<number, { oldColor: string, newColor: string }>>(new Map());
     const drawingTool = useRef<'paint' | 'erase'>('paint');
+    const strokeChanges = useRef<Map<number, { oldColor: string, newColor: string }>>(new Map());
+    const containerRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const zoomTarget = useRef<{ oldZoom: number, mouseX: number, mouseY: number, contentX: number, contentY: number } | null>(null);
+    const frameRequest = useRef<number | null>(null);
 
-    useEffect(() => {
-        setInputSize({ w: width.toString(), h: height.toString() });
-    }, [width, height]);
+    const spriteUsage = useMemo(() => {
+        let count = 0;
+        const cols = Math.ceil(width / 8);
+        const rows = Math.ceil(height / 8);
 
-    const recordAction = (action: HistoryAction) => {
-        const newHistory = history.slice(0, historyIndex + 1);
-        newHistory.push(action);
-        if (newHistory.length > 40) newHistory.shift();
-        
-        setHistory(newHistory);
-        setHistoryIndex(newHistory.length - 1);
-    };
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                let hasPixel = false;
+                tileLoop:
+                for (let y = 0; y < 8; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        const pixelX = c * 8 + x;
+                        const pixelY = r * 8 + y;
+                        if (pixelX >= width || pixelY >= height) continue;
+                        const index = pixelY * width + pixelX;
+                        if (grid[index] !== ERASER_COLOR) {
+                            hasPixel = true;
+                            break tileLoop;
+                        }
+                    }
+                }
+                if (hasPixel) count++;
+            }
+        }
+        return count;
+    }, [grid, width, height]);
 
-    const commitResize = (targetW: number, targetH: number) => {
-        const safeW = Math.max(8, targetW);
-        const safeH = Math.max(8, targetH);
+    useLayoutEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        if (!ctx) return;
 
-        if (safeW === width && safeH === height) {
-            setInputSize({ w: width.toString(), h: height.toString() });
-            return;
+        ctx.imageSmoothingEnabled = false;
+
+        ctx.fillStyle = GB_PALETTE[0];
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        for (let i = 0; i < grid.length; i++) {
+            if (grid[i] !== GB_PALETTE[0]) {
+                const x = (i % width) * zoom;
+                const y = Math.floor(i / width) * zoom;
+                ctx.fillStyle = grid[i];
+                ctx.fillRect(x, y, zoom, zoom);
+            }
         }
 
-        const newGrid = Array(safeW * safeH).fill(GB_PALETTE[0]);
+        if (zoom >= 4) {
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            ctx.strokeStyle = 'rgba(15, 56, 15, 0.15)';
+            for (let x = 1; x < width; x++) {
+                if (x % 8 !== 0) {
+                    ctx.moveTo(x * zoom, 0);
+                    ctx.lineTo(x * zoom, height * zoom);
+                }
+            }
+            for (let y = 1; y < height; y++) {
+                if (y % 8 !== 0) {
+                    ctx.moveTo(0, y * zoom);
+                    ctx.lineTo(width * zoom, y * zoom);
+                }
+            }
+            ctx.stroke();
 
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(15, 56, 15, 0.5)';
+            
+            for (let x = 8; x < width; x += 8) {
+                ctx.moveTo(x * zoom, 0);
+                ctx.lineTo(x * zoom, height * zoom);
+            }
+            for (let y = 8; y < height; y += 8) {
+                ctx.moveTo(0, y * zoom);
+                ctx.lineTo(width * zoom, y * zoom);
+            }
+            ctx.stroke();
+        }
+
+    }, [grid, width, height, zoom]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleResize = (entries: ResizeObserverEntry[]) => {
+            if (!isAutoZoom) return;
+            for (const entry of entries) {
+                const { width: contentWidth, height: contentHeight } = entry.contentRect;
+                const PADDING = 80; // Increased padding for better centering with larger UI
+                const availableW = contentWidth - PADDING;
+                const availableH = contentHeight - PADDING;
+                const zoomW = availableW / width;
+                const zoomH = availableH / height;
+                const newZoom = Math.max(1, Math.floor(Math.min(zoomW, zoomH)));
+                setZoom(newZoom);
+            }
+        };
+
+        const observer = new ResizeObserver(handleResize);
+        observer.observe(container);
+        return () => observer.disconnect();
+    }, [width, height, isAutoZoom]);
+
+    const recordAction = useCallback((action: HistoryAction) => {
+        setHistory(prev => {
+            const newHistory = prev.slice(0, historyIndex + 1);
+            newHistory.push(action);
+            if (newHistory.length > 50) newHistory.shift();
+            return newHistory;
+        });
+        setHistoryIndex(prev => {
+            return (history.length < 50) ? prev + 1 : 49;
+        });
+    }, [historyIndex, history.length]);
+
+    const handleUndo = useCallback(() => {
+        if (historyIndex < 0) return;
+        const action = history[historyIndex];
+
+        if (action.type === 'PAINT') {
+            setGrid(currentGrid => {
+                const newGrid = [...currentGrid];
+                action.changes.forEach(({ index, oldColor }) => {
+                    newGrid[index] = oldColor;
+                });
+                return newGrid;
+            });
+        } else if (action.type === 'RESIZE') {
+            setWidth(action.prev.width);
+            setHeight(action.prev.height);
+            setGrid(action.prev.grid);
+            setInputSize({ w: action.prev.width.toString(), h: action.prev.height.toString() });
+        }
+        setHistoryIndex(prev => prev - 1);
+    }, [history, historyIndex]);
+
+    const handleRedo = useCallback(() => {
+        if (historyIndex >= history.length - 1) return;
+        const action = history[historyIndex + 1];
+
+        if (action.type === 'PAINT') {
+            setGrid(currentGrid => {
+                const newGrid = [...currentGrid];
+                action.changes.forEach(({ index, newColor }) => {
+                    newGrid[index] = newColor;
+                });
+                return newGrid;
+            });
+        } else if (action.type === 'RESIZE') {
+            setWidth(action.next.width);
+            setHeight(action.next.height);
+            setGrid(action.next.grid);
+            setInputSize({ w: action.next.width.toString(), h: action.next.height.toString() });
+        }
+        setHistoryIndex(prev => prev + 1);
+    }, [history, historyIndex]);
+
+    useEffect(() => {
+        const handleGlobalKeyDown = (e: KeyboardEvent) => {
+            const isCmd = e.ctrlKey || e.metaKey;
+            const key = e.key.toLowerCase();
+            if (isCmd && key === 'z') {
+                e.preventDefault();
+                e.shiftKey ? handleRedo() : handleUndo();
+            }
+            if (isCmd && key === 'y') {
+                e.preventDefault();
+                handleRedo();
+            }
+        };
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    }, [handleUndo, handleRedo]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            if (isAutoZoom) setIsAutoZoom(false);
+            if (frameRequest.current) return;
+
+            frameRequest.current = requestAnimationFrame(() => {
+                const direction = e.deltaY > 0 ? -1 : 1; 
+                setZoom(prevZoom => {
+                    const speed = Math.max(1, Math.round(prevZoom * 0.1)); 
+                    let newZoom = prevZoom + (speed * direction);
+                    const maxPossibleZoom = Math.floor(MAX_CANVAS_DIMENSION / Math.max(width, height));
+                    newZoom = Math.min(Math.max(1, newZoom), maxPossibleZoom);
+                    
+                    if (newZoom !== prevZoom) {
+                        const rect = container.getBoundingClientRect();
+                        zoomTarget.current = {
+                            oldZoom: prevZoom,
+                            mouseX: e.clientX - rect.left,
+                            mouseY: e.clientY - rect.top,
+                            contentX: container.scrollLeft + (e.clientX - rect.left),
+                            contentY: container.scrollTop + (e.clientY - rect.top)
+                        };
+                    }
+                    return newZoom;
+                });
+                frameRequest.current = null;
+            });
+        };
+        container.addEventListener('wheel', onWheel, { passive: false });
+        return () => {
+            container.removeEventListener('wheel', onWheel);
+            if (frameRequest.current) cancelAnimationFrame(frameRequest.current);
+        };
+    }, [isAutoZoom, width, height]);
+
+    useLayoutEffect(() => {
+        if (zoomTarget.current && containerRef.current) {
+            const { mouseX, mouseY, contentX, contentY, oldZoom } = zoomTarget.current;
+            const scaleRatio = zoom / oldZoom;
+            containerRef.current.scrollLeft = (contentX * scaleRatio) - mouseX;
+            containerRef.current.scrollTop = (contentY * scaleRatio) - mouseY;
+            zoomTarget.current = null;
+        }
+    }, [zoom]);
+
+    const commitResize = () => {
+        const targetW = parseInt(inputSize.w) || 8;
+        const targetH = parseInt(inputSize.h) || 8;
+        
+        const safeW = Math.max(1, Math.min(MAX_GB_WIDTH, targetW));
+        const safeH = Math.max(1, Math.min(MAX_GB_HEIGHT, targetH));
+
+        setInputSize({ w: safeW.toString(), h: safeH.toString() });
+
+        if (safeW === width && safeH === height) return;
+
+        const newGrid = Array(safeW * safeH).fill(GB_PALETTE[0]);
         for (let y = 0; y < Math.min(height, safeH); y++) {
             for (let x = 0; x < Math.min(width, safeW); x++) {
                 const oldIndex = y * width + x;
                 const newIndex = y * safeW + x;
-                if (grid[oldIndex]) newGrid[newIndex] = grid[oldIndex];
+                newGrid[newIndex] = grid[oldIndex];
             }
         }
 
@@ -77,46 +302,10 @@ export const SpriteEditor = () => {
         setGrid(newGrid);
     };
 
-    const handleInputCommit = () => {
-        const w = parseInt(inputSize.w) || 8;
-        const h = parseInt(inputSize.h) || 8;
-        commitResize(w, h);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            handleInputCommit();
-        }
-    };
-
-    useEffect(() => {
-        const handleGlobalKeyDown = (e: KeyboardEvent) => {
-            if (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey)) {
-                if (e.shiftKey) {
-                    e.preventDefault();
-                    handleRedo();
-                } else {
-                    e.preventDefault();
-                    handleUndo();
-                }
-            }
-            
-            if (e.key.toLowerCase() === 'y' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                handleRedo();
-            }
-        };
-
-        window.addEventListener('keydown', handleGlobalKeyDown);
-
-        return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-        
-    }, [historyIndex]);
-
     const handlePaint = (index: number) => {
         const targetColor = drawingTool.current === 'erase' ? ERASER_COLOR : selectedColor;
         if (grid[index] === targetColor) return;
-        
+
         const oldColor = grid[index];
         const newGrid = [...grid];
         newGrid[index] = targetColor;
@@ -131,169 +320,141 @@ export const SpriteEditor = () => {
         }
     };
 
+    const getGridIndexFromEvent = (e: React.MouseEvent) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return -1;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const col = Math.floor(x / zoom);
+        const row = Math.floor(y / zoom);
+        if (col < 0 || col >= width || row < 0 || row >= height) return -1;
+        return row * width + col;
+    };
+
     const startStroke = (e: React.MouseEvent) => {
+        if (e.button !== 0 && e.button !== 2) return;
+        const index = getGridIndexFromEvent(e);
+        if (index === -1) return;
         isDrawing.current = true;
+        drawingTool.current = e.button === 2 ? 'erase' : 'paint';
         strokeChanges.current.clear();
-        if (e.button === 2) {
-            drawingTool.current = 'erase';
-        } else {
-            drawingTool.current = 'paint';
-        }
+        handlePaint(index);
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!isDrawing.current) return;
+        const index = getGridIndexFromEvent(e);
+        if (index !== -1) handlePaint(index);
     };
 
     const endStroke = () => {
         if (!isDrawing.current) return;
         isDrawing.current = false;
-        
         if (strokeChanges.current.size > 0) {
-            recordAction({ 
-                type: 'PAINT', 
+            recordAction({
+                type: 'PAINT',
                 changes: Array.from(strokeChanges.current.entries()).map(([i, c]) => ({
-                    index: i,
-                    oldColor: c.oldColor,
-                    newColor: c.newColor
-                })) 
+                    index: i, oldColor: c.oldColor, newColor: c.newColor
+                }))
             });
-            strokeChanges.current.clear();
         }
+        strokeChanges.current.clear();
     };
 
-    const handleUndo = () => {
-        if (historyIndex < 0) return;
-        const action = history[historyIndex];
-        if (action.type === 'PAINT') {
-            const newGrid = [...grid];
-            action.changes.forEach(({ index, oldColor }) => {
-                newGrid[index] = oldColor;
-            });
-            setGrid(newGrid);
-        } else if (action.type === 'RESIZE') {
-            setWidth(action.prev.width);
-            setHeight(action.prev.height);
-            setGrid(action.prev.grid);
-        }
-        setHistoryIndex(historyIndex - 1);
-    };
-
-    const handleRedo = () => {
-        if (historyIndex >= history.length - 1) return;
-        const action = history[historyIndex + 1];
-        if (action.type === 'PAINT') {
-            const newGrid = [...grid];
-            action.changes.forEach(({ index, newColor }) => {
-                newGrid[index] = newColor;
-            });
-            setGrid(newGrid);
-        } else if (action.type === 'RESIZE') {
-            setWidth(action.next.width);
-            setHeight(action.next.height);
-            setGrid(action.next.grid);
-        }
-        setHistoryIndex(historyIndex + 1);
-    };
-
-    const handleWheel = (e: React.WheelEvent) => {
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        setZoom(prev => Math.min(Math.max(0.5, prev + delta), 5));
+    const getZoomPercentage = () => {
+        if (isAutoZoom) return 'Fit';
+        const percentage = Math.round((zoom / BASE_100_PERCENT_SIZE) * 100);
+        return `${percentage}%`;
     };
 
     return (
-        <div style={{ display: 'flex', height: '100%', padding: '20px', gap: '20px', fontFamily: 'sans-serif' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px' }}>
-                <div style={{ border: '1px solid #ccc', padding: '15px', borderRadius: '8px' }}>
-                    <h3>Dimensions</h3>
-                    <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+        <div className="main-layout">
+            <div className="sidebar">
+                <div className="toolbox">
+                    <h3>Metasprite</h3>
+                    <div className="input-row">
                         <label>
-                            W: 
-                            <input 
+                            W: <input 
                                 type="number"
                                 value={inputSize.w} 
                                 onChange={(e) => setInputSize(p => ({ ...p, w: e.target.value }))}
-                                onBlur={handleInputCommit}
-                                onKeyDown={handleKeyDown}
-                                style={{ width: '50px', marginLeft: '5px' }}
+                                onBlur={commitResize}
+                                onKeyDown={(e) => e.key === 'Enter' && commitResize()}
                             />
                         </label>
                         <label>
-                            H: 
-                            <input 
+                            H: <input 
                                 type="number" 
                                 value={inputSize.h} 
                                 onChange={(e) => setInputSize(p => ({ ...p, h: e.target.value }))}
-                                onBlur={handleInputCommit}
-                                onKeyDown={handleKeyDown}
-                                style={{ width: '50px', marginLeft: '5px' }}
+                                onBlur={commitResize}
+                                onKeyDown={(e) => e.key === 'Enter' && commitResize()}
                             />
                         </label>
                     </div>
+                    <div style={{ marginTop: '15px', fontSize: '1.2em', color: '#0f380f' }}>
+                        <strong>Usage:</strong> {spriteUsage} / {MAX_HARDWARE_SPRITES}
+                        {spriteUsage > MAX_HARDWARE_SPRITES && (
+                            <div style={{ color: '#8f0c0c', fontWeight: 'bold' }}>
+                                ⚠ Limit Exceeded
+                            </div>
+                        )}
+                    </div>
                 </div>
 
-            
-                <div style={{ border: '1px solid #ccc', padding: '15px', borderRadius: '8px' }}>
+                <div className="toolbox">
                     <h3>Palette</h3>
-                    <div style={{ display: 'flex', gap: '10px' }}>
+                    <div className="palette-row">
                         {GB_PALETTE.map((color) => (
                             <div
                                 key={color}
                                 onClick={() => setSelectedColor(color)}
+                                className="palette-swatch"
                                 style={{
-                                    width: '30px',
-                                    height: '30px',
                                     backgroundColor: color,
-                                    border: selectedColor === color ? '3px solid red' : '1px solid #000',
-                                    cursor: 'pointer'
+                                    border: selectedColor === color ? '4px solid #9a2257' : '2px solid #0f380f',
+                                    boxShadow: selectedColor === color ? '0 0 8px rgba(0,0,0,0.5)' : 'none',
+                                    transform: selectedColor === color ? 'scale(1.1)' : 'scale(1)'
                                 }}
                             />
                         ))}
                     </div>
                 </div>
 
-                <div style={{ border: '1px solid #ccc', padding: '15px', borderRadius: '8px' }}>
+                <div className="toolbox">
                     <h3>Tools</h3>
-                    <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                    <div className="button-row">
                         <button onClick={handleUndo} disabled={historyIndex < 0}>Undo</button>
                         <button onClick={handleRedo} disabled={historyIndex >= history.length - 1}>Redo</button>
                     </div>
-                    <div>
-                        <label>Zoom: x{zoom.toFixed(1)}</label>
-                        <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-                           (Use mouse wheel to zoom)
-                        </div>
+                    <div className="zoom-controls">
+                        <p className="zoom-text">Zoom: {getZoomPercentage()}</p>
+                        {!isAutoZoom && (
+                            <button onClick={() => setIsAutoZoom(true)} className="reset-btn">
+                                Reset
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
 
             <div 
-                onWheel={handleWheel}
-                className='grid-container'
+                ref={containerRef}
+                className="grid-container"
+                onMouseLeave={endStroke}
+                onMouseUp={endStroke}
+                onContextMenu={(e) => e.preventDefault()}
             >
-                <div 
-                    className='grid'
-                    style={{
-                        gridTemplateColumns: `repeat(${width}, 1fr)`,
-                        gridTemplateRows: `repeat(${height}, 1fr)`,
-                        transform: `scale(${zoom})`,
-                        aspectRatio: `${width} / ${height}`,
-                    }}
-                    onMouseDownCapture={(e) => startStroke(e)}
-                    onMouseUp={endStroke}
-                    onMouseLeave={endStroke}
-                    onContextMenu={(e) => e.preventDefault()}
-                    
-                >
-                    {grid.map((color, index) => (
-                        <div
-                            key={index}
-                            onMouseDown={() => handlePaint(index)}
-                            onMouseEnter={() => { if(isDrawing.current) handlePaint(index); }}
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                backgroundColor: color,
-                                userSelect: 'none'
-                            }}
-                        />
-                    ))}
+                <div className="canvas-wrapper">
+                    <canvas
+                        ref={canvasRef}
+                        width={width * zoom}
+                        height={height * zoom}
+                        onMouseDown={startStroke}
+                        onMouseMove={handleMouseMove}
+                        className="pixel-canvas"
+                    />
                 </div>
             </div>
         </div>
