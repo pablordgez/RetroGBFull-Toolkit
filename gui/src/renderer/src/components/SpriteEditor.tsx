@@ -6,11 +6,9 @@ const ERASER_COLOR = GB_PALETTE[0];
 const BASE_100_PERCENT_SIZE = 20;
 
 const MAX_GB_WIDTH = 80;
-const MAX_GB_HEIGHT = 112; 
+const MAX_GB_HEIGHT = 160;
 const MAX_HARDWARE_SPRITES = 40;
 
-// Increased from 3072 to 4096 for deeper zoom.
-// Since we have the throttle (frameRequest) in place, this is safe.
 const MAX_CANVAS_DIMENSION = 4096; 
 
 type PaintAction = {
@@ -31,6 +29,8 @@ export const SpriteEditor = () => {
     const [height, setHeight] = useState(16);
     const [inputSize, setInputSize] = useState({ w: '16', h: '16' });
     
+    const [is8x16Mode, setIs8x16Mode] = useState(false); 
+    
     const [grid, setGrid] = useState<string[]>(Array(256).fill(GB_PALETTE[0]));
     const [selectedColor, setSelectedColor] = useState(GB_PALETTE[3]);
     const [zoom, setZoom] = useState(BASE_100_PERCENT_SIZE);
@@ -46,20 +46,29 @@ export const SpriteEditor = () => {
     const zoomTarget = useRef<{ oldZoom: number, mouseX: number, mouseY: number, contentX: number, contentY: number } | null>(null);
     const frameRequest = useRef<number | null>(null);
 
+
     const spriteUsage = useMemo(() => {
         let count = 0;
+        
+
+        const tileHeight = is8x16Mode ? 16 : 8; 
+        
         const cols = Math.ceil(width / 8);
-        const rows = Math.ceil(height / 8);
+        const rows = Math.ceil(height / tileHeight);
 
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
                 let hasPixel = false;
+                
+
                 tileLoop:
-                for (let y = 0; y < 8; y++) {
+                for (let y = 0; y < tileHeight; y++) {
                     for (let x = 0; x < 8; x++) {
                         const pixelX = c * 8 + x;
-                        const pixelY = r * 8 + y;
+                        const pixelY = r * tileHeight + y;
+
                         if (pixelX >= width || pixelY >= height) continue;
+                        
                         const index = pixelY * width + pixelX;
                         if (grid[index] !== ERASER_COLOR) {
                             hasPixel = true;
@@ -71,7 +80,7 @@ export const SpriteEditor = () => {
             }
         }
         return count;
-    }, [grid, width, height]);
+    }, [grid, width, height, is8x16Mode]);
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
@@ -81,8 +90,10 @@ export const SpriteEditor = () => {
 
         ctx.imageSmoothingEnabled = false;
 
+
         ctx.fillStyle = GB_PALETTE[0];
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+
 
         for (let i = 0; i < grid.length; i++) {
             if (grid[i] !== GB_PALETTE[0]) {
@@ -93,10 +104,12 @@ export const SpriteEditor = () => {
             }
         }
 
+
         if (zoom >= 4) {
             ctx.lineWidth = 1;
             ctx.beginPath();
             
+
             ctx.strokeStyle = 'rgba(15, 56, 15, 0.15)';
             for (let x = 1; x < width; x++) {
                 if (x % 8 !== 0) {
@@ -105,38 +118,46 @@ export const SpriteEditor = () => {
                 }
             }
             for (let y = 1; y < height; y++) {
-                if (y % 8 !== 0) {
+
+                const isMajorLine = is8x16Mode ? (y % 16 === 0) : (y % 8 === 0);
+                if (!isMajorLine) {
                     ctx.moveTo(0, y * zoom);
                     ctx.lineTo(width * zoom, y * zoom);
                 }
             }
             ctx.stroke();
 
+
             ctx.beginPath();
             ctx.strokeStyle = 'rgba(15, 56, 15, 0.5)';
             
+
             for (let x = 8; x < width; x += 8) {
                 ctx.moveTo(x * zoom, 0);
                 ctx.lineTo(x * zoom, height * zoom);
             }
-            for (let y = 8; y < height; y += 8) {
+
+
+            const strongLineStep = is8x16Mode ? 16 : 8;
+            
+            for (let y = strongLineStep; y < height; y += strongLineStep) {
                 ctx.moveTo(0, y * zoom);
                 ctx.lineTo(width * zoom, y * zoom);
             }
             ctx.stroke();
         }
 
-    }, [grid, width, height, zoom]);
+    }, [grid, width, height, zoom, is8x16Mode]); 
+
 
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
-
         const handleResize = (entries: ResizeObserverEntry[]) => {
             if (!isAutoZoom) return;
             for (const entry of entries) {
                 const { width: contentWidth, height: contentHeight } = entry.contentRect;
-                const PADDING = 80; // Increased padding for better centering with larger UI
+                const PADDING = 80; 
                 const availableW = contentWidth - PADDING;
                 const availableH = contentHeight - PADDING;
                 const zoomW = availableW / width;
@@ -145,7 +166,6 @@ export const SpriteEditor = () => {
                 setZoom(newZoom);
             }
         };
-
         const observer = new ResizeObserver(handleResize);
         observer.observe(container);
         return () => observer.disconnect();
@@ -166,7 +186,6 @@ export const SpriteEditor = () => {
     const handleUndo = useCallback(() => {
         if (historyIndex < 0) return;
         const action = history[historyIndex];
-
         if (action.type === 'PAINT') {
             setGrid(currentGrid => {
                 const newGrid = [...currentGrid];
@@ -187,7 +206,6 @@ export const SpriteEditor = () => {
     const handleRedo = useCallback(() => {
         if (historyIndex >= history.length - 1) return;
         const action = history[historyIndex + 1];
-
         if (action.type === 'PAINT') {
             setGrid(currentGrid => {
                 const newGrid = [...currentGrid];
@@ -225,12 +243,10 @@ export const SpriteEditor = () => {
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
-
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
             if (isAutoZoom) setIsAutoZoom(false);
             if (frameRequest.current) return;
-
             frameRequest.current = requestAnimationFrame(() => {
                 const direction = e.deltaY > 0 ? -1 : 1; 
                 setZoom(prevZoom => {
@@ -238,7 +254,6 @@ export const SpriteEditor = () => {
                     let newZoom = prevZoom + (speed * direction);
                     const maxPossibleZoom = Math.floor(MAX_CANVAS_DIMENSION / Math.max(width, height));
                     newZoom = Math.min(Math.max(1, newZoom), maxPossibleZoom);
-                    
                     if (newZoom !== prevZoom) {
                         const rect = container.getBoundingClientRect();
                         zoomTarget.current = {
@@ -274,7 +289,6 @@ export const SpriteEditor = () => {
     const commitResize = () => {
         const targetW = parseInt(inputSize.w) || 8;
         const targetH = parseInt(inputSize.h) || 8;
-        
         const safeW = Math.max(1, Math.min(MAX_GB_WIDTH, targetW));
         const safeH = Math.max(1, Math.min(MAX_GB_HEIGHT, targetH));
 
@@ -305,12 +319,10 @@ export const SpriteEditor = () => {
     const handlePaint = (index: number) => {
         const targetColor = drawingTool.current === 'erase' ? ERASER_COLOR : selectedColor;
         if (grid[index] === targetColor) return;
-
         const oldColor = grid[index];
         const newGrid = [...grid];
         newGrid[index] = targetColor;
         setGrid(newGrid);
-
         const currentChanges = strokeChanges.current;
         if (!currentChanges.has(index)) {
             currentChanges.set(index, { oldColor, newColor: targetColor });
@@ -372,7 +384,7 @@ export const SpriteEditor = () => {
         <div className="main-layout">
             <div className="sidebar">
                 <div className="toolbox">
-                    <h3>Metasprite</h3>
+                    <h3>Sprite</h3>
                     <div className="input-row">
                         <label>
                             W: <input 
@@ -393,6 +405,19 @@ export const SpriteEditor = () => {
                             />
                         </label>
                     </div>
+
+                    <div style={{ marginTop: '15px' }}>
+                        <label style={{ cursor: 'pointer', fontSize: '1.2em' }}>
+                            <input 
+                                type="checkbox" 
+                                checked={is8x16Mode}
+                                onChange={(e) => setIs8x16Mode(e.target.checked)}
+                                style={{ width: 'auto', marginRight: '10px' }}
+                            />
+                            8x16 Mode
+                        </label>
+                    </div>
+
                     <div style={{ marginTop: '15px', fontSize: '1.2em', color: '#0f380f' }}>
                         <strong>Usage:</strong> {spriteUsage} / {MAX_HARDWARE_SPRITES}
                         {spriteUsage > MAX_HARDWARE_SPRITES && (

@@ -74,7 +74,7 @@ app.on('window-all-closed', () => {
 ipcMain.on('open-sprite-editor-window', () => {
   const spriteEditorWindow = new BrowserWindow({
     width: 800,
-    height: 600,
+    height: 700,
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
