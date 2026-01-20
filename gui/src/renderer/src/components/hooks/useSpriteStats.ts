@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { ERASER_COLOR } from '../SpriteEditor/SpriteEditorConfig';
 
 export const useSpriteStats = (
-    grid: string[],
+    grid: Uint8Array,
     width: number,
     height: number,
     is8x16Mode: boolean

@@ -3,25 +3,26 @@ import '../style/SpriteEditor.css';
 import { 
     GB_PALETTE, ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, 
     MAX_HARDWARE_SPRITES, MAX_CANVAS_DIMENSION, BASE_100_PERCENT_SIZE,
-    HistoryAction 
+    HistoryAction, DEFAULT_W, DEFAULT_H 
 } from './SpriteEditorConfig';
 import { useCanvasRender } from '../hooks/useCanvasRender';
 import { useSpriteStats } from '../hooks/useSpriteStats';
 import { Palette } from './Palette';
 import { AnimationControls } from './AnimationControls';
 
+
 export const SpriteEditor = () => {
-    const [width, setWidth] = useState(16);
-    const [height, setHeight] = useState(16);
-    const [inputSize, setInputSize] = useState({ w: '16', h: '16' });
+    const [width, setWidth] = useState(DEFAULT_W);
+    const [height, setHeight] = useState(DEFAULT_H);
+    const [inputSize, setInputSize] = useState({ w: DEFAULT_W.toString(), h: DEFAULT_H.toString() });
     const [is8x16Mode, setIs8x16Mode] = useState(false);
 
-    const [frames, setFrames] = useState<string[][]>([Array(256).fill(GB_PALETTE[0])]);
+    const [frames, setFrames] = useState<Uint8Array[]>([new Uint8Array(DEFAULT_W * DEFAULT_H).fill(0)]);
     const [currentFrame, setCurrentFrame] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [fps, setFps] = useState(6);
 
-    const [selectedColor, setSelectedColor] = useState(GB_PALETTE[3]);
+    const [selectedColor, setSelectedColor] = useState(3);
     const [zoom, setZoom] = useState(BASE_100_PERCENT_SIZE);
     const [isAutoZoom, setIsAutoZoom] = useState(true);
 
@@ -30,7 +31,7 @@ export const SpriteEditor = () => {
 
     const isDrawing = useRef(false);
     const drawingTool = useRef<'paint' | 'erase'>('paint');
-    const strokeChanges = useRef<Map<number, { oldColor: string, newColor: string }>>(new Map());
+    const strokeChanges = useRef<Map<number, { oldColor: number, newColor: number }>>(new Map());
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const zoomTarget = useRef<{ oldZoom: number, mouseX: number, mouseY: number, contentX: number, contentY: number } | null>(null);
@@ -84,7 +85,7 @@ export const SpriteEditor = () => {
 
         if (action.type === 'PAINT') {
             const newFrames = [...frames];
-            const targetFrame = [...newFrames[action.frameIndex]];
+            const targetFrame = new Uint8Array(newFrames[action.frameIndex]);
             action.changes.forEach(({ index, oldColor }) => targetFrame[index] = oldColor);
             newFrames[action.frameIndex] = targetFrame;
             setFrames(newFrames);
@@ -107,7 +108,7 @@ export const SpriteEditor = () => {
 
         if (action.type === 'PAINT') {
             const newFrames = [...frames];
-            const targetFrame = [...newFrames[action.frameIndex]];
+            const targetFrame = new Uint8Array(newFrames[action.frameIndex]);
             action.changes.forEach(({ index, newColor }) => targetFrame[index] = newColor);
             newFrames[action.frameIndex] = targetFrame;
             setFrames(newFrames);
@@ -191,8 +192,8 @@ export const SpriteEditor = () => {
 
         if (safeW === width && safeH === height) return;
 
-        const resizeFrame = (src: string[]) => {
-            const newGrid = Array(safeW * safeH).fill(GB_PALETTE[0]);
+        const resizeFrame = (src: Uint8Array) => {
+            const newGrid = new Uint8Array(safeW * safeH).fill(ERASER_COLOR);
             for (let y = 0; y < Math.min(height, safeH); y++) {
                 for (let x = 0; x < Math.min(width, safeW); x++) {
                     newGrid[y * safeW + x] = src[y * width + x];
@@ -200,7 +201,7 @@ export const SpriteEditor = () => {
             }
             return newGrid;
         };
-        const newFrames = frames.map(resizeFrame);
+        const newFrames : Uint8Array[] = frames.map(resizeFrame);
         recordAction({
             type: 'RESIZE',
             prev: { width, height, frames: [...frames] },
@@ -217,7 +218,7 @@ export const SpriteEditor = () => {
 
         const oldColor = grid[index];
         const newFrames = [...frames];
-        const newGrid = [...newFrames[currentFrame]];
+        const newGrid = new Uint8Array(newFrames[currentFrame]);
         newGrid[index] = targetColor;
         newFrames[currentFrame] = newGrid;
         setFrames(newFrames);
@@ -306,7 +307,7 @@ export const SpriteEditor = () => {
                     onFpsChange={setFps}
                     onAddFrame={() => {
                         const newFrames = [...frames];
-                        newFrames.splice(currentFrame + 1, 0, [...frames[currentFrame]]);
+                        newFrames.splice(currentFrame + 1, 0, new Uint8Array(frames[currentFrame]));
                         recordAction({ type: 'FRAME_OP', prev: { frames, currentFrame }, next: { frames: newFrames, currentFrame: currentFrame + 1 } });
                         setFrames(newFrames);
                         setCurrentFrame(c => c + 1);

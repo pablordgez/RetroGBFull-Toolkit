@@ -2,24 +2,24 @@ import React from 'react';
 import { GB_PALETTE } from '../SpriteEditor/SpriteEditorConfig';
 
 interface PaletteProps {
-    selectedColor: string;
-    onSelect: (color: string) => void;
+    selectedColor: number;
+    onSelect: (color: number) => void;
 }
 
 export const Palette: React.FC<PaletteProps> = ({ selectedColor, onSelect }) => (
     <div className="toolbox">
         <h3>Palette</h3>
         <div className="palette-row">
-            {GB_PALETTE.map((color) => (
+            {GB_PALETTE.map((color, index) => (
                 <div
                     key={color}
-                    onClick={() => onSelect(color)}
+                    onClick={() => onSelect(index)}
                     className="palette-swatch"
                     style={{
                         backgroundColor: color,
-                        border: selectedColor === color ? '4px solid #9a2257' : '2px solid #0f380f',
-                        boxShadow: selectedColor === color ? '0 0 8px rgba(0,0,0,0.5)' : 'none',
-                        transform: selectedColor === color ? 'scale(1.1)' : 'scale(1)'
+                        border: selectedColor === index ? '4px solid #9a2257' : '2px solid #0f380f',
+                        boxShadow: selectedColor === index ? '0 0 8px rgba(0,0,0,0.5)' : 'none',
+                        transform: selectedColor === index ? 'scale(1.1)' : 'scale(1)'
                     }}
                 />
             ))}

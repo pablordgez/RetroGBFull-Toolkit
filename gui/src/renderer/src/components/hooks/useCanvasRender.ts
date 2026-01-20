@@ -3,7 +3,7 @@ import { GB_PALETTE } from '../SpriteEditor/SpriteEditorConfig';
 
 export const useCanvasRender = (
     canvasRef: RefObject<HTMLCanvasElement>,
-    grid: string[],
+    grid: Uint8Array,
     width: number,
     height: number,
     zoom: number,
@@ -21,10 +21,10 @@ export const useCanvasRender = (
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         for (let i = 0; i < grid.length; i++) {
-            if (grid[i] !== GB_PALETTE[0]) {
+            if (grid[i] !== 0) {
                 const x = (i % width) * zoom;
                 const y = Math.floor(i / width) * zoom;
-                ctx.fillStyle = grid[i];
+                ctx.fillStyle = GB_PALETTE[grid[i]];
                 ctx.fillRect(x, y, zoom, zoom);
             }
         }
