@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import '../style/SpriteEditor.css';
 import { 
-    GB_PALETTE, ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, 
+    ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, 
     MAX_HARDWARE_SPRITES, MAX_CANVAS_DIMENSION, BASE_100_PERCENT_SIZE,
     HistoryAction, DEFAULT_W, DEFAULT_H 
 } from './SpriteEditorConfig';
@@ -9,7 +9,7 @@ import { useCanvasRender } from '../hooks/useCanvasRender';
 import { useSpriteStats } from '../hooks/useSpriteStats';
 import { Palette } from './Palette';
 import { AnimationControls } from './AnimationControls';
-
+import { Sprite } from './Sprite';
 
 export const SpriteEditor = () => {
     const [width, setWidth] = useState(DEFAULT_W);
@@ -22,12 +22,18 @@ export const SpriteEditor = () => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [fps, setFps] = useState(6);
 
+    const sprite = useMemo(() => {
+        return new Sprite(frames, width, height, fps, is8x16Mode);
+    }, [frames, width, height, fps, is8x16Mode]);
+
     const [selectedColor, setSelectedColor] = useState(3);
     const [zoom, setZoom] = useState(BASE_100_PERCENT_SIZE);
     const [isAutoZoom, setIsAutoZoom] = useState(true);
 
     const [history, setHistory] = useState<HistoryAction[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
+    
+    const [exportLabel, setExportLabel] = useState("EXPORT DATA");
 
     const isDrawing = useRef(false);
     const drawingTool = useRef<'paint' | 'erase'>('paint');
@@ -124,6 +130,22 @@ export const SpriteEditor = () => {
         }
         setHistoryIndex(prev => prev + 1);
     }, [history, historyIndex, frames]);
+
+    const handleExport = async () => {
+        try {
+            const encodedString = sprite.encode();
+            
+            await navigator.clipboard.writeText(encodedString);
+            
+            // Visual feedback
+            setExportLabel("COPIED!");
+            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
+        } catch (error) {
+            console.error("Export failed:", error);
+            setExportLabel("ERROR!");
+            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
+        }
+    };
 
     useEffect(() => {
         const handleKeys = (e: KeyboardEvent) => {
@@ -329,6 +351,16 @@ export const SpriteEditor = () => {
                         <button onClick={handleUndo} disabled={historyIndex < 0}>Undo</button>
                         <button onClick={handleRedo} disabled={historyIndex >= history.length - 1}>Redo</button>
                     </div>
+                    
+                    <div className="button-row">
+                        <button 
+                            onClick={handleExport} 
+                            style={{ backgroundColor: exportLabel === 'COPIED!' ? '#0f380f' : undefined, color: exportLabel === 'COPIED!' ? '#9bbc0f' : undefined }}
+                        >
+                            {exportLabel}
+                        </button>
+                    </div>
+
                     <div className="zoom-controls">
                         <p className="zoom-text">Zoom: {isAutoZoom ? 'Fit' : `${Math.round((zoom / BASE_100_PERCENT_SIZE) * 100)}%`}</p>
                         {!isAutoZoom && <button onClick={() => setIsAutoZoom(true)} className="reset-btn">Reset</button>}
