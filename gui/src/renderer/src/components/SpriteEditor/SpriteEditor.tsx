@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import '../style/SpriteEditor.css';
-import { 
-    ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, 
-    MAX_HARDWARE_SPRITES, MAX_CANVAS_DIMENSION, BASE_100_PERCENT_SIZE,
-    HistoryAction, DEFAULT_W, DEFAULT_H, GB_PALETTE
+import {
+    ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT,
+    MAX_HARDWARE_SPRITES, HistoryAction, DEFAULT_W, DEFAULT_H, GB_PALETTE
 } from './SpriteEditorConfig';
 import { useCanvasRender } from '../hooks/useCanvasRender';
 import { useSpriteStats } from '../hooks/useSpriteStats';
@@ -19,37 +18,46 @@ export const SpriteEditor = () => {
 
     const [frames, setFrames] = useState<Uint8Array[]>([new Uint8Array(DEFAULT_W * DEFAULT_H).fill(0)]);
     const [currentFrame, setCurrentFrame] = useState(0);
+    const [palette, setPalette] = useState<string[]>([...GB_PALETTE]);
+    const [selectedColor, setSelectedColor] = useState(3);
+
     const [isPlaying, setIsPlaying] = useState(false);
     const [fps, setFps] = useState(6);
 
-    // Initial palette matches the standard constant
-    const [palette, setPalette] = useState<string[]>([...GB_PALETTE]);
+    const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
+    const [scale, setScale] = useState(1);
+    const [pan, setPan] = useState({ x: 0, y: 0 });
+
+    const hasInitialized = useRef(false);
+
+    const isDrawing = useRef(false);
+    const isPanning = useRef(false);
+    const lastMousePos = useRef({ x: 0, y: 0 });
+
+    const drawingTool = useRef<'paint' | 'erase'>('paint');
+    const strokeChanges = useRef<Map<number, { oldColor: number, newColor: number }>>(new Map());
+
+    const [history, setHistory] = useState<HistoryAction[]>([]);
+    const [historyIndex, setHistoryIndex] = useState(-1);
+    const [exportLabel, setExportLabel] = useState("EXPORT DATA");
+
+    const containerRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    const grid = frames[currentFrame];
+    const spriteUsage = useSpriteStats(grid, width, height, is8x16Mode);
 
     const sprite = useMemo(() => {
         return new Sprite(frames, width, height, fps, is8x16Mode);
     }, [frames, width, height, fps, is8x16Mode]);
 
-    const [selectedColor, setSelectedColor] = useState(3);
-    const [zoom, setZoom] = useState(BASE_100_PERCENT_SIZE);
-    const [isAutoZoom, setIsAutoZoom] = useState(true);
-
-    const [history, setHistory] = useState<HistoryAction[]>([]);
-    const [historyIndex, setHistoryIndex] = useState(-1);
-    
-    const [exportLabel, setExportLabel] = useState("EXPORT DATA");
-
-    const isDrawing = useRef(false);
-    const drawingTool = useRef<'paint' | 'erase'>('paint');
-    const strokeChanges = useRef<Map<number, { oldColor: number, newColor: number }>>(new Map());
-    const containerRef = useRef<HTMLDivElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const zoomTarget = useRef<{ oldZoom: number, mouseX: number, mouseY: number, contentX: number, contentY: number } | null>(null);
-    const frameRequest = useRef<number | null>(null);
-
-    const grid = frames[currentFrame];
-    const spriteUsage = useSpriteStats(grid, width, height, is8x16Mode);
-
-    useCanvasRender(canvasRef as React.RefObject<HTMLCanvasElement>, grid, width, height, zoom, is8x16Mode, palette);
+    useCanvasRender(
+        canvasRef as React.RefObject<HTMLCanvasElement>,
+        grid, width, height,
+        viewportSize.w, viewportSize.h,
+        scale, pan,
+        is8x16Mode, palette
+    );
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -64,19 +72,51 @@ export const SpriteEditor = () => {
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
-        const handleResize = (entries: ResizeObserverEntry[]) => {
-            if (!isAutoZoom) return;
-            for (const entry of entries) {
-                const { width: contentWidth, height: contentHeight } = entry.contentRect;
-                const PADDING = 80;
-                const newZoom = Math.max(1, Math.floor(Math.min((contentWidth - PADDING) / width, (contentHeight - PADDING) / height)));
-                setZoom(newZoom);
+
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (entry) {
+                setViewportSize({
+                    w: entry.contentRect.width,
+                    h: entry.contentRect.height
+                });
             }
-        };
-        const observer = new ResizeObserver(handleResize);
+        });
+
         observer.observe(container);
         return () => observer.disconnect();
-    }, [width, height, isAutoZoom]);
+    }, []);
+
+    const fitToScreen = useCallback(() => {
+        if (viewportSize.w === 0 || viewportSize.h === 0) return;
+
+        const padding = 40;
+        const availW = viewportSize.w - padding;
+        const availH = viewportSize.h - padding;
+        const newScale = Math.floor(Math.min(availW / width, availH / height));
+        const finalScale = Math.max(1, newScale);
+
+        setScale(finalScale);
+        setPan({
+            x: (viewportSize.w - width * finalScale) / 2,
+            y: (viewportSize.h - height * finalScale) / 2
+        });
+    }, [viewportSize, width, height]);
+
+
+    useEffect(() => {
+        if (!hasInitialized.current && viewportSize.w > 0 && viewportSize.h > 0) {
+            fitToScreen();
+            hasInitialized.current = true;
+        }
+    }, [viewportSize, fitToScreen]);
+
+    const screenToWorld = useCallback((screenX: number, screenY: number) => {
+        return {
+            x: Math.floor((screenX - pan.x) / scale),
+            y: Math.floor((screenY - pan.y) / scale)
+        };
+    }, [pan, scale]);
 
     const recordAction = useCallback((action: HistoryAction) => {
         setHistory(prev => {
@@ -163,50 +203,6 @@ export const SpriteEditor = () => {
         return () => window.removeEventListener('keydown', handleKeys);
     }, [handleUndo, handleRedo]);
 
-    const handleZoomWheel = useCallback((e: WheelEvent) => {
-        e.preventDefault();
-        if (isAutoZoom) setIsAutoZoom(false);
-        if (frameRequest.current) return;
-        
-        frameRequest.current = requestAnimationFrame(() => {
-            const direction = e.deltaY > 0 ? -1 : 1;
-            setZoom(prevZoom => {
-                const speed = Math.max(1, Math.round(prevZoom * 0.1));
-                const newZoom = Math.min(Math.max(1, prevZoom + (speed * direction)), Math.floor(MAX_CANVAS_DIMENSION / Math.max(width, height)));
-                
-                if (newZoom !== prevZoom && containerRef.current) {
-                    const rect = containerRef.current.getBoundingClientRect();
-                    zoomTarget.current = {
-                        oldZoom: prevZoom,
-                        mouseX: e.clientX - rect.left,
-                        mouseY: e.clientY - rect.top,
-                        contentX: containerRef.current.scrollLeft + (e.clientX - rect.left),
-                        contentY: containerRef.current.scrollTop + (e.clientY - rect.top)
-                    };
-                }
-                return newZoom;
-            });
-            frameRequest.current = null;
-        });
-    }, [isAutoZoom, width, height]);
-
-    useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
-        container.addEventListener('wheel', handleZoomWheel, { passive: false });
-        return () => container.removeEventListener('wheel', handleZoomWheel);
-    }, [handleZoomWheel]);
-
-    useEffect(() => {
-        if (zoomTarget.current && containerRef.current) {
-            const { mouseX, mouseY, contentX, contentY, oldZoom } = zoomTarget.current;
-            const scaleRatio = zoom / oldZoom;
-            containerRef.current.scrollLeft = (contentX * scaleRatio) - mouseX;
-            containerRef.current.scrollTop = (contentY * scaleRatio) - mouseY;
-            zoomTarget.current = null;
-        }
-    }, [zoom]);
-
     const commitResize = () => {
         const safeW = Math.max(1, Math.min(MAX_GB_WIDTH, parseInt(inputSize.w) || 8));
         const safeH = Math.max(1, Math.min(MAX_GB_HEIGHT, parseInt(inputSize.h) || 8));
@@ -223,7 +219,7 @@ export const SpriteEditor = () => {
             }
             return newGrid;
         };
-        const newFrames : Uint8Array[] = frames.map(resizeFrame);
+        const newFrames = frames.map(resizeFrame);
         recordAction({
             type: 'RESIZE',
             prev: { width, height, frames: [...frames] },
@@ -252,51 +248,92 @@ export const SpriteEditor = () => {
         }
     };
 
-    const handleCanvasMouse = (e: React.MouseEvent, type: 'down' | 'move' | 'up' | 'leave') => {
-        if (type === 'down') {
-            if (e.button !== 0 && e.button !== 2) return;
-            setIsPlaying(false);
-        }
-        
-        if (type === 'up' || type === 'leave') {
-            if (isDrawing.current) {
-                isDrawing.current = false;
-                if (strokeChanges.current.size > 0) {
-                    recordAction({
-                        type: 'PAINT',
-                        frameIndex: currentFrame,
-                        changes: Array.from(strokeChanges.current.entries()).map(([i, c]) => ({ index: i, ...c }))
-                    });
-                }
-                strokeChanges.current.clear();
-            }
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (e.button === 1) {
+            e.preventDefault();
+            isPanning.current = true;
+            lastMousePos.current = { x: e.clientX, y: e.clientY };
             return;
         }
 
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        
-        if (type === 'down') {
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const col = Math.floor(x / zoom);
-            const row = Math.floor(y / zoom);
-            if (col < 0 || col >= width || row < 0 || row >= height) return;
-            
-            isDrawing.current = true;
-            drawingTool.current = e.button === 2 ? 'erase' : 'paint';
-            strokeChanges.current.clear();
-            paintPixel(row * width + col);
-        } else if (type === 'move' && isDrawing.current) {
-            const rect = canvas.getBoundingClientRect();
-            const col = Math.floor((e.clientX - rect.left) / zoom);
-            const row = Math.floor((e.clientY - rect.top) / zoom);
-            if (col >= 0 && col < width && row >= 0 && row < height) {
-                paintPixel(row * width + col);
+        if (e.button === 0 || e.button === 2) {
+            setIsPlaying(false);
+            const rect = canvasRef.current!.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const { x, y } = screenToWorld(mouseX, mouseY);
+
+            if (x >= 0 && x < width && y >= 0 && y < height) {
+                isDrawing.current = true;
+                drawingTool.current = e.button === 2 ? 'erase' : 'paint';
+                strokeChanges.current.clear();
+                paintPixel(y * width + x);
             }
         }
     };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (isPanning.current) {
+            const dx = e.clientX - lastMousePos.current.x;
+            const dy = e.clientY - lastMousePos.current.y;
+            lastMousePos.current = { x: e.clientX, y: e.clientY };
+            setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+            return;
+        }
+
+        if (isDrawing.current && canvasRef.current) {
+            const rect = canvasRef.current.getBoundingClientRect();
+            const { x, y } = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+
+            if (x >= 0 && x < width && y >= 0 && y < height) {
+                paintPixel(y * width + x);
+            }
+        }
+    };
+
+    const handleMouseUp = () => {
+        isPanning.current = false;
+
+        if (isDrawing.current) {
+            isDrawing.current = false;
+            if (strokeChanges.current.size > 0) {
+                recordAction({
+                    type: 'PAINT',
+                    frameIndex: currentFrame,
+                    changes: Array.from(strokeChanges.current.entries()).map(([i, c]) => ({ index: i, ...c }))
+                });
+            }
+            strokeChanges.current.clear();
+        }
+    };
+
+    const handleWheel = useCallback((e: WheelEvent) => {
+        e.preventDefault();
+
+        const rect = containerRef.current!.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const worldX = (mouseX - pan.x) / scale;
+        const worldY = (mouseY - pan.y) / scale;
+
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        const newScale = Math.max(1, Math.min(200, scale * zoomFactor));
+
+        const newPanX = mouseX - worldX * newScale;
+        const newPanY = mouseY - worldY * newScale;
+
+        setScale(newScale);
+        setPan({ x: newPanX, y: newPanY });
+    }, [scale, pan]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+        container.addEventListener('wheel', handleWheel, { passive: false });
+        return () => container.removeEventListener('wheel', handleWheel);
+    }, [handleWheel]);
 
     return (
         <div className="main-layout">
@@ -319,7 +356,7 @@ export const SpriteEditor = () => {
                     </div>
                 </div>
 
-                <AnimationControls 
+                <AnimationControls
                     currentFrame={currentFrame}
                     totalFrames={frames.length}
                     fps={fps}
@@ -343,9 +380,9 @@ export const SpriteEditor = () => {
                     }}
                 />
 
-                <Palette 
+                <Palette
                     colors={palette}
-                    selectedColor={selectedColor} 
+                    selectedColor={selectedColor}
                     onSelect={setSelectedColor}
                     onReorder={setPalette}
                 />
@@ -356,40 +393,38 @@ export const SpriteEditor = () => {
                         <button onClick={handleUndo} disabled={historyIndex < 0}>Undo</button>
                         <button onClick={handleRedo} disabled={historyIndex >= history.length - 1}>Redo</button>
                     </div>
-                    
                     <div className="button-row">
-                        <button 
-                            onClick={handleExport} 
+                        <button
+                            onClick={handleExport}
                             style={{ backgroundColor: exportLabel === 'COPIED!' ? '#0f380f' : undefined, color: exportLabel === 'COPIED!' ? '#9bbc0f' : undefined }}
                         >
                             {exportLabel}
                         </button>
                     </div>
-
                     <div className="zoom-controls">
-                        <p className="zoom-text">Zoom: {isAutoZoom ? 'Fit' : `${Math.round((zoom / BASE_100_PERCENT_SIZE) * 100)}%`}</p>
-                        {!isAutoZoom && <button onClick={() => setIsAutoZoom(true)} className="reset-btn">Reset</button>}
+                        <p className="zoom-text">Zoom: {Math.round(scale * 5)}%</p>
+                        <button onClick={fitToScreen} className="reset-btn">Reset View</button>
                     </div>
                 </div>
             </div>
 
-            <div 
-                ref={containerRef} 
-                className="grid-container" 
-                onMouseLeave={(e) => handleCanvasMouse(e, 'leave')} 
-                onMouseUp={(e) => handleCanvasMouse(e, 'up')}
+            <div
+                ref={containerRef}
+                className="grid-container"
+                style={{ overflow: 'hidden', cursor: isPanning.current ? 'grabbing' : 'default', backgroundColor: '#202020' }}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
                 onContextMenu={(e) => e.preventDefault()}
             >
-                <div className="canvas-wrapper">
-                    <canvas
-                        ref={canvasRef}
-                        width={width * zoom}
-                        height={height * zoom}
-                        onMouseDown={(e) => handleCanvasMouse(e, 'down')}
-                        onMouseMove={(e) => handleCanvasMouse(e, 'move')}
-                        className="pixel-canvas"
-                    />
-                </div>
+                <canvas
+                    ref={canvasRef}
+                    width={viewportSize.w}
+                    height={viewportSize.h}
+                    className="pixel-canvas"
+                    style={{ display: 'block' }}
+                />
             </div>
         </div>
     );

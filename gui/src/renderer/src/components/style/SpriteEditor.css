@@ -126,7 +126,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #8bac0f; 
 .grid-container {
     flex: 1;
     height: 100%;
-    overflow: auto;
     background-color: #8bac0f;
     border: 4px solid #0f380f;
     border-radius: 6px;
