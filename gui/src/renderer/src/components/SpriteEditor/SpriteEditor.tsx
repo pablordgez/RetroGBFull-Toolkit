@@ -1,19 +1,16 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import '../style/SpriteEditor.css';
-import {
-    ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT,
-    MAX_HARDWARE_SPRITES, HistoryAction, DEFAULT_W, DEFAULT_H, GB_PALETTE
-} from './SpriteEditorConfig';
-import { useCanvasRender } from '../hooks/useCanvasRender';
-import { useSpriteStats } from '../hooks/useSpriteStats';
-import { Palette } from './Palette';
-import { AnimationControls } from './AnimationControls';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'; 
+import '../style/SpriteEditor.css'; 
+import { ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, MAX_HARDWARE_SPRITES, HistoryAction, DEFAULT_W, DEFAULT_H, GB_PALETTE } from './SpriteEditorConfig'; 
+import { useCanvasRender } from '../hooks/useCanvasRender'; 
+import { useSpriteStats } from '../hooks/useSpriteStats'; 
+import { Palette } from './Palette'; 
+import { AnimationControls } from './AnimationControls'; 
 import { Sprite } from './Sprite';
 
-export const SpriteEditor = () => {
-    const [width, setWidth] = useState(DEFAULT_W);
-    const [height, setHeight] = useState(DEFAULT_H);
-    const [inputSize, setInputSize] = useState({ w: DEFAULT_W.toString(), h: DEFAULT_H.toString() });
+export const SpriteEditor = () => { 
+    const [width, setWidth] = useState(DEFAULT_W); 
+    const [height, setHeight] = useState(DEFAULT_H); 
+    const [inputSize, setInputSize] = useState({ w: DEFAULT_W.toString(), h: DEFAULT_H.toString() }); 
     const [is8x16Mode, setIs8x16Mode] = useState(false);
 
     const [frames, setFrames] = useState<Uint8Array[]>([new Uint8Array(DEFAULT_W * DEFAULT_H).fill(0)]);
@@ -28,13 +25,16 @@ export const SpriteEditor = () => {
     const [scale, setScale] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
 
+    const [tool, setTool] = useState<'brush' | 'fill'>('brush');
+    const [symmetry, setSymmetry] = useState({ x: false, y: false });
+
     const hasInitialized = useRef(false);
 
     const isDrawing = useRef(false);
     const isPanning = useRef(false);
     const lastMousePos = useRef({ x: 0, y: 0 });
 
-    const drawingTool = useRef<'paint' | 'erase'>('paint');
+    const mouseButtonType = useRef<'paint' | 'erase'>('paint');
     const strokeChanges = useRef<Map<number, { oldColor: number, newColor: number }>>(new Map());
 
     const [history, setHistory] = useState<HistoryAction[]>([]);
@@ -230,21 +230,76 @@ export const SpriteEditor = () => {
         setFrames(newFrames);
     };
 
-    const paintPixel = (index: number) => {
-        const targetColor = drawingTool.current === 'erase' ? ERASER_COLOR : selectedColor;
-        if (grid[index] === targetColor) return;
+    const batchPaintPixels = (ops: { index: number, color: number }[]) => {
+        if (ops.length === 0) return;
 
-        const oldColor = grid[index];
         const newFrames = [...frames];
         const newGrid = new Uint8Array(newFrames[currentFrame]);
-        newGrid[index] = targetColor;
-        newFrames[currentFrame] = newGrid;
-        setFrames(newFrames);
+        let hasChanges = false;
 
-        if (!strokeChanges.current.has(index)) {
-            strokeChanges.current.set(index, { oldColor, newColor: targetColor });
-        } else {
-            strokeChanges.current.set(index, { ...strokeChanges.current.get(index)!, newColor: targetColor });
+        ops.forEach(({ index, color }) => {
+            if (newGrid[index] !== color) {
+                const oldColor = newGrid[index];
+                newGrid[index] = color;
+                hasChanges = true;
+
+                if (!strokeChanges.current.has(index)) {
+                    strokeChanges.current.set(index, { oldColor, newColor: color });
+                } else {
+                    strokeChanges.current.set(index, { ...strokeChanges.current.get(index)!, newColor: color });
+                }
+            }
+        });
+
+        if (hasChanges) {
+            newFrames[currentFrame] = newGrid;
+            setFrames(newFrames);
+        }
+    };
+
+    const getSymmetryIndices = (x: number, y: number) => {
+        const indices = [{ x, y }];
+        if (symmetry.x) indices.push({ x: width - 1 - x, y });
+        if (symmetry.y) indices.push({ x, y: height - 1 - y });
+        if (symmetry.x && symmetry.y) indices.push({ x: width - 1 - x, y: height - 1 - y });
+        return indices;
+    };
+
+    const performFloodFill = (startX: number, startY: number, targetColor: number) => {
+        const startIdx = startY * width + startX;
+        const colorToReplace = grid[startIdx];
+        if (colorToReplace === targetColor) return;
+
+        const queue = [[startX, startY]];
+        const visited = new Set<number>();
+        const ops: { index: number, color: number }[] = [];
+
+        while (queue.length > 0) {
+            const [cx, cy] = queue.shift()!;
+            const idx = cy * width + cx;
+
+            if (visited.has(idx)) continue;
+            visited.add(idx);
+
+            if (grid[idx] === colorToReplace) {
+                ops.push({ index: idx, color: targetColor });
+
+                if (cx > 0) queue.push([cx - 1, cy]);
+                if (cx < width - 1) queue.push([cx + 1, cy]);
+                if (cy > 0) queue.push([cx, cy - 1]);
+                if (cy < height - 1) queue.push([cx, cy + 1]);
+            }
+        }
+
+        batchPaintPixels(ops);
+
+        if (strokeChanges.current.size > 0) {
+            recordAction({
+                type: 'PAINT',
+                frameIndex: currentFrame,
+                changes: Array.from(strokeChanges.current.entries()).map(([i, c]) => ({ index: i, ...c }))
+            });
+            strokeChanges.current.clear();
         }
     };
 
@@ -265,10 +320,26 @@ export const SpriteEditor = () => {
             const { x, y } = screenToWorld(mouseX, mouseY);
 
             if (x >= 0 && x < width && y >= 0 && y < height) {
-                isDrawing.current = true;
-                drawingTool.current = e.button === 2 ? 'erase' : 'paint';
-                strokeChanges.current.clear();
-                paintPixel(y * width + x);
+                const isRightClick = e.button === 2;
+                mouseButtonType.current = isRightClick ? 'erase' : 'paint';
+
+                const drawColor = isRightClick ? ERASER_COLOR : selectedColor;
+
+                if (tool === 'fill' && !isRightClick) {
+                    performFloodFill(x, y, drawColor);
+                } else {
+                    isDrawing.current = true;
+                    strokeChanges.current.clear();
+
+                    const points = getSymmetryIndices(x, y);
+                    const ops = points
+                        .filter(p => p.x >= 0 && p.x < width && p.y >= 0 && p.y < height)
+                        .map(p => ({
+                            index: p.y * width + p.x,
+                            color: drawColor
+                        }));
+                    batchPaintPixels(ops);
+                }
             }
         }
     };
@@ -287,7 +358,15 @@ export const SpriteEditor = () => {
             const { x, y } = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
 
             if (x >= 0 && x < width && y >= 0 && y < height) {
-                paintPixel(y * width + x);
+                const drawColor = mouseButtonType.current === 'erase' ? ERASER_COLOR : selectedColor;
+                const points = getSymmetryIndices(x, y);
+                const ops = points
+                    .filter(p => p.x >= 0 && p.x < width && p.y >= 0 && p.y < height)
+                    .map(p => ({
+                        index: p.y * width + p.x,
+                        color: drawColor
+                    }));
+                batchPaintPixels(ops);
             }
         }
     };
@@ -356,6 +435,34 @@ export const SpriteEditor = () => {
                     </div>
                 </div>
 
+                <div className="toolbox">
+                    <h3>Draw Tools</h3>
+                    <div className="button-row">
+                        <button 
+                            style={{ fontWeight: tool === 'brush' ? 'bold' : 'normal', backgroundColor: tool === 'brush' ? '#ddd' : undefined }}
+                            onClick={() => setTool('brush')}>
+                            Brush
+                        </button>
+                        <button 
+                            style={{ fontWeight: tool === 'fill' ? 'bold' : 'normal', backgroundColor: tool === 'fill' ? '#ddd' : undefined }}
+                            onClick={() => setTool('fill')}>
+                            Fill
+                        </button>
+                    </div>
+                    <div className="button-row" style={{ marginTop: '8px' }}>
+                        <button 
+                            style={{ fontWeight: symmetry.x ? 'bold' : 'normal', backgroundColor: symmetry.x ? '#ddd' : undefined }}
+                            onClick={() => setSymmetry(s => ({ ...s, x: !s.x }))}>
+                            X-Sym
+                        </button>
+                        <button 
+                            style={{ fontWeight: symmetry.y ? 'bold' : 'normal', backgroundColor: symmetry.y ? '#ddd' : undefined }}
+                            onClick={() => setSymmetry(s => ({ ...s, y: !s.y }))}>
+                            Y-Sym
+                        </button>
+                    </div>
+                </div>
+
                 <AnimationControls
                     currentFrame={currentFrame}
                     totalFrames={frames.length}
@@ -388,7 +495,7 @@ export const SpriteEditor = () => {
                 />
 
                 <div className="toolbox">
-                    <h3>Tools</h3>
+                    <h3>History</h3>
                     <div className="button-row">
                         <button onClick={handleUndo} disabled={historyIndex < 0}>Undo</button>
                         <button onClick={handleRedo} disabled={historyIndex >= history.length - 1}>Redo</button>
@@ -411,7 +518,7 @@ export const SpriteEditor = () => {
             <div
                 ref={containerRef}
                 className="grid-container"
-                style={{ overflow: 'hidden', cursor: isPanning.current ? 'grabbing' : 'default', backgroundColor: '#202020' }}
+                style={{ overflow: 'hidden', cursor: isPanning.current ? 'grabbing' : tool === 'fill' ? 'crosshair' : 'default', backgroundColor: '#202020' }}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
