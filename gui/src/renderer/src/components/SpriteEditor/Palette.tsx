@@ -1,28 +1,65 @@
 import React from 'react';
-import { GB_PALETTE } from '../SpriteEditor/SpriteEditorConfig';
 
 interface PaletteProps {
+    colors: string[]; 
     selectedColor: number;
-    onSelect: (color: number) => void;
+    onSelect: (colorIndex: number) => void;
+    onReorder: (newColors: string[]) => void; 
 }
 
-export const Palette: React.FC<PaletteProps> = ({ selectedColor, onSelect }) => (
-    <div className="toolbox">
-        <h3>Palette</h3>
-        <div className="palette-row">
-            {GB_PALETTE.map((color, index) => (
-                <div
-                    key={color}
-                    onClick={() => onSelect(index)}
-                    className="palette-swatch"
-                    style={{
-                        backgroundColor: color,
-                        border: selectedColor === index ? '4px solid #9a2257' : '2px solid #0f380f',
-                        boxShadow: selectedColor === index ? '0 0 8px rgba(0,0,0,0.5)' : 'none',
-                        transform: selectedColor === index ? 'scale(1.1)' : 'scale(1)'
-                    }}
-                />
-            ))}
+export const Palette: React.FC<PaletteProps> = ({ colors, selectedColor, onSelect, onReorder }) => {
+
+    const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+        e.dataTransfer.setData('text/plain', index.toString());
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetIndex: number) => {
+        e.preventDefault();
+        const sourceIndexStr = e.dataTransfer.getData('text/plain');
+        const sourceIndex = parseInt(sourceIndexStr, 10);
+
+        if (isNaN(sourceIndex) || sourceIndex === targetIndex) return;
+
+        const newColors = [...colors];
+        const [movedColor] = newColors.splice(sourceIndex, 1);
+        newColors.splice(targetIndex, 0, movedColor);
+
+        onReorder(newColors);
+        
+    };
+
+    return (
+        <div className="toolbox">
+            <h3>Palette</h3>
+            <div className="palette-row">
+                {colors.map((color, index) => (
+                    <div
+                        key={`${color}-${index}`}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, index)}
+                        onClick={() => onSelect(index)}
+                        className="palette-swatch"
+                        style={{
+                            backgroundColor: color,
+                            border: selectedColor === index ? '4px solid #9a2257' : '2px solid #0f380f',
+                            boxShadow: selectedColor === index ? '0 0 8px rgba(0,0,0,0.5)' : 'none',
+                            transform: selectedColor === index ? 'scale(1.1)' : 'scale(1)',
+                            cursor: 'grab'
+                        }}
+                        title={`Index ${index} (Drag to reorder)`}
+                    />
+                ))}
+            </div>
+            <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '0.8em', opacity: 0.7 }}>
+                Drag colors to reorder.<br/>Index 0 is transparent.
+            </div>
         </div>
-    </div>
-);
+    );
+};

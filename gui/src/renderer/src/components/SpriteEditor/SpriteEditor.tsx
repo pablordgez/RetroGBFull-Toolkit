@@ -3,7 +3,7 @@ import '../style/SpriteEditor.css';
 import { 
     ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, 
     MAX_HARDWARE_SPRITES, MAX_CANVAS_DIMENSION, BASE_100_PERCENT_SIZE,
-    HistoryAction, DEFAULT_W, DEFAULT_H 
+    HistoryAction, DEFAULT_W, DEFAULT_H, GB_PALETTE
 } from './SpriteEditorConfig';
 import { useCanvasRender } from '../hooks/useCanvasRender';
 import { useSpriteStats } from '../hooks/useSpriteStats';
@@ -21,6 +21,9 @@ export const SpriteEditor = () => {
     const [currentFrame, setCurrentFrame] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [fps, setFps] = useState(6);
+
+    // Initial palette matches the standard constant
+    const [palette, setPalette] = useState<string[]>([...GB_PALETTE]);
 
     const sprite = useMemo(() => {
         return new Sprite(frames, width, height, fps, is8x16Mode);
@@ -46,7 +49,7 @@ export const SpriteEditor = () => {
     const grid = frames[currentFrame];
     const spriteUsage = useSpriteStats(grid, width, height, is8x16Mode);
 
-    useCanvasRender(canvasRef as React.RefObject<HTMLCanvasElement>, grid, width, height, zoom, is8x16Mode);
+    useCanvasRender(canvasRef as React.RefObject<HTMLCanvasElement>, grid, width, height, zoom, is8x16Mode, palette);
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -134,10 +137,7 @@ export const SpriteEditor = () => {
     const handleExport = async () => {
         try {
             const encodedString = sprite.encode();
-            
             await navigator.clipboard.writeText(encodedString);
-            
-            // Visual feedback
             setExportLabel("COPIED!");
             setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
         } catch (error) {
@@ -343,7 +343,12 @@ export const SpriteEditor = () => {
                     }}
                 />
 
-                <Palette selectedColor={selectedColor} onSelect={setSelectedColor} />
+                <Palette 
+                    colors={palette}
+                    selectedColor={selectedColor} 
+                    onSelect={setSelectedColor}
+                    onReorder={setPalette}
+                />
 
                 <div className="toolbox">
                     <h3>Tools</h3>

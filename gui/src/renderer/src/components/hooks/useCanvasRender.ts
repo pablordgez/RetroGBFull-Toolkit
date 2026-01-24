@@ -7,7 +7,8 @@ export const useCanvasRender = (
     width: number,
     height: number,
     zoom: number,
-    is8x16Mode: boolean
+    is8x16Mode: boolean,
+    palette: string[]
 ) => {
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
@@ -20,11 +21,23 @@ export const useCanvasRender = (
         ctx.fillStyle = GB_PALETTE[0];
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        const transparentMarkerColor = 'rgba(15, 56, 15, 0.25)';
+        const halfZoom = zoom / 2;
+
         for (let i = 0; i < grid.length; i++) {
-            if (grid[i] !== 0) {
-                const x = (i % width) * zoom;
-                const y = Math.floor(i / width) * zoom;
-                ctx.fillStyle = GB_PALETTE[grid[i]];
+            const x = (i % width) * zoom;
+            const y = Math.floor(i / width) * zoom;
+
+            if (grid[i] === 0) {
+                
+                ctx.fillStyle = transparentMarkerColor;
+                
+                ctx.fillRect(x, y, halfZoom, halfZoom);
+                
+                ctx.fillRect(x + halfZoom, y + halfZoom, halfZoom, halfZoom);
+
+            } else {
+                ctx.fillStyle = palette[grid[i]];
                 ctx.fillRect(x, y, zoom, zoom);
             }
         }
@@ -62,5 +75,5 @@ export const useCanvasRender = (
             }
             ctx.stroke();
         }
-    }, [grid, width, height, zoom, is8x16Mode]);
+    }, [grid, width, height, zoom, is8x16Mode, palette]);
 };
