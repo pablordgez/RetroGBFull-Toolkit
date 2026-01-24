@@ -14,20 +14,53 @@ export class Sprite{
     }
 
     encode() : string{
-        let data = '';
+        let data = 'const uint8_t my_sprite_data[] = {\n';
+        let metasprite_data = '';
+        let size = 0;
         for(let i = 0; i < this.frames.length; i++){
             const tiles = this.divideIntoTiles(i);
+            metasprite_data += this.encode_metasprite_data(tiles, i);
             for(const tile of tiles){
+                if(tile.every(v => v == 0)) {
+                    continue;
+                }
                 if(this.is8x16Mode){
                     data += this.encode8x8(tile.slice(0, 64)) + ',\n';
                     data += this.encode8x8(tile.slice(64, 128)) + ',\n';
+                    size += 2;
                 } else{
                     data += this.encode8x8(tile) + ',\n';
+                    size += 1;
                 }
             }
         }
-        return data.slice(0, -2);
+        return "// size: " + size + "\n" + data.slice(0, -2) + '\n};\n' + metasprite_data;
     }
+
+    encode_metasprite_data(tiles: Uint8Array[], frame: number) : string {
+        let data = 'const metasprite_t my_metasprite_' + frame + '[] = {\n';
+        let pivotX = this.width / 2 * -1;
+        let pivotY = this.height / 2 * -1;
+        const cols = Math.ceil(this.width / 8);
+        const rows = Math.ceil(this.height / (this.is8x16Mode ? 16 : 8));
+        for(let i = 0; i < rows; i++){
+            for(let j = 0; j < cols; j++){
+                if(tiles[i * cols + j].every(v => v == 0)) {
+                    pivotX += 8;
+                    continue;
+                }
+                data += '{ .dy=' + pivotY + ', .dx=' + pivotX + ', .dtile=' + (i * cols + j) + ', .props=0 },\n';
+                pivotX = 8;
+                pivotY = 0;
+            }
+            pivotY = this.is8x16Mode ? 16 : 8;
+            pivotX = (this.width - 8) * -1;
+        }
+        data += 'METASPR_TERM' + '\n};\n';
+        return data;
+    }
+
+    
 
     encode8x8(data: Uint8Array): string {
         if (data.length !== 64) {
