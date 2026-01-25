@@ -1,11 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import '../style/SpriteEditor.css';
 import { ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, MAX_HARDWARE_SPRITES, DEFAULT_W, DEFAULT_H, GB_PALETTE } from './SpriteEditorConfig';
 import { PixelCanvas } from '../PixelEditor/PixelCanvas';
 import { useSpriteStats } from '../hooks/useSpriteStats';
 import { useHistory } from '../hooks/history/useHistory';
+import { usePixelDraw } from '../hooks/usePixelDraw'; // New Hook
 import { useViewport } from '../hooks/viewport/useViewport';
-import { floodFill, getSymmetryIndices } from '../utils/pixelAlgorithms';
 import { Palette } from './Palette';
 import { AnimationControls } from './AnimationControls';
 import { Sprite } from './Sprite';
@@ -25,21 +25,13 @@ export const SpriteEditor = () => {
     const [fps, setFps] = useState(6);
 
     const { 
-        viewportSize, scale, pan, setPan, setScale, 
+        viewportSize, scale, pan, 
         containerRef, fitToScreen, handleZoom, handlePan 
     } = useViewport(width, height);
 
-    const [tool, setTool] = useState<'brush' | 'fill'>('brush');
-    const [symmetry, setSymmetry] = useState({ x: false, y: false });
-
-    const isDrawing = useRef(false);
-
-    const mouseButtonType = useRef<'paint' | 'erase'>('paint');
-    const strokeChanges = useRef<Map<number, { oldColor: number, newColor: number }>>(new Map());
-
     const { 
         record, undo, redo, 
-        canUndo, canRedo, historyIndex, historyLength 
+        canUndo, canRedo 
     } = useHistory();
     const [exportLabel, setExportLabel] = useState("EXPORT DATA");
 
@@ -50,6 +42,60 @@ export const SpriteEditor = () => {
     const sprite = useMemo(() => {
         return new Sprite(frames, width, height, fps, is8x16Mode);
     }, [frames, width, height, fps, is8x16Mode]);
+
+    // Pixel Painting Logic
+    const onPaint = useCallback((ops: { index: number, color: number }[]) => {
+        if (ops.length === 0) return;
+        setFrames(prevFrames => {
+             const newFrames = [...prevFrames];
+             // We need to look up currentFrame inside here or ensure it's captured in closure?
+             // Since onPaint is re-created on [currentFrame] change, it's safe.
+             const newGrid = new Uint8Array(newFrames[currentFrame]); // Assuming closure captures currentFrame correctly
+             ops.forEach(({ index, color }) => {
+                 newGrid[index] = color;
+             });
+             newFrames[currentFrame] = newGrid;
+             return newFrames;
+        });
+    }, [currentFrame]); // Re-create when frame changes
+
+    const onRecordHistory = useCallback((changes: Map<number, { oldColor: number, newColor: number }>) => {
+        const frameIdx = currentFrame;
+        const changeList = Array.from(changes.entries()).map(([i, c]) => ({ index: i, ...c }));
+
+        record({
+            undo: () => {
+                setFrames(f => {
+                    const newF = [...f];
+                    const target = new Uint8Array(newF[frameIdx]);
+                    changeList.forEach(({ index, oldColor }) => target[index] = oldColor);
+                    newF[frameIdx] = target;
+                    return newF;
+                });
+                setCurrentFrame(frameIdx);
+            },
+            redo: () => {
+                setFrames(f => {
+                    const newF = [...f];
+                    const target = new Uint8Array(newF[frameIdx]);
+                    changeList.forEach(({ index, newColor }) => target[index] = newColor);
+                    newF[frameIdx] = target;
+                    return newF;
+                });
+                setCurrentFrame(frameIdx);
+            }
+        });
+    }, [currentFrame, record]);
+
+    const { 
+        tool, setTool, 
+        symmetry, setSymmetry, 
+        handleCanvasInput: handleCanvasInputInternal 
+    } = usePixelDraw({
+        width, height, currentGrid: grid,
+        onPaint,
+        onRecordHistory
+    });
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -135,143 +181,11 @@ export const SpriteEditor = () => {
         setFrames(newFrames);
     };
 
-    const batchPaintPixels = useCallback((ops: { index: number, color: number }[]) => {
-        if (ops.length === 0) return;
+    const handleCanvasInput = (x: number, y: number, type: 'down' | 'move' | 'up' | 'leave', button: number) => {
+        handleCanvasInputInternal(x, y, type, button, selectedColor, ERASER_COLOR);
+    };
 
-        
-        const newFrames = [...frames];
-        const newGrid = new Uint8Array(newFrames[currentFrame]);
-        let hasChanges = false;
-
-        ops.forEach(({ index, color }) => {
-            if (newGrid[index] !== color) {
-                const oldColor = newGrid[index];
-                newGrid[index] = color;
-                hasChanges = true;
-
-                if (!strokeChanges.current.has(index)) {
-                    strokeChanges.current.set(index, { oldColor, newColor: color });
-                } else {
-                    strokeChanges.current.set(index, { ...strokeChanges.current.get(index)!, newColor: color });
-                }
-            }
-        });
-
-        if (hasChanges) {
-            newFrames[currentFrame] = newGrid;
-            setFrames(newFrames);
-        }
-    }, [frames, currentFrame]);
-
-    const performFloodFillAction = useCallback((startX: number, startY: number, targetColor: number) => {
-        const changes = floodFill(startX, startY, width, height, (x, y) => grid[y * width + x], targetColor);
-        if (changes.length === 0) return;
-
-        const ops = changes.map(p => ({ index: p.index, color: targetColor }));
-        
-        const frameIdx = currentFrame;
-        const prevGrid = new Uint8Array(frames[frameIdx]);
-        const nextGrid = new Uint8Array(prevGrid);
-        changes.forEach(c => nextGrid[c.index] = targetColor);
-
-        record({
-            undo: () => {
-                 setFrames(f => {
-                     const copy = [...f];
-                     copy[frameIdx] = prevGrid;
-                     return copy;
-                 });
-                 setCurrentFrame(frameIdx);
-            },
-            redo: () => {
-                 setFrames(f => {
-                     const copy = [...f];
-                     copy[frameIdx] = nextGrid;
-                     return copy;
-                 });
-                 setCurrentFrame(frameIdx);
-            }
-        });
-
-        batchPaintPixels(ops);
-        strokeChanges.current.clear();
-
-    }, [grid, width, height, currentFrame, batchPaintPixels, record, frames]);
-
-    const drawPoint = useCallback((x: number, y: number, color: number) => {
-        const points = getSymmetryIndices(x, y, width, height, symmetry);
-        const ops = points
-            .filter(p => p.x >= 0 && p.x < width && p.y >= 0 && p.y < height)
-            .map(p => ({
-                index: p.y * width + p.x,
-                color
-            }));
-        batchPaintPixels(ops);
-    }, [width, height, batchPaintPixels, symmetry]);
-
-    const handleCanvasInput = useCallback((x: number, y: number, type: 'down' | 'move' | 'up' | 'leave', button: number) => {
-        if (type === 'leave' || type === 'up') {
-            if (isDrawing.current) {
-                isDrawing.current = false;
-                if (strokeChanges.current.size > 0) {
-                    const frameIdx = currentFrame;
-                    const changes = Array.from(strokeChanges.current.entries()).map(([i, c]) => ({ index: i, ...c }));
-                    
-                    record({
-                        undo: () => {
-                            setFrames(f => {
-                                const newF = [...f];
-                                const target = new Uint8Array(newF[frameIdx]);
-                                changes.forEach(({ index, oldColor }) => target[index] = oldColor);
-                                newF[frameIdx] = target;
-                                return newF;
-                            });
-                             setCurrentFrame(frameIdx);
-                        },
-                        redo: () => {
-                             setFrames(f => {
-                                const newF = [...f];
-                                const target = new Uint8Array(newF[frameIdx]);
-                                changes.forEach(({ index, newColor }) => target[index] = newColor);
-                                newF[frameIdx] = target;
-                                return newF;
-                            });
-                             setCurrentFrame(frameIdx);
-                        }
-                    });
-                }
-                strokeChanges.current.clear();
-            }
-            return;
-        }
-
-        if (type === 'down' || (type === 'move' && isDrawing.current)) {
-            if (x < 0 || x >= width || y < 0 || y >= height) return;
-
-            if (type === 'down') {
-                let actionType: 'paint' | 'erase' = 'paint';
-                if (button === 2) actionType = 'erase';
-                else if (button === 0) actionType = 'paint';
-                else return; 
-
-                setIsPlaying(false);
-                mouseButtonType.current = actionType;
-
-                const drawColor = actionType === 'erase' ? ERASER_COLOR : selectedColor;
-
-                if (tool === 'fill' && actionType === 'paint') {
-                    performFloodFillAction(x, y, drawColor);
-                } else {
-                    isDrawing.current = true;
-                    strokeChanges.current.clear();
-                    drawPoint(x, y, drawColor);
-                }
-            } else if (type === 'move') {
-                const drawColor = mouseButtonType.current === 'erase' ? ERASER_COLOR : selectedColor;
-                drawPoint(x, y, drawColor);
-            }
-        }
-    }, [width, height, currentFrame, tool, selectedColor, performFloodFillAction, drawPoint, record]);
+    // handlePan and handleZoom removed - exposed by useViewport
 
     return (
         <div className="main-layout">

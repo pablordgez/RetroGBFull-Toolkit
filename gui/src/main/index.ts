@@ -91,4 +91,23 @@ ipcMain.on('open-sprite-editor-window', () => {
   }
 });
 
+ipcMain.on('open-tileset-editor-window', () => {
+  const tilesetEditorWindow = new BrowserWindow({
+    width: 1000,
+    height: 1000,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  });
+  
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    tilesetEditorWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#/tileset-editor`);
+  }
+  else {
+    tilesetEditorWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/tileset-editor' });
+  }
+});
+
 
