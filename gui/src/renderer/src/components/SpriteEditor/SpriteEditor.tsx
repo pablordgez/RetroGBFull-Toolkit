@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'; 
 import '../style/SpriteEditor.css'; 
 import { ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, MAX_HARDWARE_SPRITES, HistoryAction, DEFAULT_W, DEFAULT_H, GB_PALETTE } from './SpriteEditorConfig'; 
-import { useCanvasRender } from '../hooks/useCanvasRender'; 
+import { PixelCanvas } from '../PixelEditor/PixelCanvas'; 
 import { useSpriteStats } from '../hooks/useSpriteStats'; 
 import { Palette } from './Palette'; 
 import { AnimationControls } from './AnimationControls'; 
@@ -31,8 +31,6 @@ export const SpriteEditor = () => {
     const hasInitialized = useRef(false);
 
     const isDrawing = useRef(false);
-    const isPanning = useRef(false);
-    const lastMousePos = useRef({ x: 0, y: 0 });
 
     const mouseButtonType = useRef<'paint' | 'erase'>('paint');
     const strokeChanges = useRef<Map<number, { oldColor: number, newColor: number }>>(new Map());
@@ -42,7 +40,6 @@ export const SpriteEditor = () => {
     const [exportLabel, setExportLabel] = useState("EXPORT DATA");
 
     const containerRef = useRef<HTMLDivElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
 
     const grid = frames[currentFrame];
     const spriteUsage = useSpriteStats(grid, width, height, is8x16Mode);
@@ -50,14 +47,6 @@ export const SpriteEditor = () => {
     const sprite = useMemo(() => {
         return new Sprite(frames, width, height, fps, is8x16Mode);
     }, [frames, width, height, fps, is8x16Mode]);
-
-    useCanvasRender(
-        canvasRef as React.RefObject<HTMLCanvasElement>,
-        grid, width, height,
-        viewportSize.w, viewportSize.h,
-        scale, pan,
-        is8x16Mode, palette
-    );
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -265,7 +254,7 @@ export const SpriteEditor = () => {
         return indices;
     };
 
-    const performFloodFill = (startX: number, startY: number, targetColor: number) => {
+    const performFloodFill = useCallback((startX: number, startY: number, targetColor: number) => {
         const startIdx = startY * width + startX;
         const colorToReplace = grid[startIdx];
         if (colorToReplace === targetColor) return;
@@ -301,118 +290,78 @@ export const SpriteEditor = () => {
             });
             strokeChanges.current.clear();
         }
-    };
+    }, [grid, width, height, currentFrame, batchPaintPixels, recordAction]);
 
-    const handleMouseDown = (e: React.MouseEvent) => {
-        if (e.button === 1) {
-            e.preventDefault();
-            isPanning.current = true;
-            lastMousePos.current = { x: e.clientX, y: e.clientY };
+    const drawPoint = useCallback((x: number, y: number, color: number) => {
+        const points = getSymmetryIndices(x, y);
+        const ops = points
+            .filter(p => p.x >= 0 && p.x < width && p.y >= 0 && p.y < height)
+            .map(p => ({
+                index: p.y * width + p.x,
+                color
+            }));
+        batchPaintPixels(ops);
+    }, [getSymmetryIndices, width, height, batchPaintPixels]);
+
+    const handlePixelInput = useCallback((x: number, y: number, type: 'down' | 'move' | 'up' | 'leave', button: number) => {
+        if (type === 'leave' || type === 'up') {
+            if (isDrawing.current) {
+                isDrawing.current = false;
+                if (strokeChanges.current.size > 0) {
+                    recordAction({
+                        type: 'PAINT',
+                        frameIndex: currentFrame,
+                        changes: Array.from(strokeChanges.current.entries()).map(([i, c]) => ({ index: i, ...c }))
+                    });
+                }
+                strokeChanges.current.clear();
+            }
             return;
         }
 
-        if (e.button === 0 || e.button === 2) {
-            setIsPlaying(false);
-            const rect = canvasRef.current!.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
+        if (type === 'down' || (type === 'move' && isDrawing.current)) {
+            if (x < 0 || x >= width || y < 0 || y >= height) return;
 
-            const { x, y } = screenToWorld(mouseX, mouseY);
+            if (type === 'down') {
+                let actionType: 'paint' | 'erase' = 'paint';
+                if (button === 2) actionType = 'erase';
+                else if (button === 0) actionType = 'paint';
+                else return; 
 
-            if (x >= 0 && x < width && y >= 0 && y < height) {
-                const isRightClick = e.button === 2;
-                mouseButtonType.current = isRightClick ? 'erase' : 'paint';
+                setIsPlaying(false);
+                mouseButtonType.current = actionType;
 
-                const drawColor = isRightClick ? ERASER_COLOR : selectedColor;
+                const drawColor = actionType === 'erase' ? ERASER_COLOR : selectedColor;
 
-                if (tool === 'fill' && !isRightClick) {
+                if (tool === 'fill' && actionType === 'paint') {
                     performFloodFill(x, y, drawColor);
                 } else {
                     isDrawing.current = true;
                     strokeChanges.current.clear();
-
-                    const points = getSymmetryIndices(x, y);
-                    const ops = points
-                        .filter(p => p.x >= 0 && p.x < width && p.y >= 0 && p.y < height)
-                        .map(p => ({
-                            index: p.y * width + p.x,
-                            color: drawColor
-                        }));
-                    batchPaintPixels(ops);
+                    drawPoint(x, y, drawColor);
                 }
-            }
-        }
-    };
-
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if (isPanning.current) {
-            const dx = e.clientX - lastMousePos.current.x;
-            const dy = e.clientY - lastMousePos.current.y;
-            lastMousePos.current = { x: e.clientX, y: e.clientY };
-            setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
-            return;
-        }
-
-        if (isDrawing.current && canvasRef.current) {
-            const rect = canvasRef.current.getBoundingClientRect();
-            const { x, y } = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-
-            if (x >= 0 && x < width && y >= 0 && y < height) {
+            } else if (type === 'move') {
                 const drawColor = mouseButtonType.current === 'erase' ? ERASER_COLOR : selectedColor;
-                const points = getSymmetryIndices(x, y);
-                const ops = points
-                    .filter(p => p.x >= 0 && p.x < width && p.y >= 0 && p.y < height)
-                    .map(p => ({
-                        index: p.y * width + p.x,
-                        color: drawColor
-                    }));
-                batchPaintPixels(ops);
+                drawPoint(x, y, drawColor);
             }
         }
-    };
+    }, [width, height, currentFrame, tool, selectedColor, performFloodFill, drawPoint, recordAction]);
 
-    const handleMouseUp = () => {
-        isPanning.current = false;
+    const handlePan = useCallback((dx: number, dy: number) => {
+        setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+    }, []);
 
-        if (isDrawing.current) {
-            isDrawing.current = false;
-            if (strokeChanges.current.size > 0) {
-                recordAction({
-                    type: 'PAINT',
-                    frameIndex: currentFrame,
-                    changes: Array.from(strokeChanges.current.entries()).map(([i, c]) => ({ index: i, ...c }))
-                });
-            }
-            strokeChanges.current.clear();
-        }
-    };
+    const handleZoom = useCallback((factor: number, centerX: number, centerY: number) => {
+        const newScale = Math.max(1, Math.min(200, scale * factor));
+        const worldX = (centerX - pan.x) / scale;
+        const worldY = (centerY - pan.y) / scale;
 
-    const handleWheel = useCallback((e: WheelEvent) => {
-        e.preventDefault();
-
-        const rect = containerRef.current!.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-
-        const worldX = (mouseX - pan.x) / scale;
-        const worldY = (mouseY - pan.y) / scale;
-
-        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-        const newScale = Math.max(1, Math.min(200, scale * zoomFactor));
-
-        const newPanX = mouseX - worldX * newScale;
-        const newPanY = mouseY - worldY * newScale;
+        const newPanX = centerX - worldX * newScale;
+        const newPanY = centerY - worldY * newScale;
 
         setScale(newScale);
         setPan({ x: newPanX, y: newPanY });
     }, [scale, pan]);
-
-    useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
-        container.addEventListener('wheel', handleWheel, { passive: false });
-        return () => container.removeEventListener('wheel', handleWheel);
-    }, [handleWheel]);
 
     return (
         <div className="main-layout">
@@ -518,19 +467,20 @@ export const SpriteEditor = () => {
             <div
                 ref={containerRef}
                 className="grid-container"
-                style={{ overflow: 'hidden', cursor: isPanning.current ? 'grabbing' : tool === 'fill' ? 'crosshair' : 'default', backgroundColor: '#202020' }}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-                onContextMenu={(e) => e.preventDefault()}
+                style={{ overflow: 'hidden', backgroundColor: '#202020' }}
             >
-                <canvas
-                    ref={canvasRef}
-                    width={viewportSize.w}
-                    height={viewportSize.h}
-                    className="pixel-canvas"
-                    style={{ display: 'block' }}
+                <PixelCanvas
+                    grid={grid}
+                    width={width}
+                    height={height}
+                    palette={palette}
+                    gridSize={is8x16Mode ? { w: 8, h: 16 } : { w: 8, h: 8 }}
+                    viewportSize={viewportSize}
+                    scale={scale}
+                    pan={pan}
+                    onPixelInput={handlePixelInput}
+                    onPan={handlePan}
+                    onZoom={handleZoom}
                 />
             </div>
         </div>
