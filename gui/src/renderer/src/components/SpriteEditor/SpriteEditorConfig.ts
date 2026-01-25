@@ -9,23 +9,3 @@ export const MAX_CANVAS_DIMENSION = 4096;
 
 export const DEFAULT_W = 8;
 export const DEFAULT_H = 8;
-
-export type PaintAction = {
-    type: 'PAINT';
-    frameIndex: number;
-    changes: { index: number; oldColor: number; newColor: number }[];
-};
-
-export type ResizeAction = {
-    type: 'RESIZE';
-    prev: { width: number; height: number; frames: Uint8Array[] };
-    next: { width: number; height: number; frames: Uint8Array[] };
-};
-
-export type FrameAction = {
-    type: 'FRAME_OP';
-    prev: { frames: Uint8Array[]; currentFrame: number };
-    next: { frames: Uint8Array[]; currentFrame: number };
-};
-
-export type HistoryAction = PaintAction | ResizeAction | FrameAction;

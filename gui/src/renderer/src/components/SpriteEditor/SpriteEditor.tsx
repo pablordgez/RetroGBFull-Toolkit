@@ -1,10 +1,13 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'; 
-import '../style/SpriteEditor.css'; 
-import { ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, MAX_HARDWARE_SPRITES, HistoryAction, DEFAULT_W, DEFAULT_H, GB_PALETTE } from './SpriteEditorConfig'; 
-import { PixelCanvas } from '../PixelEditor/PixelCanvas'; 
-import { useSpriteStats } from '../hooks/useSpriteStats'; 
-import { Palette } from './Palette'; 
-import { AnimationControls } from './AnimationControls'; 
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import '../style/SpriteEditor.css';
+import { ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, MAX_HARDWARE_SPRITES, DEFAULT_W, DEFAULT_H, GB_PALETTE } from './SpriteEditorConfig';
+import { PixelCanvas } from '../PixelEditor/PixelCanvas';
+import { useSpriteStats } from '../hooks/useSpriteStats';
+import { useHistory } from '../hooks/history/useHistory';
+import { useViewport } from '../hooks/viewport/useViewport';
+import { floodFill, getSymmetryIndices } from '../utils/pixelAlgorithms';
+import { Palette } from './Palette';
+import { AnimationControls } from './AnimationControls';
 import { Sprite } from './Sprite';
 
 export const SpriteEditor = () => { 
@@ -21,25 +24,25 @@ export const SpriteEditor = () => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [fps, setFps] = useState(6);
 
-    const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
-    const [scale, setScale] = useState(1);
-    const [pan, setPan] = useState({ x: 0, y: 0 });
+    const { 
+        viewportSize, scale, pan, setPan, setScale, 
+        containerRef, fitToScreen, handleZoom, handlePan 
+    } = useViewport(width, height);
 
     const [tool, setTool] = useState<'brush' | 'fill'>('brush');
     const [symmetry, setSymmetry] = useState({ x: false, y: false });
-
-    const hasInitialized = useRef(false);
 
     const isDrawing = useRef(false);
 
     const mouseButtonType = useRef<'paint' | 'erase'>('paint');
     const strokeChanges = useRef<Map<number, { oldColor: number, newColor: number }>>(new Map());
 
-    const [history, setHistory] = useState<HistoryAction[]>([]);
-    const [historyIndex, setHistoryIndex] = useState(-1);
+    const { 
+        record, undo, redo, 
+        canUndo, canRedo, historyIndex, historyLength 
+    } = useHistory();
     const [exportLabel, setExportLabel] = useState("EXPORT DATA");
 
-    const containerRef = useRef<HTMLDivElement>(null);
 
     const grid = frames[currentFrame];
     const spriteUsage = useSpriteStats(grid, width, height, is8x16Mode);
@@ -58,110 +61,7 @@ export const SpriteEditor = () => {
         return () => clearInterval(interval);
     }, [isPlaying, fps, frames.length]);
 
-    useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
 
-        const observer = new ResizeObserver((entries) => {
-            const entry = entries[0];
-            if (entry) {
-                setViewportSize({
-                    w: entry.contentRect.width,
-                    h: entry.contentRect.height
-                });
-            }
-        });
-
-        observer.observe(container);
-        return () => observer.disconnect();
-    }, []);
-
-    const fitToScreen = useCallback(() => {
-        if (viewportSize.w === 0 || viewportSize.h === 0) return;
-
-        const padding = 40;
-        const availW = viewportSize.w - padding;
-        const availH = viewportSize.h - padding;
-        const newScale = Math.floor(Math.min(availW / width, availH / height));
-        const finalScale = Math.max(1, newScale);
-
-        setScale(finalScale);
-        setPan({
-            x: (viewportSize.w - width * finalScale) / 2,
-            y: (viewportSize.h - height * finalScale) / 2
-        });
-    }, [viewportSize, width, height]);
-
-
-    useEffect(() => {
-        if (!hasInitialized.current && viewportSize.w > 0 && viewportSize.h > 0) {
-            fitToScreen();
-            hasInitialized.current = true;
-        }
-    }, [viewportSize, fitToScreen]);
-
-    const screenToWorld = useCallback((screenX: number, screenY: number) => {
-        return {
-            x: Math.floor((screenX - pan.x) / scale),
-            y: Math.floor((screenY - pan.y) / scale)
-        };
-    }, [pan, scale]);
-
-    const recordAction = useCallback((action: HistoryAction) => {
-        setHistory(prev => {
-            const newHistory = prev.slice(0, historyIndex + 1);
-            newHistory.push(action);
-            if (newHistory.length > 50) newHistory.shift();
-            return newHistory;
-        });
-        setHistoryIndex(prev => (history.length < 50 ? prev + 1 : 49));
-    }, [historyIndex, history.length]);
-
-    const handleUndo = useCallback(() => {
-        if (historyIndex < 0) return;
-        const action = history[historyIndex];
-
-        if (action.type === 'PAINT') {
-            const newFrames = [...frames];
-            const targetFrame = new Uint8Array(newFrames[action.frameIndex]);
-            action.changes.forEach(({ index, oldColor }) => targetFrame[index] = oldColor);
-            newFrames[action.frameIndex] = targetFrame;
-            setFrames(newFrames);
-            setCurrentFrame(action.frameIndex);
-        } else if (action.type === 'RESIZE') {
-            setWidth(action.prev.width);
-            setHeight(action.prev.height);
-            setFrames(action.prev.frames);
-            setInputSize({ w: action.prev.width.toString(), h: action.prev.height.toString() });
-        } else if (action.type === 'FRAME_OP') {
-            setFrames(action.prev.frames);
-            setCurrentFrame(action.prev.currentFrame);
-        }
-        setHistoryIndex(prev => prev - 1);
-    }, [history, historyIndex, frames]);
-
-    const handleRedo = useCallback(() => {
-        if (historyIndex >= history.length - 1) return;
-        const action = history[historyIndex + 1];
-
-        if (action.type === 'PAINT') {
-            const newFrames = [...frames];
-            const targetFrame = new Uint8Array(newFrames[action.frameIndex]);
-            action.changes.forEach(({ index, newColor }) => targetFrame[index] = newColor);
-            newFrames[action.frameIndex] = targetFrame;
-            setFrames(newFrames);
-            setCurrentFrame(action.frameIndex);
-        } else if (action.type === 'RESIZE') {
-            setWidth(action.next.width);
-            setHeight(action.next.height);
-            setFrames(action.next.frames);
-            setInputSize({ w: action.next.width.toString(), h: action.next.height.toString() });
-        } else if (action.type === 'FRAME_OP') {
-            setFrames(action.next.frames);
-            setCurrentFrame(action.next.currentFrame);
-        }
-        setHistoryIndex(prev => prev + 1);
-    }, [history, historyIndex, frames]);
 
     const handleExport = async () => {
         try {
@@ -181,16 +81,16 @@ export const SpriteEditor = () => {
             if (e.ctrlKey || e.metaKey) {
                 if (e.key.toLowerCase() === 'z') {
                     e.preventDefault();
-                    e.shiftKey ? handleRedo() : handleUndo();
+                    e.shiftKey ? redo() : undo();
                 } else if (e.key.toLowerCase() === 'y') {
                     e.preventDefault();
-                    handleRedo();
+                    redo();
                 }
             }
         };
         window.addEventListener('keydown', handleKeys);
         return () => window.removeEventListener('keydown', handleKeys);
-    }, [handleUndo, handleRedo]);
+    }, [undo, redo]);
 
     const commitResize = () => {
         const safeW = Math.max(1, Math.min(MAX_GB_WIDTH, parseInt(inputSize.w) || 8));
@@ -208,20 +108,37 @@ export const SpriteEditor = () => {
             }
             return newGrid;
         };
+        
+        const prevFrames = [...frames];
+        const prevWidth = width;
+        const prevHeight = height;
+
         const newFrames = frames.map(resizeFrame);
-        recordAction({
-            type: 'RESIZE',
-            prev: { width, height, frames: [...frames] },
-            next: { width: safeW, height: safeH, frames: newFrames }
+        
+        record({
+            undo: () => {
+                setWidth(prevWidth);
+                setHeight(prevHeight);
+                setFrames(prevFrames);
+                setInputSize({ w: prevWidth.toString(), h: prevHeight.toString() });
+            },
+            redo: () => {
+                setWidth(safeW);
+                setHeight(safeH);
+                setFrames(newFrames);
+                setInputSize({ w: safeW.toString(), h: safeH.toString() });
+            }
         });
+
         setWidth(safeW);
         setHeight(safeH);
         setFrames(newFrames);
     };
 
-    const batchPaintPixels = (ops: { index: number, color: number }[]) => {
+    const batchPaintPixels = useCallback((ops: { index: number, color: number }[]) => {
         if (ops.length === 0) return;
 
+        
         const newFrames = [...frames];
         const newGrid = new Uint8Array(newFrames[currentFrame]);
         let hasChanges = false;
@@ -244,56 +161,45 @@ export const SpriteEditor = () => {
             newFrames[currentFrame] = newGrid;
             setFrames(newFrames);
         }
-    };
+    }, [frames, currentFrame]);
 
-    const getSymmetryIndices = (x: number, y: number) => {
-        const indices = [{ x, y }];
-        if (symmetry.x) indices.push({ x: width - 1 - x, y });
-        if (symmetry.y) indices.push({ x, y: height - 1 - y });
-        if (symmetry.x && symmetry.y) indices.push({ x: width - 1 - x, y: height - 1 - y });
-        return indices;
-    };
+    const performFloodFillAction = useCallback((startX: number, startY: number, targetColor: number) => {
+        const changes = floodFill(startX, startY, width, height, (x, y) => grid[y * width + x], targetColor);
+        if (changes.length === 0) return;
 
-    const performFloodFill = useCallback((startX: number, startY: number, targetColor: number) => {
-        const startIdx = startY * width + startX;
-        const colorToReplace = grid[startIdx];
-        if (colorToReplace === targetColor) return;
+        const ops = changes.map(p => ({ index: p.index, color: targetColor }));
+        
+        const frameIdx = currentFrame;
+        const prevGrid = new Uint8Array(frames[frameIdx]);
+        const nextGrid = new Uint8Array(prevGrid);
+        changes.forEach(c => nextGrid[c.index] = targetColor);
 
-        const queue = [[startX, startY]];
-        const visited = new Set<number>();
-        const ops: { index: number, color: number }[] = [];
-
-        while (queue.length > 0) {
-            const [cx, cy] = queue.shift()!;
-            const idx = cy * width + cx;
-
-            if (visited.has(idx)) continue;
-            visited.add(idx);
-
-            if (grid[idx] === colorToReplace) {
-                ops.push({ index: idx, color: targetColor });
-
-                if (cx > 0) queue.push([cx - 1, cy]);
-                if (cx < width - 1) queue.push([cx + 1, cy]);
-                if (cy > 0) queue.push([cx, cy - 1]);
-                if (cy < height - 1) queue.push([cx, cy + 1]);
+        record({
+            undo: () => {
+                 setFrames(f => {
+                     const copy = [...f];
+                     copy[frameIdx] = prevGrid;
+                     return copy;
+                 });
+                 setCurrentFrame(frameIdx);
+            },
+            redo: () => {
+                 setFrames(f => {
+                     const copy = [...f];
+                     copy[frameIdx] = nextGrid;
+                     return copy;
+                 });
+                 setCurrentFrame(frameIdx);
             }
-        }
+        });
 
         batchPaintPixels(ops);
+        strokeChanges.current.clear();
 
-        if (strokeChanges.current.size > 0) {
-            recordAction({
-                type: 'PAINT',
-                frameIndex: currentFrame,
-                changes: Array.from(strokeChanges.current.entries()).map(([i, c]) => ({ index: i, ...c }))
-            });
-            strokeChanges.current.clear();
-        }
-    }, [grid, width, height, currentFrame, batchPaintPixels, recordAction]);
+    }, [grid, width, height, currentFrame, batchPaintPixels, record, frames]);
 
     const drawPoint = useCallback((x: number, y: number, color: number) => {
-        const points = getSymmetryIndices(x, y);
+        const points = getSymmetryIndices(x, y, width, height, symmetry);
         const ops = points
             .filter(p => p.x >= 0 && p.x < width && p.y >= 0 && p.y < height)
             .map(p => ({
@@ -301,17 +207,37 @@ export const SpriteEditor = () => {
                 color
             }));
         batchPaintPixels(ops);
-    }, [getSymmetryIndices, width, height, batchPaintPixels]);
+    }, [width, height, batchPaintPixels, symmetry]);
 
-    const handlePixelInput = useCallback((x: number, y: number, type: 'down' | 'move' | 'up' | 'leave', button: number) => {
+    const handleCanvasInput = useCallback((x: number, y: number, type: 'down' | 'move' | 'up' | 'leave', button: number) => {
         if (type === 'leave' || type === 'up') {
             if (isDrawing.current) {
                 isDrawing.current = false;
                 if (strokeChanges.current.size > 0) {
-                    recordAction({
-                        type: 'PAINT',
-                        frameIndex: currentFrame,
-                        changes: Array.from(strokeChanges.current.entries()).map(([i, c]) => ({ index: i, ...c }))
+                    const frameIdx = currentFrame;
+                    const changes = Array.from(strokeChanges.current.entries()).map(([i, c]) => ({ index: i, ...c }));
+                    
+                    record({
+                        undo: () => {
+                            setFrames(f => {
+                                const newF = [...f];
+                                const target = new Uint8Array(newF[frameIdx]);
+                                changes.forEach(({ index, oldColor }) => target[index] = oldColor);
+                                newF[frameIdx] = target;
+                                return newF;
+                            });
+                             setCurrentFrame(frameIdx);
+                        },
+                        redo: () => {
+                             setFrames(f => {
+                                const newF = [...f];
+                                const target = new Uint8Array(newF[frameIdx]);
+                                changes.forEach(({ index, newColor }) => target[index] = newColor);
+                                newF[frameIdx] = target;
+                                return newF;
+                            });
+                             setCurrentFrame(frameIdx);
+                        }
                     });
                 }
                 strokeChanges.current.clear();
@@ -334,7 +260,7 @@ export const SpriteEditor = () => {
                 const drawColor = actionType === 'erase' ? ERASER_COLOR : selectedColor;
 
                 if (tool === 'fill' && actionType === 'paint') {
-                    performFloodFill(x, y, drawColor);
+                    performFloodFillAction(x, y, drawColor);
                 } else {
                     isDrawing.current = true;
                     strokeChanges.current.clear();
@@ -345,23 +271,7 @@ export const SpriteEditor = () => {
                 drawPoint(x, y, drawColor);
             }
         }
-    }, [width, height, currentFrame, tool, selectedColor, performFloodFill, drawPoint, recordAction]);
-
-    const handlePan = useCallback((dx: number, dy: number) => {
-        setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
-    }, []);
-
-    const handleZoom = useCallback((factor: number, centerX: number, centerY: number) => {
-        const newScale = Math.max(1, Math.min(200, scale * factor));
-        const worldX = (centerX - pan.x) / scale;
-        const worldY = (centerY - pan.y) / scale;
-
-        const newPanX = centerX - worldX * newScale;
-        const newPanY = centerY - worldY * newScale;
-
-        setScale(newScale);
-        setPan({ x: newPanX, y: newPanY });
-    }, [scale, pan]);
+    }, [width, height, currentFrame, tool, selectedColor, performFloodFillAction, drawPoint, record]);
 
     return (
         <div className="main-layout">
@@ -423,14 +333,44 @@ export const SpriteEditor = () => {
                     onAddFrame={() => {
                         const newFrames = [...frames];
                         newFrames.splice(currentFrame + 1, 0, new Uint8Array(frames[currentFrame]));
-                        recordAction({ type: 'FRAME_OP', prev: { frames, currentFrame }, next: { frames: newFrames, currentFrame: currentFrame + 1 } });
+                        
+                        const prevFrames = [...frames];
+                        const prevFrame = currentFrame;
+                        const nextFrames = [...newFrames];
+                        const nextFrame = currentFrame + 1;
+
+                        record({
+                            undo: () => {
+                                setFrames(prevFrames);
+                                setCurrentFrame(prevFrame);
+                            },
+                            redo: () => {
+                                setFrames(nextFrames);
+                                setCurrentFrame(nextFrame);
+                            }
+                        });
+
                         setFrames(newFrames);
                         setCurrentFrame(c => c + 1);
                     }}
                     onDeleteFrame={() => {
                         const newFrames = frames.filter((_, i) => i !== currentFrame);
                         const nextIdx = Math.max(0, currentFrame - 1);
-                        recordAction({ type: 'FRAME_OP', prev: { frames, currentFrame }, next: { frames: newFrames, currentFrame: nextIdx } });
+                        
+                        const prevFrames = [...frames];
+                        const prevFrame = currentFrame;
+
+                        record({
+                            undo: () => {
+                                setFrames(prevFrames);
+                                setCurrentFrame(prevFrame);
+                            },
+                            redo: () => {
+                                setFrames(newFrames);
+                                setCurrentFrame(nextIdx);
+                            }
+                        });
+
                         setFrames(newFrames);
                         setCurrentFrame(nextIdx);
                     }}
@@ -446,9 +386,10 @@ export const SpriteEditor = () => {
                 <div className="toolbox">
                     <h3>History</h3>
                     <div className="button-row">
-                        <button onClick={handleUndo} disabled={historyIndex < 0}>Undo</button>
-                        <button onClick={handleRedo} disabled={historyIndex >= history.length - 1}>Redo</button>
+                        <button onClick={undo} disabled={!canUndo}>Undo</button>
+                        <button onClick={redo} disabled={!canRedo}>Redo</button>
                     </div>
+
                     <div className="button-row">
                         <button
                             onClick={handleExport}
@@ -478,7 +419,7 @@ export const SpriteEditor = () => {
                     viewportSize={viewportSize}
                     scale={scale}
                     pan={pan}
-                    onPixelInput={handlePixelInput}
+                    onPixelInput={handleCanvasInput}
                     onPan={handlePan}
                     onZoom={handleZoom}
                 />
