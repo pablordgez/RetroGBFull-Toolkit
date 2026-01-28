@@ -1,3 +1,4 @@
+import {Tile} from '../PixelEditor/Tile';
 export class Sprite{
     public frames: Uint8Array[];
     public width: number;
@@ -21,23 +22,17 @@ export class Sprite{
             const tiles = this.divideIntoTiles(i);
             metasprite_data += this.encode_metasprite_data(tiles, i);
             for(const tile of tiles){
-                if(tile.every(v => v == 0)) {
+                if(tile.data.every(v => v == 0)) {
                     continue;
                 }
-                if(this.is8x16Mode){
-                    data += this.encode8x8(tile.slice(0, 64)) + ',\n';
-                    data += this.encode8x8(tile.slice(64, 128)) + ',\n';
-                    size += 2;
-                } else{
-                    data += this.encode8x8(tile) + ',\n';
-                    size += 1;
-                }
+                data += tile.encode() + ',\n';
+                size += 1;
             }
         }
         return "// size: " + size + "\n" + data.slice(0, -2) + '\n};\n' + metasprite_data;
     }
 
-    encode_metasprite_data(tiles: Uint8Array[], frame: number) : string {
+    encode_metasprite_data(tiles: Tile[], frame: number) : string {
         let data = 'const metasprite_t my_metasprite_' + frame + '[] = {\n';
         let pivotX = this.width / 2 * -1;
         let pivotY = this.height / 2 * -1;
@@ -45,7 +40,7 @@ export class Sprite{
         const rows = Math.ceil(this.height / (this.is8x16Mode ? 16 : 8));
         for(let i = 0; i < rows; i++){
             for(let j = 0; j < cols; j++){
-                if(tiles[i * cols + j].every(v => v == 0)) {
+                if(tiles[i * cols + j].data.every(v => v == 0)) {
                     pivotX += 8;
                     continue;
                 }
@@ -60,47 +55,15 @@ export class Sprite{
         return data;
     }
 
-    
-
-    encode8x8(data: Uint8Array): string {
-        if (data.length !== 64) {
-            throw new Error("Data length must be 64 for 8x8.");
-        }
-
-        let output: string = '';
-
-        for (let i = 0; i < 8; i++) {
-            let lowByte = 0;
-            let highByte = 0;
-
-            for (let j = 0; j < 8; j++) {
-                const color = data[i * 8 + j];
-
-                if (color & 0x01) {
-                    lowByte |= (1 << (7 - j));
-                }
-
-                if (color & 0x02) {
-                    highByte |= (1 << (7 - j));
-                }
-            }
-
-            output += `0x${lowByte.toString(16).toUpperCase().padStart(2, '0')},`;
-            output += `0x${highByte.toString(16).toUpperCase().padStart(2, '0')},`;
-        }
-
-        return output.slice(0, -1);
-    }
-
-    divideIntoTiles(frame: number) : Uint8Array[] {
+    divideIntoTiles(frame: number) : Tile[] {
         if(this.is8x16Mode){
             return this.divideInto8x16Tiles(frame);
         }
         return this.divideInto8x8Tiles(frame);
     }
 
-    divideInto8x8Tiles(frame: number): Uint8Array[] {
-        let tiles: Uint8Array[] = [];
+    divideInto8x8Tiles(frame: number): Tile[] {
+        let tiles: Tile[] = [];
         const cols = Math.ceil(this.width / 8);
         const rows = Math.ceil(this.height / 8);
         for (let r = 0; r < rows; r++) {
@@ -114,14 +77,14 @@ export class Sprite{
                         tile[i * 8 + j] = this.frames[frame][pixelY * this.width + pixelX];
                     }
                 }
-                tiles.push(tile);
+                tiles.push(new Tile(tile));
             }
         }
         return tiles;
     }
 
-    divideInto8x16Tiles(frame: number): Uint8Array[] {
-        let tiles: Uint8Array[] = [];
+    divideInto8x16Tiles(frame: number): Tile[] {
+        let tiles: Tile[] = [];
         const cols = Math.ceil(this.width / 8);
         const rows = Math.ceil(this.height / 16);
         for (let r = 0; r < rows; r++) {
@@ -135,7 +98,8 @@ export class Sprite{
                         tile[i * 8 + j] = this.frames[frame][pixelY * this.width + pixelX];
                     }
                 }
-                tiles.push(tile);
+                tiles.push(new Tile(tile.slice(0, 64)));
+                tiles.push(new Tile(tile.slice(64, 128)));
             }
         }
         return tiles;

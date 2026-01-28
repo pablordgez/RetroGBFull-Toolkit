@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import '../style/SpriteEditor.css'; // Reuse sprite editor styles or create new ones? Reuse for now.
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import '../style/SpriteEditor.css';
 import { DEFAULT_W, DEFAULT_H, GB_PALETTE, ERASER_COLOR } from '../SpriteEditor/SpriteEditorConfig';
 import { PixelCanvas } from '../PixelEditor/PixelCanvas';
 import { useHistory } from '../hooks/history/useHistory';
@@ -7,6 +7,8 @@ import { useViewport } from '../hooks/viewport/useViewport';
 import { usePixelDraw } from '../hooks/usePixelDraw';
 import { Palette } from '../SpriteEditor/Palette';
 import { Tileset, TilesetRef } from './Tileset';
+import { Tileset as TilesetClass } from './TilesetModel';
+import { Tile } from '../PixelEditor/Tile';
 import { renderTileToDataURL } from '../utils/imageUtils';
 
 export const TilesetEditor = () => {
@@ -26,8 +28,13 @@ export const TilesetEditor = () => {
     } = useViewport(width, height);
 
     const { record, undo, redo, canUndo, canRedo } = useHistory();
+    const [exportLabel, setExportLabel] = useState("EXPORT DATA");
 
     const currentGrid = tilesData[selectedTileIndex] || new Uint8Array(width * height).fill(ERASER_COLOR);
+
+    const tilesetObject = useMemo(() => {
+        return new TilesetClass(tilesData.map(t => new Tile(t)));
+    }, [tilesData]);
 
     const onPaint = useCallback((ops: { index: number, color: number }[]) => {
         if (ops.length === 0) return;
@@ -161,6 +168,19 @@ export const TilesetEditor = () => {
         return () => window.removeEventListener('keydown', handleKeys);
     }, [undo, redo]);
 
+    const handleExport = async () => {
+        try {
+            const encodedString = tilesetObject.encode();
+            await navigator.clipboard.writeText(encodedString);
+            setExportLabel("COPIED!");
+            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
+        } catch (error) {
+            console.error("Export failed:", error);
+            setExportLabel("ERROR!");
+            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
+        }
+    };
+
 
     return (
         <div className="main-layout">
@@ -204,6 +224,12 @@ export const TilesetEditor = () => {
                      <div className="zoom-controls">
                         <p className="zoom-text">Zoom: {Math.round(scale * 5)}%</p>
                         <button onClick={fitToScreen} className="reset-btn">Reset View</button>
+                    </div>
+                </div>
+
+                <div className="toolbox">
+                    <div style={{ marginTop: '15px', fontSize: '1.2em', color: '#0f380f' }}>
+                         <button onClick={handleExport} style={{ width: '100%', padding: '10px', fontWeight: 'bold' }}>{exportLabel}</button>
                     </div>
                 </div>
             </div>

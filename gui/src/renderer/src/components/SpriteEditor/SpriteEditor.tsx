@@ -4,7 +4,7 @@ import { ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, MAX_HARDWARE_SPRITES, DEFAUL
 import { PixelCanvas } from '../PixelEditor/PixelCanvas';
 import { useSpriteStats } from '../hooks/useSpriteStats';
 import { useHistory } from '../hooks/history/useHistory';
-import { usePixelDraw } from '../hooks/usePixelDraw'; // New Hook
+import { usePixelDraw } from '../hooks/usePixelDraw';
 import { useViewport } from '../hooks/viewport/useViewport';
 import { Palette } from './Palette';
 import { AnimationControls } from './AnimationControls';
@@ -43,21 +43,18 @@ export const SpriteEditor = () => {
         return new Sprite(frames, width, height, fps, is8x16Mode);
     }, [frames, width, height, fps, is8x16Mode]);
 
-    // Pixel Painting Logic
     const onPaint = useCallback((ops: { index: number, color: number }[]) => {
         if (ops.length === 0) return;
         setFrames(prevFrames => {
              const newFrames = [...prevFrames];
-             // We need to look up currentFrame inside here or ensure it's captured in closure?
-             // Since onPaint is re-created on [currentFrame] change, it's safe.
-             const newGrid = new Uint8Array(newFrames[currentFrame]); // Assuming closure captures currentFrame correctly
+             const newGrid = new Uint8Array(newFrames[currentFrame]);
              ops.forEach(({ index, color }) => {
                  newGrid[index] = color;
              });
              newFrames[currentFrame] = newGrid;
              return newFrames;
         });
-    }, [currentFrame]); // Re-create when frame changes
+    }, [currentFrame]);
 
     const onRecordHistory = useCallback((changes: Map<number, { oldColor: number, newColor: number }>) => {
         const frameIdx = currentFrame;
@@ -184,8 +181,6 @@ export const SpriteEditor = () => {
     const handleCanvasInput = (x: number, y: number, type: 'down' | 'move' | 'up' | 'leave', button: number) => {
         handleCanvasInputInternal(x, y, type, button, selectedColor, ERASER_COLOR);
     };
-
-    // handlePan and handleZoom removed - exposed by useViewport
 
     return (
         <div className="main-layout">
