@@ -64,6 +64,18 @@ export const TilesetEditor = () => {
         }
     }, [tilesData, selectedTileIndex, palette, width, height]);
 
+    const tilesDataRef = useRef(tilesData);
+    useEffect(() => { tilesDataRef.current = tilesData; }, [tilesData]);
+
+    useEffect(() => {
+        if (tilesetRef.current) {
+             tilesDataRef.current.forEach((grid, index) => {
+                const url = renderTileToDataURL(grid, width, height, palette);
+                tilesetRef.current?.updateTile(index, url);
+            });
+        }
+    }, [palette, width, height]);
+
 
     const onRecordHistory = useCallback((changes: Map<number, { oldColor: number, newColor: number }>) => {
         const tileIdx = selectedTileIndex;
