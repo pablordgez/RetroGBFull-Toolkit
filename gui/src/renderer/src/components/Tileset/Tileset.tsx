@@ -11,14 +11,15 @@ interface TilesetProps {
     onSelectTile?: (index: number) => void;
     onRemoveTile?: (index: number) => void;
     className?: string;
+    allowAdd?: boolean;
 }
 
 const ITEMS_PER_PAGE = 10;
 const MAX_TILES = 256;
 
-export const Tileset = forwardRef<TilesetRef, TilesetProps>(({ onSelectTile, onRemoveTile, className }, ref) => {
+export const Tileset = forwardRef<TilesetRef, TilesetProps>(({ onSelectTile, onRemoveTile, className, allowAdd = true }, ref) => {
 
-    const [tiles, setTiles] = useState<(string | null)[]>([null]);
+    const [tiles, setTiles] = useState<(string | null)[]>(allowAdd ? [null] : []);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [page, setPage] = useState(0);
 
@@ -33,7 +34,7 @@ export const Tileset = forwardRef<TilesetRef, TilesetProps>(({ onSelectTile, onR
 
                 newTiles[index] = imageUrl;
 
-                if (index === newTiles.length - 1 && newTiles.length < MAX_TILES) {
+                if (allowAdd && index === newTiles.length - 1 && newTiles.length < MAX_TILES) {
                     newTiles.push(null);
                 }
 
@@ -83,21 +84,20 @@ export const Tileset = forwardRef<TilesetRef, TilesetProps>(({ onSelectTile, onR
 
     return (
         <div className={`tileset-container ${className || ''}`}>
-            <h3 style={{ margin: '0 0 5px 0', fontSize: '14px', color: '#eee' }}>Tileset</h3>
-            
+
             <div className="tileset-grid">
                 {visibleCells.map(({ index, content }) => (
                     <div 
                         key={index}
                         className={`tileset-cell ${selectedIndex === index ? 'selected' : ''}`}
                         onClick={() => handleTileClick(index)}
-                        onContextMenu={(e) => handleRightClick(e, index)}
+                        onContextMenu={(e) => { if(allowAdd) handleRightClick(e, index) }}
                         title={`Tile ${index}`}
                     >
                         {content ? (
                             <img src={content} alt={`Tile ${index}`} draggable={false} />
                         ) : (
-                            <div className="tileset-placeholder">+</div>
+                           allowAdd ? <div className="tileset-placeholder">+</div> : null
                         )}
                     </div>
                 ))}

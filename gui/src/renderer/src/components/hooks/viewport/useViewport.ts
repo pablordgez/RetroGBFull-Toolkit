@@ -4,7 +4,8 @@ export const useViewport = (
     contentWidth: number, 
     contentHeight: number, 
     minScale: number = 1, 
-    maxScale: number = 200
+    maxScale: number = 200,
+    autoFit: boolean = true
 ) => {
     const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
     const [scale, setScale] = useState(minScale);
@@ -17,7 +18,8 @@ export const useViewport = (
         const padding = 40;
         const availW = viewportSize.w - padding;
         const availH = viewportSize.h - padding;
-        const newScale = Math.floor(Math.min(availW / contentWidth, availH / contentHeight));
+        const rawScale = Math.min(availW / contentWidth, availH / contentHeight);
+        const newScale = rawScale >= 1 ? Math.floor(rawScale) : rawScale;
         const finalScale = Math.max(minScale, newScale);
 
         setScale(finalScale);
@@ -27,13 +29,12 @@ export const useViewport = (
         });
     }, [viewportSize, contentWidth, contentHeight, minScale]);
 
-    // Auto-fit on first valid size
     useEffect(() => {
-        if (!hasInitialized.current && viewportSize.w > 0 && viewportSize.h > 0) {
+        if (autoFit && !hasInitialized.current && viewportSize.w > 0 && viewportSize.h > 0) {
             fitToScreen();
             hasInitialized.current = true;
         }
-    }, [viewportSize, fitToScreen]);
+    }, [viewportSize, fitToScreen, autoFit]);
 
     const handleZoom = useCallback((factor: number, centerX: number, centerY: number) => {
         const newScale = Math.max(minScale, Math.min(maxScale, scale * factor));
@@ -51,7 +52,11 @@ export const useViewport = (
         setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
     }, []);
 
-    // Helper to attach to a container div to measure its size
+    const setZoom = useCallback((newScale: number) => {
+        const clamped = Math.max(minScale, Math.min(maxScale, newScale));
+        setScale(clamped);
+    }, [minScale, maxScale]);
+
     const containerRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
         const container = containerRef.current;
@@ -80,6 +85,7 @@ export const useViewport = (
         containerRef,
         fitToScreen,
         handleZoom,
-        handlePan
+        handlePan,
+        setZoom
     };
 };

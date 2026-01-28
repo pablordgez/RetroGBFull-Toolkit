@@ -15,6 +15,10 @@ export const TemporaryHub = () => {
       window.electron.ipcRenderer.send('open-tileset-editor-window');
   }
 
+  const openTilemapEditor = () => {
+      window.electron.ipcRenderer.send('open-tilemap-editor-window');
+  }
+
   return (
     <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
       <h1>My Electron App</h1>
@@ -31,6 +35,10 @@ export const TemporaryHub = () => {
 
       <button onClick={openTilesetEditor} style={{ marginTop: '20px', marginLeft: '10px' }}>
         Open Tileset Editor
+      </button>
+
+      <button onClick={openTilemapEditor} style={{ marginTop: '20px', marginLeft: '10px' }}>
+        Open Tilemap Editor
       </button>
 
     </div>

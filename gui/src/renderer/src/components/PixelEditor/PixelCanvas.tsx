@@ -2,10 +2,11 @@ import React, { useRef, useCallback, useEffect } from 'react';
 import { usePixelGridRender } from './usePixelGridRender';
 
 interface PixelCanvasProps {
-    grid: Uint8Array;
+    grid: Uint8Array | number[];
     width: number;
     height: number;
     palette: string[];
+    tileset?: (string | null)[];
     transparentColor?: string;
     transparencyGridBackground?: string;
     backgroundColor?: string;
@@ -25,7 +26,7 @@ interface PixelCanvasProps {
 }
 
 export const PixelCanvas: React.FC<PixelCanvasProps> = ({
-    grid, width, height, palette,
+    grid, width, height, palette, tileset,
     transparentColor, transparencyGridBackground, backgroundColor, gridColor, majorGridColor, gridSize, eraserIndex,
     viewportSize, scale, pan,
     onPixelInput, onPan, onZoom
@@ -38,7 +39,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
         canvasRef: canvasRef as React.RefObject<HTMLCanvasElement>,
         grid, width, height,
         viewportSize, scale, pan,
-        palette,
+        palette, tileset,
         transparentColor, transparencyGridBackground, backgroundColor, gridColor, majorGridColor, gridSize, eraserIndex
     });
 

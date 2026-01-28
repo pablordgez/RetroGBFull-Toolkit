@@ -1,4 +1,3 @@
-/* Global Reset for this app view */
 body {
     background-color: #c4bebb;
     margin: 0;
@@ -18,7 +17,6 @@ h3 {
     padding-bottom: 5px;
 }
 
-/* Layout */
 .main-layout {
     display: flex;
     height: 100%;
@@ -36,7 +34,6 @@ h3 {
     overflow: auto;
 }
 
-/* Component: Toolbox (The Styled Containers) */
 .toolbox {
     border: 4px solid #0f380f;
     padding: 20px;
@@ -47,7 +44,6 @@ h3 {
     flex-shrink: 0;
 }
 
-/* Component: Inputs */
 .input-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .input-row label { flex: 1; }
 .input-row input { width: 100%; box-sizing: border-box; }
@@ -71,7 +67,6 @@ input {
 }
 input:focus { outline: none; background-color: #c4bebb; }
 
-/* Component: Buttons */
 .button-row { display: flex; gap: 15px; margin-bottom: 15px; }
 .button-row button { flex: 1; }
 
@@ -91,7 +86,6 @@ button {
 button:active { transform: translate(4px, 4px); box-shadow: none; }
 button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #8bac0f; color: #0f380f; }
 
-/* Component: Palette */
 .palette-row { display: flex; gap: 10px; justify-content: space-between; }
 .palette-swatch {
     flex: 1;
@@ -101,7 +95,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #8bac0f; 
     border-radius: 6px;
 }
 
-/* Component: Animation Controls */
 .anim-controls-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 15px; }
 .anim-play-row { display: flex; align-items: center; gap: 15px; margin-top: 15px; }
 .anim-btn { flex: 1; min-width: 40px; text-align: center; padding: 5px; }
@@ -117,12 +110,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #8bac0f; 
 .fps-label { font-size: 1.2em; white-space: nowrap; flex: 1; }
 .fps-input { width: 60px; text-align: center; }
 
-/* Component: Zoom */
 .zoom-controls { display: flex; justify-content: space-between; align-items: center; }
 .zoom-text { font-size: 1.4em; margin: 0; font-weight: bold; }
 .reset-btn { padding: 4px 10px; font-size: 1em; }
 
-/* Component: Canvas */
 .grid-container {
     flex: 1;
     height: 100%;

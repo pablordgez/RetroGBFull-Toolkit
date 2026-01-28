@@ -110,4 +110,23 @@ ipcMain.on('open-tileset-editor-window', () => {
   }
 });
 
+ipcMain.on('open-tilemap-editor-window', () => {
+  const tilemapEditorWindow = new BrowserWindow({
+    width: 1000,
+    height: 1000,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  });
+  
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    tilemapEditorWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#/tilemap-editor`);
+  }
+  else {
+    tilemapEditorWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/tilemap-editor' });
+  }
+});
+
 

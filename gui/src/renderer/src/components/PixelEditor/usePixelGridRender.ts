@@ -1,14 +1,15 @@
-import { useLayoutEffect, RefObject } from 'react';
+import { useLayoutEffect, RefObject, useRef } from 'react';
 
 export interface PixelGridRenderOptions {
     canvasRef: RefObject<HTMLCanvasElement>;
-    grid: Uint8Array;
+    grid: Uint8Array | number[];
     width: number;
     height: number;
     viewportSize: { w: number, h: number };
     scale: number;
     pan: { x: number, y: number };
     palette: string[];
+    tileset?: (string | null)[];
     transparentColor?: string;
     transparencyGridBackground?: string;
     backgroundColor?: string;
@@ -32,6 +33,7 @@ export const usePixelGridRender = ({
     scale,
     pan,
     palette,
+    tileset,
     transparentColor = 'rgba(15, 56, 15, 0.25)',
     transparencyGridBackground = '#9bbc0f',
     backgroundColor = '#202020',
@@ -40,6 +42,8 @@ export const usePixelGridRender = ({
     gridSize = { w: 8, h: 8 },
     eraserIndex = 0
 }: PixelGridRenderOptions) => {
+    const imageCache = useRef<Map<string, HTMLImageElement>>(new Map());
+
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -61,24 +65,62 @@ export const usePixelGridRender = ({
 
         const halfScale = scale / 2;
 
+        ctx.imageSmoothingEnabled = false;
+
         for (let y = rowStart; y < rowEnd; y++) {
             for (let x = colStart; x < colEnd; x++) {
                 const i = y * width + x;
-                const colorIndex = grid[i];
+                const value = grid[i];
 
                 const drawX = Math.floor(pan.x + x * scale);
                 const drawY = Math.floor(pan.y + y * scale);
                 const drawSize = Math.ceil(scale);
 
-                if (colorIndex === eraserIndex) {
+                // Tile render mode
+                if (tileset) {
+                    if (value === -1) {
+                         // Empty tile
+                         // Potentially draw placeholder or nothing
+                    } else {
+                        const tileUrl = tileset[value];
+                        if (tileUrl) {
+                            let img = imageCache.current.get(tileUrl);
+                            if (!img) {
+                                img = new Image();
+                                img.src = tileUrl;
+                                imageCache.current.set(tileUrl, img);
+                            }
+                            
+                            if (img.complete) {
+                                ctx.drawImage(img, drawX, drawY, drawSize, drawSize);
+                            } else {
+                                // If not loaded, we can try to force a re-render later, 
+                                // but typically dataURLs are instant. 
+                                // For robust implementation, we'd need onload handler to trigger re-render.
+                                // For now, simple attempt.
+                                if(!img.onload) {
+                                    img.onload = () => {
+                                        // Trigger re-render?
+                                        // We can't easily force re-render from here without state.
+                                        // But subsequent renders will pick it up.
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    continue; 
+                }
+
+                // Pixel render mode
+                if (value === eraserIndex) {
                      ctx.fillStyle = transparencyGridBackground;
                      ctx.fillRect(drawX, drawY, drawSize, drawSize);
 
                      ctx.fillStyle = transparentColor;
                      ctx.fillRect(drawX, drawY, halfScale, halfScale);
                      ctx.fillRect(drawX + halfScale, drawY + halfScale, halfScale, halfScale);
-                } else if (palette[colorIndex]) {
-                    ctx.fillStyle = palette[colorIndex];
+                } else if (palette[value]) {
+                    ctx.fillStyle = palette[value];
                     ctx.fillRect(drawX, drawY, drawSize, drawSize);
                 }
             }

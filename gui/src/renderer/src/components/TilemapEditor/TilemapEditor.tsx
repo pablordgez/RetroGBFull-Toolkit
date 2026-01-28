@@ -1,0 +1,332 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import '../style/SpriteEditor.css';
+import { PixelCanvas } from '../PixelEditor/PixelCanvas';
+import { useViewport } from '../hooks/viewport/useViewport';
+import { Tileset, TilesetRef } from '../Tileset/Tileset';
+import { useHistory } from '../hooks/history/useHistory';
+import { floodFill } from '../utils/pixelAlgorithms';
+
+const DEFAULT_MAP_W = 20;
+const DEFAULT_MAP_H = 18;
+const TILE_SIZE = { w: 8, h: 8 };
+
+
+// SAMPLE TILESET UNTIL TILESET IS INTEGRATED IN THIRD PHASE OF PLANNING
+const createPatternTile = (type: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 8;
+    canvas.height = 8;
+    const ctx = canvas.getContext('2d');
+    if(!ctx) return '';
+    
+    const c0 = '#9bbc0f';
+    const c1 = '#8bac0f';
+    const c2 = '#306230';
+    const c3 = '#0f380f';
+
+    ctx.fillStyle = c0;
+    ctx.fillRect(0,0,8,8);
+
+    if (type === 0) {
+        ctx.fillStyle = c1;
+        ctx.fillRect(0,0,8,8);
+        ctx.fillStyle = c2;
+        ctx.fillRect(1,1,1,2);
+        ctx.fillRect(3,5,1,2);
+        ctx.fillRect(6,2,1,2);
+    } else if (type === 1) {
+        ctx.fillStyle = c1;
+        ctx.fillRect(0,0,8,4);
+        ctx.fillStyle = c2;
+        ctx.fillRect(0,3,8,1);
+        ctx.fillRect(0,7,8,1);
+        ctx.fillRect(3,0,1,3);
+        ctx.fillRect(7,4,1,3);
+    } else if (type === 2) {
+        ctx.fillStyle = c0;
+        ctx.fillRect(0,0,8,8);
+        ctx.fillStyle = c1;
+        ctx.fillRect(0,2,2,1); ctx.fillRect(3,1,2,1); ctx.fillRect(6,2,2,1);
+        ctx.fillRect(0,5,2,1); ctx.fillRect(3,6,2,1); ctx.fillRect(6,5,2,1);
+    } else if (type === 3) {
+        ctx.fillStyle = c2;
+        ctx.fillRect(0,0,8,8);
+        ctx.fillStyle = c1;
+        ctx.fillRect(1,1,6,6);
+        ctx.fillStyle = c2;
+        ctx.fillRect(2,2,4,4);
+        ctx.fillStyle = c1;
+        ctx.fillRect(2,2,1,1); ctx.fillRect(5,2,1,1);
+        ctx.fillRect(3,3,2,2);
+        ctx.fillRect(2,5,1,1); ctx.fillRect(5,5,1,1);
+    } else if (type === 4) {
+         ctx.fillStyle = c1;
+         ctx.fillRect(0,0,8,8);
+         ctx.fillStyle = c3;
+         ctx.fillRect(1,1,6,6);
+         ctx.fillStyle = c2;
+         ctx.fillRect(2,2,4,4);
+    } else {
+        ctx.fillStyle = c0;
+        ctx.fillRect(0,0,8,8);
+        ctx.fillStyle = c3;
+        ctx.fillRect(0,0,4,4);
+        ctx.fillRect(4,4,4,4);
+    }
+    
+    return canvas.toDataURL();
+}
+
+export const TilemapEditor = () => {
+    const [mapWidth, setMapWidth] = useState(DEFAULT_MAP_W);
+    const [mapHeight, setMapHeight] = useState(DEFAULT_MAP_H);
+    
+    const [grid, setGrid] = useState<number[]>(new Array(DEFAULT_MAP_W * DEFAULT_MAP_H).fill(0));
+    
+    const [tilesetImages, setTilesetImages] = useState<(string | null)[]>([]);
+    const [selectedTileIndex, setSelectedTileIndex] = useState(0);
+    const [tool, setTool] = useState<'brush' | 'fill'>('brush');
+    
+    const [inputSize, setInputSize] = useState({ w: DEFAULT_MAP_W.toString(), h: DEFAULT_MAP_H.toString() });
+
+    const tilesetRef = useRef<TilesetRef>(null);
+
+    const { 
+        viewportSize, scale, pan, 
+        containerRef, fitToScreen, handleZoom, handlePan
+    } = useViewport(mapWidth, mapHeight);
+
+    const { record, undo, redo, canUndo, canRedo } = useHistory();
+
+    useEffect(() => {
+        const handleKeys = (e: KeyboardEvent) => {
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key.toLowerCase() === 'z') {
+                    e.preventDefault();
+                    e.shiftKey ? redo() : undo();
+                } else if (e.key.toLowerCase() === 'y') {
+                    e.preventDefault();
+                    redo();
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeys);
+        return () => window.removeEventListener('keydown', handleKeys);
+    }, [undo, redo]);
+
+    useEffect(() => {
+        const images: string[] = [];
+        for(let i=0; i<6; i++) {
+            images.push(createPatternTile(i));
+        }
+        setTilesetImages(images);
+        
+        images.forEach((img, i) => {
+            tilesetRef.current?.updateTile(i, img);
+        });
+    }, []);
+
+    const performFloodFill = useCallback((x: number, y: number, targetTile: number) => {
+        const startTile = grid[y * mapWidth + x];
+        if (startTile === targetTile) return;
+
+        const pixelsToFill = floodFill(
+            x, y, mapWidth, mapHeight,
+            (gx, gy) => grid[gy * mapWidth + gx],
+            targetTile
+        );
+
+        if (pixelsToFill.length === 0) return;
+
+        const changes = pixelsToFill.map(p => ({
+            index: p.index,
+            oldTile: grid[p.index],
+            newTile: targetTile
+        }));
+
+        setGrid(prev => {
+            const newGrid = [...prev];
+            pixelsToFill.forEach(p => newGrid[p.index] = targetTile);
+            return newGrid;
+        });
+
+        record({
+            undo: () => {
+                setGrid(g => {
+                    const ng = [...g];
+                    changes.forEach(c => ng[c.index] = c.oldTile);
+                    return ng;
+                });
+            },
+            redo: () => {
+                 setGrid(g => {
+                    const ng = [...g];
+                    changes.forEach(c => ng[c.index] = c.newTile);
+                    return ng;
+                });
+            }
+        });
+
+    }, [grid, mapWidth, mapHeight, record]);
+
+    const isDrawingRef = useRef(false);
+    const historyBufferRef = useRef<Map<number, number>>(new Map());
+
+    const handleTileInput = useCallback((x: number, y: number, type: 'down' | 'move' | 'up' | 'leave', button: number) => {
+        if (type === 'up' || type === 'leave') {
+             if (isDrawingRef.current) {
+                isDrawingRef.current = false;
+                if (historyBufferRef.current.size > 0) {
+                     const changes = Array.from(historyBufferRef.current.entries()).map(([i, oldT]) => ({
+                         index: i,
+                         oldTile: oldT,
+                         newTile: (button === 2) ? -1 : selectedTileIndex
+                     }));
+
+                     record({
+                         undo: () => {
+                             setGrid(g => {
+                                 const ng = [...g];
+                                 changes.forEach(c => ng[c.index] = c.oldTile);
+                                 return ng;
+                             });
+                         },
+                         redo: () => {
+                             setGrid(g => {
+                                 const ng = [...g];
+                                 changes.forEach(c => ng[c.index] = c.newTile);
+                                 return ng;
+                             });
+                         }
+                     });
+                }
+                historyBufferRef.current.clear();
+             }
+             return;
+        }
+
+        if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) return;
+
+        const targetTile = (button === 2) ? -1 : selectedTileIndex;
+
+        if (tool === 'fill' && type === 'down') {
+            performFloodFill(x, y, targetTile);
+            return;
+        }
+
+        if (tool === 'fill') return;
+
+        if (type === 'down') {
+            isDrawingRef.current = true;
+            historyBufferRef.current.clear();
+        }
+
+        if (isDrawingRef.current) {
+             const index = y * mapWidth + x;
+             setGrid(prev => {
+                const currentTile = prev[index];
+                if (currentTile !== targetTile) {
+                    if (!historyBufferRef.current.has(index)) {
+                        historyBufferRef.current.set(index, currentTile);
+                    }
+                    const newGrid = [...prev];
+                    newGrid[index] = targetTile;
+                    return newGrid;
+                }
+                return prev;
+             });
+        }
+
+    }, [mapWidth, mapHeight, selectedTileIndex, record]);
+
+    const handleResize = () => {
+        const w = parseInt(inputSize.w);
+        const h = parseInt(inputSize.h);
+        if(!isNaN(w) && !isNaN(h) && (w !== mapWidth || h !== mapHeight)) {
+            setMapWidth(w);
+            setMapHeight(h);
+            setGrid(new Array(w * h).fill(0));
+            fitToScreen();
+        }
+    }
+
+    return (
+        <div className="main-layout">
+            <div className="sidebar">
+                <h3>Tilemap Editor</h3>
+                
+                <div className="toolbox">
+                    <div className="input-row">
+                        <label>Width</label>
+                        <input 
+                            value={inputSize.w} 
+                            onChange={(e) => setInputSize({...inputSize, w: e.target.value})}
+                            onBlur={handleResize}
+                        />
+                    </div>
+                    <div className="input-row" style={{ marginTop: '10px' }}>
+                        <label>Height</label>
+                        <input 
+                            value={inputSize.h} 
+                            onChange={(e) => setInputSize({...inputSize, h: e.target.value})} 
+                            onBlur={handleResize}
+                        />
+                    </div>
+                     <div className="button-row" style={{ marginTop: '20px' }}>
+                        <button disabled={!canUndo} onClick={undo}>Undo</button>
+                        <button disabled={!canRedo} onClick={redo}>Redo</button>
+                    </div>
+                </div>
+
+                <div className="toolbox">
+                    <h3>Tools</h3>
+                    <div className="button-row">
+                        <button 
+                            style={{ backgroundColor: tool === 'brush' ? '#c4bebb' : undefined, color: tool === 'brush' ? '#0f380f' : undefined }}
+                            onClick={() => setTool('brush')}>
+                            Brush
+                        </button>
+                        <button 
+                            style={{ backgroundColor: tool === 'fill' ? '#c4bebb' : undefined, color: tool === 'fill' ? '#0f380f' : undefined }}
+                            onClick={() => setTool('fill')}>
+                            Fill
+                        </button>
+                    </div>
+                </div>
+
+                <h3>Tileset</h3>
+                <div className="toolbox" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    <Tileset 
+                        ref={tilesetRef}
+                        onSelectTile={setSelectedTileIndex}
+                        className="tilemap-tileset"
+                        allowAdd={false}
+                    />
+                </div>
+            </div>
+
+            <div
+                ref={containerRef}
+                className="grid-container"
+                style={{ overflow: 'hidden', backgroundColor: '#202020' }}
+            >
+                <PixelCanvas
+                    grid={grid}
+                    width={mapWidth}
+                    height={mapHeight}
+                    tileset={tilesetImages}
+                    palette={[]}
+                    viewportSize={viewportSize}
+                    scale={scale}
+                    pan={pan}
+                    onPixelInput={handleTileInput}
+                    onPan={handlePan}
+                    onZoom={handleZoom}
+                    backgroundColor="#8bac0f"
+                    gridColor="rgba(15, 56, 15, 0.3)"
+                    eraserIndex={-1}
+                />
+            </div>
+        </div>
+    );
+};

@@ -2,39 +2,43 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background-color: #2b2b2b;
-    padding: 10px;
-    border-radius: 4px;
-    width: fit-content;
+    background-color: transparent;
+    padding: 0;
+    border-radius: 0;
+    width: 100%;
 }
 
 .tileset-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    grid-template-rows: repeat(2, 1fr);
     gap: 4px;
+    background-color: #8bac0f;
+    padding: 5px;
+    border: 3px solid #0f380f;
+    box-shadow: inset 2px 2px 5px rgba(15, 56, 15, 0.4);
 }
 
 .tileset-cell {
-    width: 32px;
-    height: 32px;
-    background-color: #1a1a1a;
-    border: 2px solid #333;
+    aspect-ratio: 1;
+    background-color: #9bbc0f;
+    border: 2px solid transparent;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     image-rendering: pixelated;
-    transition: all 0.1s ease;
+    transition: none;
 }
 
 .tileset-cell.selected {
-    border-color: #9bbc0f;
-    box-shadow: 0 0 4px #9bbc0f;
+    border: 3px solid #0f380f;
+    box-shadow: inset 0 0 0 2px #c4bebb;
+    position: relative;
+    background-color: #c4bebb;
 }
 
-.tileset-cell:hover {
-    border-color: #8bac0f;
+.tileset-cell:hover:not(.selected) {
+    border: 2px dashed #306230;
 }
 
 .tileset-cell img {
@@ -45,39 +49,47 @@
 }
 
 .tileset-placeholder {
-    color: #666;
+    color: #0f380f;
     font-size: 20px;
     font-weight: bold;
     user-select: none;
+    opacity: 0.3;
 }
 
 .tileset-controls {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    color: #ccc;
-    font-size: 0.8em;
+    color: #0f380f;
+    font-family: monospace;
+    font-weight: bold;
+    font-size: 1.2em;
 }
 
 .tileset-nav-btn {
-    background: #444;
-    border: none;
-    color: white;
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
+    background-color: #306230;
+    color: #9bbc0f;
+    border: 3px solid #0f380f;
+    padding: 5px;
+    width: 30px;
+    height: 30px;
+    font-weight: bold;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    box-shadow: 3px 3px 0px #0f380f;
 }
 
 .tileset-nav-btn:disabled {
-    background: #2a2a2a;
-    color: #555;
+    opacity: 0.5;
     cursor: not-allowed;
+    background-color: #8bac0f;
+    box-shadow: none;
+    transform: translate(3px, 3px);
 }
 
-.tileset-nav-btn:hover:not(:disabled) {
-    background: #555;
+.tileset-nav-btn:active:not(:disabled) {
+    transform: translate(3px, 3px);
+    box-shadow: none;
 }
