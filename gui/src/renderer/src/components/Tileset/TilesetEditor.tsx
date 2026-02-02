@@ -228,20 +228,24 @@ export const TilesetEditor = () => {
                 />
 
                 <div className="toolbox">
-                    <h3>History</h3>
+                    <h3>Misc</h3>
                     <div className="button-row">
                         <button onClick={undo} disabled={!canUndo}>Undo</button>
                         <button onClick={redo} disabled={!canRedo}>Redo</button>
                     </div>
+                    
+                    <div className="button-row">
+                        <button
+                            onClick={handleExport}
+                            style={{ backgroundColor: exportLabel === 'COPIED!' ? '#0f380f' : undefined, color: exportLabel === 'COPIED!' ? '#9bbc0f' : undefined }}
+                        >
+                            {exportLabel}
+                        </button>
+                    </div>
+
                      <div className="zoom-controls">
                         <p className="zoom-text">Zoom: {Math.round(scale * 5)}%</p>
                         <button onClick={fitToScreen} className="reset-btn">Reset View</button>
-                    </div>
-                </div>
-
-                <div className="toolbox">
-                    <div style={{ marginTop: '15px', fontSize: '1.2em', color: '#0f380f' }}>
-                         <button onClick={handleExport} style={{ width: '100%', padding: '10px', fontWeight: 'bold' }}>{exportLabel}</button>
                     </div>
                 </div>
             </div>

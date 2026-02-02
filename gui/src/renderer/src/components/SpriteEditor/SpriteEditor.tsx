@@ -293,7 +293,7 @@ export const SpriteEditor = () => {
                 />
 
                 <div className="toolbox">
-                    <h3>History</h3>
+                    <h3>Misc</h3>
                     <div className="button-row">
                         <button onClick={undo} disabled={!canUndo}>Undo</button>
                         <button onClick={redo} disabled={!canRedo}>Redo</button>

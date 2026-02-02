@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import '../style/SpriteEditor.css';
 import { PixelCanvas } from '../PixelEditor/PixelCanvas';
 import { useViewport } from '../hooks/viewport/useViewport';
 import { Tileset, TilesetRef } from '../Tileset/Tileset';
 import { useHistory } from '../hooks/history/useHistory';
 import { floodFill } from '../utils/pixelAlgorithms';
+import { Tilemap } from './Tilemap';
 
 const DEFAULT_MAP_W = 20;
 const DEFAULT_MAP_H = 18;
@@ -88,6 +89,7 @@ export const TilemapEditor = () => {
     const [tool, setTool] = useState<'brush' | 'fill'>('brush');
     
     const [inputSize, setInputSize] = useState({ w: DEFAULT_MAP_W.toString(), h: DEFAULT_MAP_H.toString() });
+    const [exportLabel, setExportLabel] = useState("EXPORT DATA");
 
     const tilesetRef = useRef<TilesetRef>(null);
 
@@ -125,6 +127,22 @@ export const TilemapEditor = () => {
             tilesetRef.current?.updateTile(i, img);
         });
     }, []);
+    const tilemap = useMemo(() => {
+        return new Tilemap(mapWidth, mapHeight, new Uint8Array(grid));
+    }, [mapWidth, mapHeight, grid]);
+
+    const handleExport = async () => {
+        try {
+            const encodedString = tilemap.encode();
+            await navigator.clipboard.writeText(encodedString);
+            setExportLabel("COPIED!");
+            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
+        } catch (error) {
+            console.error("Export failed:", error);
+            setExportLabel("ERROR!");
+            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
+        }
+    };
 
     const performFloodFill = useCallback((x: number, y: number, targetTile: number) => {
         const startTile = grid[y * mapWidth + x];
@@ -180,7 +198,7 @@ export const TilemapEditor = () => {
                      const changes = Array.from(historyBufferRef.current.entries()).map(([i, oldT]) => ({
                          index: i,
                          oldTile: oldT,
-                         newTile: (button === 2) ? -1 : selectedTileIndex
+                         newTile: (button === 2) ? 0 : selectedTileIndex
                      }));
 
                      record({
@@ -207,7 +225,7 @@ export const TilemapEditor = () => {
 
         if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) return;
 
-        const targetTile = (button === 2) ? -1 : selectedTileIndex;
+        const targetTile = (button === 2) ? 0 : selectedTileIndex;
 
         if (tool === 'fill' && type === 'down') {
             performFloodFill(x, y, targetTile);
@@ -257,24 +275,16 @@ export const TilemapEditor = () => {
                 
                 <div className="toolbox">
                     <div className="input-row">
-                        <label>Width</label>
-                        <input 
+                        <label>W: <input 
                             value={inputSize.w} 
                             onChange={(e) => setInputSize({...inputSize, w: e.target.value})}
                             onBlur={handleResize}
-                        />
-                    </div>
-                    <div className="input-row" style={{ marginTop: '10px' }}>
-                        <label>Height</label>
-                        <input 
+                        /></label>
+                        <label>H: <input 
                             value={inputSize.h} 
                             onChange={(e) => setInputSize({...inputSize, h: e.target.value})} 
                             onBlur={handleResize}
-                        />
-                    </div>
-                     <div className="button-row" style={{ marginTop: '20px' }}>
-                        <button disabled={!canUndo} onClick={undo}>Undo</button>
-                        <button disabled={!canRedo} onClick={redo}>Redo</button>
+                        /></label>
                     </div>
                 </div>
 
@@ -282,15 +292,35 @@ export const TilemapEditor = () => {
                     <h3>Tools</h3>
                     <div className="button-row">
                         <button 
-                            style={{ backgroundColor: tool === 'brush' ? '#c4bebb' : undefined, color: tool === 'brush' ? '#0f380f' : undefined }}
+                            style={{ fontWeight: tool === 'brush' ? 'bold' : 'normal', backgroundColor: tool === 'brush' ? '#ddd' : undefined }}
                             onClick={() => setTool('brush')}>
                             Brush
                         </button>
                         <button 
-                            style={{ backgroundColor: tool === 'fill' ? '#c4bebb' : undefined, color: tool === 'fill' ? '#0f380f' : undefined }}
+                            style={{ fontWeight: tool === 'fill' ? 'bold' : 'normal', backgroundColor: tool === 'fill' ? '#ddd' : undefined }}
                             onClick={() => setTool('fill')}>
                             Fill
                         </button>
+                    </div>
+                </div>
+
+                <div className="toolbox">
+                    <h3>Misc</h3>
+                    <div className="button-row">
+                        <button disabled={!canUndo} onClick={undo}>Undo</button>
+                        <button disabled={!canRedo} onClick={redo}>Redo</button>
+                    </div>
+                    <div className="button-row">
+                        <button
+                            onClick={handleExport}
+                            style={{ backgroundColor: exportLabel === 'COPIED!' ? '#0f380f' : undefined, color: exportLabel === 'COPIED!' ? '#9bbc0f' : undefined }}
+                        >
+                            {exportLabel}
+                        </button>
+                    </div>
+                    <div className="zoom-controls">
+                        <p className="zoom-text">Zoom: {Math.round(scale * 5)}%</p>
+                        <button onClick={fitToScreen} className="reset-btn">Reset View</button>
                     </div>
                 </div>
 
@@ -322,7 +352,6 @@ export const TilemapEditor = () => {
                     onPixelInput={handleTileInput}
                     onPan={handlePan}
                     onZoom={handleZoom}
-                    backgroundColor="#8bac0f"
                     gridColor="rgba(15, 56, 15, 0.3)"
                     eraserIndex={-1}
                 />
