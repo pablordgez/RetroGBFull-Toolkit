@@ -9,6 +9,7 @@ import { useViewport } from '../hooks/viewport/useViewport';
 import { Palette } from './Palette';
 import { AnimationControls } from './AnimationControls';
 import { Sprite } from './Sprite';
+import { resizeGrid, applyGridChanges } from '../utils/gridUtils';
 
 export const SpriteEditor = () => { 
     const [width, setWidth] = useState(DEFAULT_W); 
@@ -47,11 +48,7 @@ export const SpriteEditor = () => {
         if (ops.length === 0) return;
         setFrames(prevFrames => {
              const newFrames = [...prevFrames];
-             const newGrid = new Uint8Array(newFrames[currentFrame]);
-             ops.forEach(({ index, color }) => {
-                 newGrid[index] = color;
-             });
-             newFrames[currentFrame] = newGrid;
+             newFrames[currentFrame] = applyGridChanges(newFrames[currentFrame], ops);
              return newFrames;
         });
     }, [currentFrame]);
@@ -64,9 +61,8 @@ export const SpriteEditor = () => {
             undo: () => {
                 setFrames(f => {
                     const newF = [...f];
-                    const target = new Uint8Array(newF[frameIdx]);
-                    changeList.forEach(({ index, oldColor }) => target[index] = oldColor);
-                    newF[frameIdx] = target;
+                    const ops = changeList.map(c => ({ index: c.index, color: c.oldColor }));
+                    newF[frameIdx] = applyGridChanges(newF[frameIdx], ops);
                     return newF;
                 });
                 setCurrentFrame(frameIdx);
@@ -74,9 +70,8 @@ export const SpriteEditor = () => {
             redo: () => {
                 setFrames(f => {
                     const newF = [...f];
-                    const target = new Uint8Array(newF[frameIdx]);
-                    changeList.forEach(({ index, newColor }) => target[index] = newColor);
-                    newF[frameIdx] = target;
+                    const ops = changeList.map(c => ({ index: c.index, color: c.newColor }));
+                    newF[frameIdx] = applyGridChanges(newF[frameIdx], ops);
                     return newF;
                 });
                 setCurrentFrame(frameIdx);
@@ -142,21 +137,11 @@ export const SpriteEditor = () => {
 
         if (safeW === width && safeH === height) return;
 
-        const resizeFrame = (src: Uint8Array) => {
-            const newGrid = new Uint8Array(safeW * safeH).fill(ERASER_COLOR);
-            for (let y = 0; y < Math.min(height, safeH); y++) {
-                for (let x = 0; x < Math.min(width, safeW); x++) {
-                    newGrid[y * safeW + x] = src[y * width + x];
-                }
-            }
-            return newGrid;
-        };
-        
         const prevFrames = [...frames];
         const prevWidth = width;
         const prevHeight = height;
 
-        const newFrames = frames.map(resizeFrame);
+        const newFrames = frames.map(src => resizeGrid(src, width, height, safeW, safeH, ERASER_COLOR));
         
         record({
             undo: () => {

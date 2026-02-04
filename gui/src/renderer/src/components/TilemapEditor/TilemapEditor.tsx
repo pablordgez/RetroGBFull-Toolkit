@@ -6,14 +6,35 @@ import { Tileset, TilesetRef } from '../Tileset/Tileset';
 import { useHistory } from '../hooks/history/useHistory';
 import { floodFill } from '../utils/pixelAlgorithms';
 import { Tilemap } from './Tilemap';
+import { applyGridChanges } from '../utils/gridUtils';
 
 const DEFAULT_MAP_W = 20;
 const DEFAULT_MAP_H = 18;
 const TILE_SIZE = { w: 8, h: 8 };
 
+export const TilemapEditor = () => {
+    const [mapWidth, setMapWidth] = useState(DEFAULT_MAP_W);
+    const [mapHeight, setMapHeight] = useState(DEFAULT_MAP_H);
+    
+    const [grid, setGrid] = useState<number[]>(new Array(DEFAULT_MAP_W * DEFAULT_MAP_H).fill(0));
+    
+    const [tilesetImages, setTilesetImages] = useState<(string | null)[]>([]);
+    const [selectedTileIndex, setSelectedTileIndex] = useState(0);
+    const [tool, setTool] = useState<'brush' | 'fill'>('brush');
+    
+    const [inputSize, setInputSize] = useState({ w: DEFAULT_MAP_W.toString(), h: DEFAULT_MAP_H.toString() });
+    const [exportLabel, setExportLabel] = useState("EXPORT DATA");
 
-// SAMPLE TILESET UNTIL TILESET IS INTEGRATED IN THIRD PHASE OF PLANNING
-const createPatternTile = (type: number) => {
+    const tilesetRef = useRef<TilesetRef>(null);
+
+    const { 
+        viewportSize, scale, pan, 
+        containerRef, fitToScreen, handleZoom, handlePan
+    } = useViewport(mapWidth, mapHeight);
+
+    const { record, undo, redo, canUndo, canRedo } = useHistory();
+
+    const createPatternTile = (type: number) => {
     const canvas = document.createElement('canvas');
     canvas.width = 8;
     canvas.height = 8;
@@ -78,27 +99,7 @@ const createPatternTile = (type: number) => {
     return canvas.toDataURL();
 }
 
-export const TilemapEditor = () => {
-    const [mapWidth, setMapWidth] = useState(DEFAULT_MAP_W);
-    const [mapHeight, setMapHeight] = useState(DEFAULT_MAP_H);
-    
-    const [grid, setGrid] = useState<number[]>(new Array(DEFAULT_MAP_W * DEFAULT_MAP_H).fill(0));
-    
-    const [tilesetImages, setTilesetImages] = useState<(string | null)[]>([]);
-    const [selectedTileIndex, setSelectedTileIndex] = useState(0);
-    const [tool, setTool] = useState<'brush' | 'fill'>('brush');
-    
-    const [inputSize, setInputSize] = useState({ w: DEFAULT_MAP_W.toString(), h: DEFAULT_MAP_H.toString() });
-    const [exportLabel, setExportLabel] = useState("EXPORT DATA");
 
-    const tilesetRef = useRef<TilesetRef>(null);
-
-    const { 
-        viewportSize, scale, pan, 
-        containerRef, fitToScreen, handleZoom, handlePan
-    } = useViewport(mapWidth, mapHeight);
-
-    const { record, undo, redo, canUndo, canRedo } = useHistory();
 
     useEffect(() => {
         const handleKeys = (e: KeyboardEvent) => {
@@ -163,24 +164,21 @@ export const TilemapEditor = () => {
         }));
 
         setGrid(prev => {
-            const newGrid = [...prev];
-            pixelsToFill.forEach(p => newGrid[p.index] = targetTile);
-            return newGrid;
+            const ops = pixelsToFill.map(p => ({ index: p.index, color: targetTile }));
+            return applyGridChanges(prev, ops) as number[];
         });
 
         record({
             undo: () => {
                 setGrid(g => {
-                    const ng = [...g];
-                    changes.forEach(c => ng[c.index] = c.oldTile);
-                    return ng;
+                    const ops = changes.map(c => ({ index: c.index, color: c.oldTile }));
+                    return applyGridChanges(g, ops) as number[];
                 });
             },
             redo: () => {
                  setGrid(g => {
-                    const ng = [...g];
-                    changes.forEach(c => ng[c.index] = c.newTile);
-                    return ng;
+                    const ops = changes.map(c => ({ index: c.index, color: c.newTile }));
+                    return applyGridChanges(g, ops) as number[];
                 });
             }
         });
@@ -247,9 +245,7 @@ export const TilemapEditor = () => {
                     if (!historyBufferRef.current.has(index)) {
                         historyBufferRef.current.set(index, currentTile);
                     }
-                    const newGrid = [...prev];
-                    newGrid[index] = targetTile;
-                    return newGrid;
+                    return applyGridChanges(prev, [{ index, color: targetTile }]) as number[];
                 }
                 return prev;
              });

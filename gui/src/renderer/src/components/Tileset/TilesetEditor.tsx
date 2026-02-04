@@ -10,6 +10,7 @@ import { Tileset, TilesetRef } from './Tileset';
 import { Tileset as TilesetClass } from './TilesetModel';
 import { Tile } from '../PixelEditor/Tile';
 import { renderTileToDataURL } from '../utils/imageUtils';
+import { applyGridChanges } from '../utils/gridUtils';
 
 export const TilesetEditor = () => {
     const width = 8;
@@ -45,11 +46,7 @@ export const TilesetEditor = () => {
                 newData[selectedTileIndex] = new Uint8Array(width * height).fill(ERASER_COLOR);
             }
             
-            const newGrid = new Uint8Array(newData[selectedTileIndex]);
-            ops.forEach(({ index, color }) => {
-                newGrid[index] = color;
-            });
-            newData[selectedTileIndex] = newGrid;
+            newData[selectedTileIndex] = applyGridChanges(newData[selectedTileIndex], ops);
 
             
             return newData;
@@ -85,9 +82,8 @@ export const TilesetEditor = () => {
             undo: () => {
                 setTilesData(prev => {
                     const newD = [...prev];
-                    const target = new Uint8Array(newD[tileIdx]);
-                    changeList.forEach(({ index, oldColor }) => target[index] = oldColor);
-                    newD[tileIdx] = target;
+                    const ops = changeList.map(c => ({ index: c.index, color: c.oldColor }));
+                    newD[tileIdx] = applyGridChanges(newD[tileIdx], ops);
                     return newD;
                 });
                 setSelectedTileIndex(tileIdx);
@@ -95,9 +91,8 @@ export const TilesetEditor = () => {
             redo: () => {
                  setTilesData(prev => {
                     const newD = [...prev];
-                    const target = new Uint8Array(newD[tileIdx]);
-                    changeList.forEach(({ index, newColor }) => target[index] = newColor);
-                    newD[tileIdx] = target;
+                    const ops = changeList.map(c => ({ index: c.index, color: c.newColor }));
+                    newD[tileIdx] = applyGridChanges(newD[tileIdx], ops);
                     return newD;
                 });
                 setSelectedTileIndex(tileIdx);

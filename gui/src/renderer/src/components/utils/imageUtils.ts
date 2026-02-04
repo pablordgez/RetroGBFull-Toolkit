@@ -33,3 +33,4 @@ export const renderTileToDataURL = (
     ctx.putImageData(imgData, 0, 0);
     return canvas.toDataURL('image/png');
 };
+

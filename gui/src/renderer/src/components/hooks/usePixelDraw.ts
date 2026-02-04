@@ -1,5 +1,6 @@
 import { useRef, useCallback, useState } from 'react';
-import { floodFill, getSymmetryIndices } from '../utils/pixelAlgorithms';
+import { floodFill } from '../utils/pixelAlgorithms';
+import { calculateBrushOps } from '../utils/paintUtils';
 
 export interface PixelDrawHookProps {
     width: number;
@@ -21,31 +22,12 @@ export const usePixelDraw = ({
     const strokeChanges = useRef<Map<number, { oldColor: number, newColor: number }>>(new Map());
 
     const drawPoint = useCallback((x: number, y: number, color: number) => {
-        const points = getSymmetryIndices(x, y, width, height, symmetry);
-        
-        // Filter valid points
-        const validPoints = points.filter(p => p.x >= 0 && p.x < width && p.y >= 0 && p.y < height);
-        
-        const ops: { index: number, color: number }[] = [];
-        
-        validPoints.forEach(p => {
-            const index = p.y * width + p.x;
-            
-            const existingChange = strokeChanges.current.get(index);
-            if (existingChange && existingChange.newColor === color) return;
-            
-            let oldColor = currentGrid[index];
-            if (existingChange) {
-                oldColor = existingChange.oldColor;
-            }
-
-            if (oldColor !== color) {
-                strokeChanges.current.set(index, { oldColor, newColor: color });
-                ops.push({ index, color });
-            }
-        });
+        const { ops, changes } = calculateBrushOps(
+            x, y, color, width, height, symmetry, currentGrid, strokeChanges.current
+        );
 
         if (ops.length > 0) {
+            changes.forEach(c => strokeChanges.current.set(c.index, c));
             onPaint(ops);
         }
     }, [width, height, symmetry, currentGrid, onPaint]);
