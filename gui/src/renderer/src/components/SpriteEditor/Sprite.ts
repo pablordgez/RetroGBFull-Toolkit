@@ -29,6 +29,9 @@ export class Sprite{
                 size += 1;
             }
         }
+        if(this.width == 8 && this.height == 8 || (this.is8x16Mode && this.width == 8 && this.height == 16)){
+            return "// size: " + size + "\n" + data.slice(0, -2) + '\n};\n';
+        }
         return "// size: " + size + "\n" + data.slice(0, -2) + '\n};\n' + metasprite_data;
     }
 
@@ -36,20 +39,28 @@ export class Sprite{
         let data = 'const metasprite_t my_metasprite_' + frame + '[] = {\n';
         let pivotX = this.width / 2 * -1;
         let pivotY = this.height / 2 * -1;
+        let currentX = 0;
+        let skippedRows = 0;
+        let skippedCols = 0;
         const cols = Math.ceil(this.width / 8);
         const rows = Math.ceil(this.height / (this.is8x16Mode ? 16 : 8));
         for(let i = 0; i < rows; i++){
             for(let j = 0; j < cols; j++){
                 if(tiles[i * cols + j].data.every(v => v == 0)) {
                     pivotX += 8;
+                    skippedCols += 1;
                     continue;
                 }
+                currentX += 8;
                 data += '{ .dy=' + pivotY + ', .dx=' + pivotX + ', .dtile=' + (i * cols + j) + ', .props=0 },\n';
                 pivotX = 8;
                 pivotY = 0;
             }
+            if(skippedCols == cols){
+                skippedRows += 1;
+            }
             pivotY = this.is8x16Mode ? 16 : 8;
-            pivotX = (this.width - 8) * -1;
+            pivotX = (currentX - 8) * -1;
         }
         data += 'METASPR_TERM' + '\n};\n';
         return data;
