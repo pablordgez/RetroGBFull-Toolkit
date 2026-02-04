@@ -1,10 +1,38 @@
+import { is } from '@electron-toolkit/utils';
 import {Tile} from '../PixelEditor/Tile';
+
+export class MetaspriteEntry{
+    x: number
+    y: number
+    dy: number
+    dx: number
+    dtile: number
+    props: number
+    constructor(x:number, y:number, dy: number, dx: number, dtile: number, props: number){
+        this.dy = dy;
+        this.dx = dx;
+        this.dtile = dtile;
+        this.props = props;
+        this.x = x;
+        this.y = y;
+    }
+
+    getNewEntry(x: number, y: number, dtile: number, props: number): MetaspriteEntry{
+        return new MetaspriteEntry(x, y, y - this.y, x - this.x, dtile, props);
+    }
+
+    toString(): string{
+        return `{ .dy=${this.dy}, .dx=${this.dx}, .dtile=${this.dtile}, .props=${this.props} }`;
+    }
+}
+
 export class Sprite{
     public frames: Uint8Array[];
     public width: number;
     public height: number;
     public fps: number;
     public is8x16Mode: boolean;
+
 
     constructor(frames: Uint8Array[], width: number, height: number, fps: number, is8x16Mode: boolean){
         this.frames = frames;
@@ -21,12 +49,16 @@ export class Sprite{
         for(let i = 0; i < this.frames.length; i++){
             const tiles = this.divideIntoTiles(i);
             metasprite_data += this.encode_metasprite_data(tiles, i);
-            for(const tile of tiles){
-                if(tile.data.every(v => v == 0)) {
+            for(let i = 0; i < tiles.length; i++){
+                if(tiles[i].data.every(v => v == 0) && !this.is8x16Mode) {
+                    continue;
+                } else if(this.is8x16Mode && i %2 == 0 && tiles[i].data.every(v => v == 0) && tiles[i+1].data.every(v => v == 0)){
                     continue;
                 }
-                data += tile.encode() + ',\n';
-                size += 1;
+                data += tiles[i].encode() + ',\n';
+                if(!this.is8x16Mode || i %2 == 1){
+                    size += 1;
+                }
             }
         }
         if(this.width == 8 && this.height == 8 || (this.is8x16Mode && this.width == 8 && this.height == 16)){
@@ -37,30 +69,47 @@ export class Sprite{
 
     encode_metasprite_data(tiles: Tile[], frame: number) : string {
         let data = 'const metasprite_t my_metasprite_' + frame + '[] = {\n';
-        let pivotX = this.width / 2 * -1;
-        let pivotY = this.height / 2 * -1;
-        let currentX = 0;
-        let skippedRows = 0;
-        let skippedCols = 0;
+        
         const cols = Math.ceil(this.width / 8);
         const rows = Math.ceil(this.height / (this.is8x16Mode ? 16 : 8));
+        let currentTile = -1;
+        let entries: MetaspriteEntry[] = [];
+        let initialX = this.width / 2;
+        let initialY = this.height / 2;
+        let templateEntry = new MetaspriteEntry(initialX, initialY, 0, 0, 0, 0);
+        let stillInCenter = true;
+        
         for(let i = 0; i < rows; i++){
             for(let j = 0; j < cols; j++){
-                if(tiles[i * cols + j].data.every(v => v == 0)) {
-                    pivotX += 8;
-                    skippedCols += 1;
-                    continue;
+                if(this.is8x16Mode){
+                    let upperTile = tiles[i * 2 * cols + j * 2];
+                    let lowerTile = tiles[i * 2 * cols + j * 2 + 1];
+                    if(upperTile.data.every(v => v == 0) && lowerTile.data.every(v => v == 0)){
+                        continue;
+                    }
+                    currentTile += 1;
+                    if(stillInCenter){
+                        entries.push(templateEntry.getNewEntry(j * 8, i * 16, currentTile, 0));
+                        stillInCenter = false;
+                    } else{
+                        const lastEntry = entries[entries.length - 1];
+                        entries.push(lastEntry.getNewEntry(j * 8, i * 16, currentTile, 0));
+                    }
+                } else{
+                    if(tiles[i * cols + j].data.every(v => v == 0)) {
+                        continue;
+                    }
+                    currentTile += 1;
+                    if(stillInCenter){
+                    entries.push(templateEntry.getNewEntry(j * 8, i * 8, currentTile, 0));
+                    stillInCenter = false;
+                    } else{
+                        const lastEntry = entries[entries.length - 1];
+                        entries.push(lastEntry.getNewEntry(j * 8, i * 8, currentTile, 0));
+                    }
                 }
-                currentX += 8;
-                data += '{ .dy=' + pivotY + ', .dx=' + pivotX + ', .dtile=' + (i * cols + j) + ', .props=0 },\n';
-                pivotX = 8;
-                pivotY = 0;
+                data += entries[entries.length - 1].toString() + ',\n';
             }
-            if(skippedCols == cols){
-                skippedRows += 1;
-            }
-            pivotY = this.is8x16Mode ? 16 : 8;
-            pivotX = (currentX - 8) * -1;
         }
         data += 'METASPR_TERM' + '\n};\n';
         return data;
