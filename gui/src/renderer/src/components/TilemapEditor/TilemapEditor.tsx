@@ -321,7 +321,7 @@ export const TilemapEditor = () => {
                 </div>
 
                 <h3>Tileset</h3>
-                <div className="toolbox" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <div className="toolbox" style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
                     <Tileset 
                         ref={tilesetRef}
                         onSelectTile={setSelectedTileIndex}
