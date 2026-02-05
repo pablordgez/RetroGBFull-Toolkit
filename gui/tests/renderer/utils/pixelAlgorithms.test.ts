@@ -37,10 +37,6 @@ describe('pixelAlgorithms', () => {
     });
 
     describe('floodFill', () => {
-        // Create 3x3 grid
-        // 0 0 0
-        // 0 1 0
-        // 0 0 0
         const width = 3;
         const height = 3;
         const grid = [
@@ -51,24 +47,17 @@ describe('pixelAlgorithms', () => {
         const getPixel = (x: number, y: number) => grid[y * width + x];
 
         it('should fill connected components of same color', () => {
-            // Fill 0s starting at (0,0)
             const result = floodFill(0, 0, width, height, getPixel, 2);
             
-            // Should fill all 0s (8 pixels), excluding the center 1
             expect(result.length).toBe(8);
             const indices = result.map(p => p.index).sort((a,b) => a-b);
-            // All indices except 4 (center)
             expect(indices).toEqual([0, 1, 2, 3, 5, 6, 7, 8]);
         });
 
         it('should fill isolated region only', () => {
-             // 1 0 1
-             // 0 1 0
-             // 1 0 1
              const grid2 = [1,0,1, 0,1,0, 1,0,1];
              const getPixel2 = (x: number, y: number) => grid2[y*width+x];
 
-             // Fill center 1
              const result = floodFill(1, 1, width, height, getPixel2, 2);
              expect(result.length).toBe(1);
              expect(result[0].index).toBe(4);

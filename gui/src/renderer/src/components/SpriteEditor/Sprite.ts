@@ -1,4 +1,3 @@
-import { is } from '@electron-toolkit/utils';
 import {Tile} from '../PixelEditor/Tile';
 
 export class MetaspriteEntry{

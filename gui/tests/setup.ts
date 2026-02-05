@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import '@testing-library/jest-dom';
+import 'vitest-canvas-mock';
 
 // Mock Electron API
 vi.mock('electron', () => {

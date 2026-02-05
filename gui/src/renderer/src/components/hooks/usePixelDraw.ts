@@ -16,7 +16,6 @@ export const usePixelDraw = ({
     const [tool, setTool] = useState<'brush' | 'fill'>('brush');
     const [symmetry, setSymmetry] = useState({ x: false, y: false });
 
-    // Internal state for current stroke
     const isDrawing = useRef(false);
     const mouseButtonType = useRef<'paint' | 'erase'>('paint');
     const strokeChanges = useRef<Map<number, { oldColor: number, newColor: number }>>(new Map());
