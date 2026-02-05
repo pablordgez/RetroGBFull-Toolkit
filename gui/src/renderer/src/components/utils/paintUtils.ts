@@ -27,7 +27,6 @@ export const calculateBrushOps = (
 
         const previousChange = existingChanges.get(index);
         
-        // If we already painted this pixel in this stroke with the same color, skip
         if (previousChange && previousChange.newColor === color) return;
 
         let oldColor = currentGrid[index];

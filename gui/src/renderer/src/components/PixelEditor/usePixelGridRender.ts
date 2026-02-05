@@ -76,11 +76,8 @@ export const usePixelGridRender = ({
                 const drawY = Math.floor(pan.y + y * scale);
                 const drawSize = Math.ceil(scale);
 
-                // Tile render mode
                 if (tileset) {
                     if (value === -1) {
-                         // Empty tile
-                         // Potentially draw placeholder or nothing
                     } else {
                         const tileUrl = tileset[value];
                         if (tileUrl) {
@@ -94,15 +91,9 @@ export const usePixelGridRender = ({
                             if (img.complete) {
                                 ctx.drawImage(img, drawX, drawY, drawSize, drawSize);
                             } else {
-                                // If not loaded, we can try to force a re-render later, 
-                                // but typically dataURLs are instant. 
-                                // For robust implementation, we'd need onload handler to trigger re-render.
-                                // For now, simple attempt.
                                 if(!img.onload) {
                                     img.onload = () => {
-                                        // Trigger re-render?
-                                        // We can't easily force re-render from here without state.
-                                        // But subsequent renders will pick it up.
+
                                     }
                                 }
                             }
@@ -111,7 +102,6 @@ export const usePixelGridRender = ({
                     continue; 
                 }
 
-                // Pixel render mode
                 if (value === eraserIndex) {
                      ctx.fillStyle = transparencyGridBackground;
                      ctx.fillRect(drawX, drawY, drawSize, drawSize);
