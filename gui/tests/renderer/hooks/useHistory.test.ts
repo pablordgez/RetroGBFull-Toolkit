@@ -1,0 +1,133 @@
+import { renderHook, act } from '@testing-library/react';
+import { useHistory } from '../../../src/renderer/src/components/hooks/history/useHistory';
+import { Command } from '../../../src/renderer/src/components/hooks/history/Command';
+import { describe, expect, it, vi } from 'vitest';
+
+const createMockCommand = (id: string): Command => ({
+    undo: vi.fn(),
+    redo: vi.fn(),
+    toString: () => id 
+} as unknown as Command);
+
+describe('useHistory Hook', () => {
+    it('initializes with empty state', () => {
+        const { result } = renderHook(() => useHistory(10));
+        
+        expect(result.current.historyLength).toBe(0);
+        expect(result.current.historyIndex).toBe(-1);
+        expect(result.current.canUndo).toBe(false);
+        expect(result.current.canRedo).toBe(false);
+    });
+
+    it('records a new command and updates index', () => {
+        const { result } = renderHook(() => useHistory(10));
+        const cmd = createMockCommand('cmd1');
+
+        act(() => {
+            result.current.record(cmd);
+        });
+
+        expect(result.current.historyLength).toBe(1);
+        expect(result.current.historyIndex).toBe(0);
+        expect(result.current.canUndo).toBe(true);
+        expect(result.current.canRedo).toBe(false);
+    });
+
+    it('performs undo and redo operations', () => {
+        const { result } = renderHook(() => useHistory(10));
+        const cmd = createMockCommand('cmd1');
+
+        act(() => {
+            result.current.record(cmd);
+        });
+
+        act(() => {
+            result.current.undo();
+        });
+        
+        expect(cmd.undo).toHaveBeenCalled();
+        expect(result.current.historyIndex).toBe(-1);
+        expect(result.current.canUndo).toBe(false);
+        expect(result.current.canRedo).toBe(true);
+
+        act(() => {
+            result.current.redo();
+        });
+
+        expect(cmd.redo).toHaveBeenCalled();
+        expect(result.current.historyIndex).toBe(0);
+        expect(result.current.canUndo).toBe(true);
+        expect(result.current.canRedo).toBe(false);
+    });
+
+    it('truncates future history when recording after undo (Branching)', () => {
+        const { result } = renderHook(() => useHistory(10));
+        
+
+        act(() => {
+            result.current.record(createMockCommand('1'));
+        });
+
+        act(() => {
+            result.current.record(createMockCommand('2'));
+        });
+
+        act(() => {
+            result.current.record(createMockCommand('3'));
+        });
+
+        expect(result.current.historyLength).toBe(3);
+        expect(result.current.historyIndex).toBe(2);
+
+        act(() => {
+            result.current.undo();
+            result.current.undo();
+        });
+
+        expect(result.current.historyIndex).toBe(0);
+
+        act(() => {
+            result.current.record(createMockCommand('4'));
+        });
+
+        expect(result.current.historyLength).toBe(2);
+        expect(result.current.historyIndex).toBe(1);
+        expect(result.current.canRedo).toBe(false);
+    });
+
+    it('respects the maxHistory limit by shifting commands', () => {
+        const MAX = 3;
+        const { result } = renderHook(() => useHistory(MAX));
+
+        act(() => {
+            result.current.record(createMockCommand('1'));
+        });
+
+        act(() => {
+            result.current.record(createMockCommand('2'));
+        });
+
+        act(() => {
+            result.current.record(createMockCommand('3'));
+        });
+
+        expect(result.current.historyLength).toBe(3);
+        expect(result.current.historyIndex).toBe(2);
+
+        act(() => {
+            result.current.record(createMockCommand('4'));
+        });
+
+        expect(result.current.historyLength).toBe(3);
+        expect(result.current.historyIndex).toBe(2);
+        
+        act(() => result.current.undo());
+        act(() => result.current.undo());
+        
+        expect(result.current.historyIndex).toBe(0);
+        expect(result.current.canUndo).toBe(true);
+        
+        act(() => result.current.undo());
+        expect(result.current.historyIndex).toBe(-1);
+    });
+});
