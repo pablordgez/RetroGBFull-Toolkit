@@ -9,7 +9,9 @@ export const resizeGrid = (
     targetHeight: number,
     fillColor: number
 ): Uint8Array => {
+    // Creates a new grid of the new size and fills it with the fill color
     const newGrid = new Uint8Array(targetWidth * targetHeight).fill(fillColor);
+    // Goes through the previous grid, only up to the new dimensions, and copies the pixels to the new grid
     for (let y = 0; y < Math.min(srcHeight, targetHeight); y++) {
         for (let x = 0; x < Math.min(srcWidth, targetWidth); x++) {
             newGrid[y * targetWidth + x] = src[y * srcWidth + x];

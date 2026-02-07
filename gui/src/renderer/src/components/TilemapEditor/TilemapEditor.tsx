@@ -152,7 +152,6 @@ export const TilemapEditor = () => {
         const pixelsToFill = floodFill(
             x, y, mapWidth, mapHeight,
             (gx, gy) => grid[gy * mapWidth + gx],
-            targetTile
         );
 
         if (pixelsToFill.length === 0) return;

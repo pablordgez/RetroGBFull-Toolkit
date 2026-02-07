@@ -38,7 +38,7 @@ export const usePixelDraw = ({
         const targetOldColor = currentGrid[y * width + x];
         if (targetOldColor === color) return; // No op
 
-        const changesList = floodFill(x, y, width, height, (gx, gy) => currentGrid[gy * width + gx], color);
+        const changesList = floodFill(x, y, width, height, (gx, gy) => currentGrid[gy * width + gx]);
         if (changesList.length === 0) return;
 
         const historyMap = new Map<number, { oldColor: number, newColor: number }>();

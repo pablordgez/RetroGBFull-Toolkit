@@ -47,7 +47,7 @@ describe('pixelAlgorithms', () => {
         const getPixel = (x: number, y: number) => grid[y * width + x];
 
         it('should fill connected components of same color', () => {
-            const result = floodFill(0, 0, width, height, getPixel, 2);
+            const result = floodFill(0, 0, width, height, getPixel);
             
             expect(result.length).toBe(8);
             const indices = result.map(p => p.index).sort((a,b) => a-b);
@@ -58,7 +58,7 @@ describe('pixelAlgorithms', () => {
              const grid2 = [1,0,1, 0,1,0, 1,0,1];
              const getPixel2 = (x: number, y: number) => grid2[y*width+x];
 
-             const result = floodFill(1, 1, width, height, getPixel2, 2);
+             const result = floodFill(1, 1, width, height, getPixel2);
              expect(result.length).toBe(1);
              expect(result[0].index).toBe(4);
         });
