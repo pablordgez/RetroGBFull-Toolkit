@@ -66,15 +66,11 @@ describe('useHistory Hook', () => {
 
         act(() => {
             result.current.record(createMockCommand('1'));
-        });
-
-        act(() => {
             result.current.record(createMockCommand('2'));
-        });
-
-        act(() => {
             result.current.record(createMockCommand('3'));
         });
+
+        
 
         expect(result.current.historyLength).toBe(3);
         expect(result.current.historyIndex).toBe(2);
@@ -101,13 +97,7 @@ describe('useHistory Hook', () => {
 
         act(() => {
             result.current.record(createMockCommand('1'));
-        });
-
-        act(() => {
             result.current.record(createMockCommand('2'));
-        });
-
-        act(() => {
             result.current.record(createMockCommand('3'));
         });
 
@@ -126,6 +116,49 @@ describe('useHistory Hook', () => {
         
         expect(result.current.historyIndex).toBe(0);
         expect(result.current.canUndo).toBe(true);
+        
+        act(() => result.current.undo());
+        expect(result.current.historyIndex).toBe(-1);
+    });
+
+    it('handles multiple record calls in rapid succession (simulating batch updates)', () => {
+        const { result } = renderHook(() => useHistory(10));
+        const cmd1 = createMockCommand('cmd1');
+        const cmd2 = createMockCommand('cmd2');
+
+        act(() => {
+            result.current.record(cmd1);
+            result.current.record(cmd2);
+        });
+        
+        expect(result.current.historyLength).toBe(2); 
+        expect(result.current.historyIndex).toBe(1);
+    });
+
+    it('handles undo/redo boundary conditions correctly', () => {
+        const { result } = renderHook(() => useHistory(3)); 
+        const cmd1 = createMockCommand('cmd1');
+        const cmd2 = createMockCommand('cmd2');
+        const cmd3 = createMockCommand('cmd3');
+        const cmd4 = createMockCommand('cmd4');
+
+        act(() => {
+            result.current.record(cmd1);
+            result.current.record(cmd2);
+            result.current.record(cmd3);
+            result.current.record(cmd4);
+        });
+        
+        expect(result.current.historyLength).toBe(3);
+        
+        act(() => result.current.undo());
+        expect(result.current.historyIndex).toBe(1);
+        
+        act(() => result.current.undo());
+        expect(result.current.historyIndex).toBe(0);
+        
+        act(() => result.current.undo());
+        expect(result.current.historyIndex).toBe(-1); 
         
         act(() => result.current.undo());
         expect(result.current.historyIndex).toBe(-1);

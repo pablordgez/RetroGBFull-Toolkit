@@ -10,6 +10,7 @@ export interface PixelDrawHookProps {
     onRecordHistory: (changes: Map<number, { oldColor: number, newColor: number }>) => void;
 }
 
+// Handlers for the operations are passed as parameters, so the hook doesn't need to know about how to actually paint
 export const usePixelDraw = ({ 
     width, height, currentGrid, onPaint, onRecordHistory 
 }: PixelDrawHookProps) => {
@@ -20,6 +21,7 @@ export const usePixelDraw = ({
     const mouseButtonType = useRef<'paint' | 'erase'>('paint');
     const strokeChanges = useRef<Map<number, { oldColor: number, newColor: number }>>(new Map());
 
+    // Calculates the pixels to paint for a point, adds them to the current stroke changes and calls the onPaint handler
     const drawPoint = useCallback((x: number, y: number, color: number) => {
         const { ops, changes } = calculateBrushOps(
             x, y, color, width, height, symmetry, currentGrid, strokeChanges.current
@@ -31,12 +33,13 @@ export const usePixelDraw = ({
         }
     }, [width, height, symmetry, currentGrid, onPaint]);
 
+    // Calculates the pixels to paint, records them in a history record and calls the onPaint and onRecordHistory handlers
     const performFloodFill = useCallback((x: number, y: number, color: number) => {
 
         if (x < 0 || x >= width || y < 0 || y >= height) return;
         
         const targetOldColor = currentGrid[y * width + x];
-        if (targetOldColor === color) return; // No op
+        if (targetOldColor === color) return;
 
         const changesList = floodFill(x, y, width, height, (gx, gy) => currentGrid[gy * width + gx]);
         if (changesList.length === 0) return;
@@ -54,7 +57,11 @@ export const usePixelDraw = ({
 
     }, [width, height, currentGrid, onPaint, onRecordHistory]);
 
+    // This function is called from the parent component with the input that happens on the canvas
+    // It then handles the painting operations
+    // It allows for continuous brush strokes (holding the mouse button and moving) by recording different types of input and checking what it was doing before
     const handleCanvasInput = useCallback((x: number, y: number, type: 'down' | 'move' | 'up' | 'leave', button: number, selectedColor: number, eraserColor: number = 0) => {
+        // If the event was that the canvas was left or the mouse button was released, if we are drawing we finish the stroke and record it
         if (type === 'leave' || type === 'up') {
             if (isDrawing.current) {
                 isDrawing.current = false;
@@ -66,6 +73,8 @@ export const usePixelDraw = ({
             return;
         }
 
+        // If we are starting to draw we set up the conditions for the stroke then do the action for the first point
+        // If we are moving while drawing, we continue the stroke with the new point
         if (type === 'down' || (type === 'move' && isDrawing.current)) {
             if (x < 0 || x >= width || y < 0 || y >= height) return;
 
@@ -78,6 +87,15 @@ export const usePixelDraw = ({
                 mouseButtonType.current = actionType;
                 
                 const drawColor = actionType === 'erase' ? eraserColor : selectedColor;
+
+                // If the user changed the tool while drawing, we want to finish the previous stroke with the previous tool before starting the new one
+                if(isDrawing.current) {
+                    isDrawing.current = false;
+                    if (strokeChanges.current.size > 0) {
+                        onRecordHistory(new Map(strokeChanges.current));
+                    }
+                    strokeChanges.current.clear();
+                }
 
                 if (tool === 'fill' && actionType === 'paint') {
                     performFloodFill(x, y, drawColor);

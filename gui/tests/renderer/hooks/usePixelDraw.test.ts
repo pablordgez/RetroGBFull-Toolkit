@@ -160,4 +160,94 @@ describe('usePixelDraw', () => {
 
         expect(onPaintMock).not.toHaveBeenCalled();
     });
+
+
+    it('records history if tool is changed and a new DOWN event is received (simulating interrupted stroke)', () => {
+        
+        const { result } = renderDrawHook();
+        act(() => {
+            result.current.handleCanvasInput(0, 0, 'down', 0, 1);
+        });
+        
+        expect(onPaintMock).toHaveBeenCalledTimes(1);
+        expect(onRecordHistoryMock).not.toHaveBeenCalled();
+
+        act(() => {
+            result.current.setTool('fill'); 
+        });
+
+        act(() => {
+            result.current.handleCanvasInput(5, 5, 'down', 0, 2); 
+        });
+        
+        expect(onRecordHistoryMock.mock.calls.length).toBeGreaterThanOrEqual(1);
+        const historyMap = onRecordHistoryMock.mock.calls[0][0] as Map<number, any>;
+        expect(historyMap.get(0)).toBeDefined();
+    });
+
+    it('records history when mouse leaves the canvas while drawing', () => {
+        const { result } = renderDrawHook();
+
+        act(() => {
+            result.current.handleCanvasInput(0, 0, 'down', 0, 1);
+            result.current.handleCanvasInput(1, 0, 'move', 0, 1);
+        });
+
+        expect(onPaintMock).toHaveBeenCalledTimes(2);
+        expect(onRecordHistoryMock).not.toHaveBeenCalled();
+
+        act(() => {
+            result.current.handleCanvasInput(1, 0, 'leave', 0, 1);
+        });
+
+        expect(onRecordHistoryMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('handles switching from paint (left) to erase (right) mid-stream if new DOWN received', () => {
+        const { result } = renderDrawHook();
+
+        act(() => {
+            result.current.handleCanvasInput(0, 0, 'down', 0, 1);
+        });
+
+        act(() => {
+            result.current.handleCanvasInput(0, 1, 'down', 2, 1, 0); // button 2 = right, eraser color = 0
+        });
+
+        expect(onRecordHistoryMock).toHaveBeenCalledTimes(1); 
+        
+        expect(PaintUtils.calculateBrushOps).toHaveBeenCalledWith(
+            0, 1, 0,
+            expect.any(Number), expect.any(Number), expect.any(Object), expect.any(Object), expect.any(Map)
+        );
+    });
+    
+    it('does not record empty history if brush produces no changes', () => {
+        (PaintUtils.calculateBrushOps as any).mockImplementation(() => ({
+            ops: [],
+            changes: new Map()
+        }));
+
+        const { result } = renderDrawHook();
+
+        act(() => {
+            result.current.handleCanvasInput(0, 0, 'down', 0, 1);
+            result.current.handleCanvasInput(0, 0, 'up', 0, 1);
+        });
+
+        expect(onRecordHistoryMock).not.toHaveBeenCalled();
+    });
+
+    it('flood fill does nothing if out of bounds', () => {
+        const { result } = renderDrawHook();
+        act(() => {
+            result.current.setTool('fill');
+        });
+
+        act(() => {
+            result.current.handleCanvasInput(-1, -1, 'down', 0, 1);
+        });
+
+        expect(onPaintMock).not.toHaveBeenCalled();
+    });
 });

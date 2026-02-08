@@ -7,6 +7,7 @@ export const useSpriteStats = (
     height: number,
     is8x16Mode: boolean
 ) => {
+    // Counts how many tiles have at least one non transparent pixel to count how many tiles from the 40 available are used
     return useMemo(() => {
         let count = 0;
         const tileHeight = is8x16Mode ? 16 : 8;
