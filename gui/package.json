@@ -19,8 +19,12 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
-    "test": "vitest run",
-    "coverage": "vitest run --coverage"
+    "test": "npm run test:unit",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
+    "coverage": "npm run coverage:unit && npm run coverage:integration",
+    "coverage:unit": "vitest run --coverage",
+    "coverage:integration": "vitest run --coverage -c vitest.integration.config.ts"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
