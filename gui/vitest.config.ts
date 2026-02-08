@@ -1,27 +1,21 @@
-import { defineConfig } from 'vitest/config';
+import { mergeConfig, defineConfig } from 'vitest/config';
+import { sharedConfig } from './vitest.shared';
 
-export default defineConfig({
+export default defineConfig(mergeConfig(sharedConfig, {
   test: {
-    environment: 'jsdom', 
-    
-    globals: true,
-    setupFiles: './tests/setup.ts', 
-
+    // Include all tests EXCEPT integration
     include: ['tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-
+    exclude: ['tests/integration/**', 'node_modules/**'],
     coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      reportsDirectory: 'coverage/unit',
+      // Define files to calculate coverage for (Unit)
       include: ['src/**/*.{ts,tsx}'],
-      // @ts-expect-error - ignore
-      all: true,
       exclude: [
         'src/main/index.ts',
         'src/preload/**',
-        '**/*.d.ts',
-        'tests/**',
-        'vitest.config.ts'
-      ] 
+      ],
+      // @ts-expect-error - ignore
+      all: true,
     },
   },
-});
+}));
