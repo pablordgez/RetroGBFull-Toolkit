@@ -40,6 +40,7 @@ export const SpriteEditor = () => {
     const grid = frames[currentFrame];
     const spriteUsage = useSpriteStats(grid, width, height, is8x16Mode);
 
+    // Whenever the data changes we create a new sprite object that will be used to export
     const sprite = useMemo(() => {
         return new Sprite(frames, width, height, fps, is8x16Mode);
     }, [frames, width, height, fps, is8x16Mode]);

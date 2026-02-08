@@ -6,7 +6,7 @@ import { Tileset, TilesetRef } from '../Tileset/Tileset';
 import { useHistory } from '../hooks/history/useHistory';
 import { floodFill } from '../utils/pixelAlgorithms';
 import { Tilemap } from './Tilemap';
-import { applyGridChanges } from '../utils/gridUtils';
+import { applyGridChanges, resizeGrid } from '../utils/gridUtils';
 
 const DEFAULT_MAP_W = 20;
 const DEFAULT_MAP_H = 18;
@@ -34,70 +34,71 @@ export const TilemapEditor = () => {
 
     const { record, undo, redo, canUndo, canRedo } = useHistory();
 
+    // Placeholder tiles before integrating the tileset editor
     const createPatternTile = (type: number) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 8;
-    canvas.height = 8;
-    const ctx = canvas.getContext('2d');
-    if(!ctx) return '';
-    
-    const c0 = '#9bbc0f';
-    const c1 = '#8bac0f';
-    const c2 = '#306230';
-    const c3 = '#0f380f';
+        const canvas = document.createElement('canvas');
+        canvas.width = 8;
+        canvas.height = 8;
+        const ctx = canvas.getContext('2d');
+        if(!ctx) return '';
+        
+        const c0 = '#9bbc0f';
+        const c1 = '#8bac0f';
+        const c2 = '#306230';
+        const c3 = '#0f380f';
 
-    ctx.fillStyle = c0;
-    ctx.fillRect(0,0,8,8);
-
-    if (type === 0) {
-        ctx.fillStyle = c1;
-        ctx.fillRect(0,0,8,8);
-        ctx.fillStyle = c2;
-        ctx.fillRect(1,1,1,2);
-        ctx.fillRect(3,5,1,2);
-        ctx.fillRect(6,2,1,2);
-    } else if (type === 1) {
-        ctx.fillStyle = c1;
-        ctx.fillRect(0,0,8,4);
-        ctx.fillStyle = c2;
-        ctx.fillRect(0,3,8,1);
-        ctx.fillRect(0,7,8,1);
-        ctx.fillRect(3,0,1,3);
-        ctx.fillRect(7,4,1,3);
-    } else if (type === 2) {
         ctx.fillStyle = c0;
         ctx.fillRect(0,0,8,8);
-        ctx.fillStyle = c1;
-        ctx.fillRect(0,2,2,1); ctx.fillRect(3,1,2,1); ctx.fillRect(6,2,2,1);
-        ctx.fillRect(0,5,2,1); ctx.fillRect(3,6,2,1); ctx.fillRect(6,5,2,1);
-    } else if (type === 3) {
-        ctx.fillStyle = c2;
-        ctx.fillRect(0,0,8,8);
-        ctx.fillStyle = c1;
-        ctx.fillRect(1,1,6,6);
-        ctx.fillStyle = c2;
-        ctx.fillRect(2,2,4,4);
-        ctx.fillStyle = c1;
-        ctx.fillRect(2,2,1,1); ctx.fillRect(5,2,1,1);
-        ctx.fillRect(3,3,2,2);
-        ctx.fillRect(2,5,1,1); ctx.fillRect(5,5,1,1);
-    } else if (type === 4) {
-         ctx.fillStyle = c1;
-         ctx.fillRect(0,0,8,8);
-         ctx.fillStyle = c3;
-         ctx.fillRect(1,1,6,6);
-         ctx.fillStyle = c2;
-         ctx.fillRect(2,2,4,4);
-    } else {
-        ctx.fillStyle = c0;
-        ctx.fillRect(0,0,8,8);
-        ctx.fillStyle = c3;
-        ctx.fillRect(0,0,4,4);
-        ctx.fillRect(4,4,4,4);
+
+        if (type === 0) {
+            ctx.fillStyle = c1;
+            ctx.fillRect(0,0,8,8);
+            ctx.fillStyle = c2;
+            ctx.fillRect(1,1,1,2);
+            ctx.fillRect(3,5,1,2);
+            ctx.fillRect(6,2,1,2);
+        } else if (type === 1) {
+            ctx.fillStyle = c1;
+            ctx.fillRect(0,0,8,4);
+            ctx.fillStyle = c2;
+            ctx.fillRect(0,3,8,1);
+            ctx.fillRect(0,7,8,1);
+            ctx.fillRect(3,0,1,3);
+            ctx.fillRect(7,4,1,3);
+        } else if (type === 2) {
+            ctx.fillStyle = c0;
+            ctx.fillRect(0,0,8,8);
+            ctx.fillStyle = c1;
+            ctx.fillRect(0,2,2,1); ctx.fillRect(3,1,2,1); ctx.fillRect(6,2,2,1);
+            ctx.fillRect(0,5,2,1); ctx.fillRect(3,6,2,1); ctx.fillRect(6,5,2,1);
+        } else if (type === 3) {
+            ctx.fillStyle = c2;
+            ctx.fillRect(0,0,8,8);
+            ctx.fillStyle = c1;
+            ctx.fillRect(1,1,6,6);
+            ctx.fillStyle = c2;
+            ctx.fillRect(2,2,4,4);
+            ctx.fillStyle = c1;
+            ctx.fillRect(2,2,1,1); ctx.fillRect(5,2,1,1);
+            ctx.fillRect(3,3,2,2);
+            ctx.fillRect(2,5,1,1); ctx.fillRect(5,5,1,1);
+        } else if (type === 4) {
+             ctx.fillStyle = c1;
+             ctx.fillRect(0,0,8,8);
+             ctx.fillStyle = c3;
+             ctx.fillRect(1,1,6,6);
+             ctx.fillStyle = c2;
+             ctx.fillRect(2,2,4,4);
+        } else {
+            ctx.fillStyle = c0;
+            ctx.fillRect(0,0,8,8);
+            ctx.fillStyle = c3;
+            ctx.fillRect(0,0,4,4);
+            ctx.fillRect(4,4,4,4);
+        }
+
+        return canvas.toDataURL();
     }
-    
-    return canvas.toDataURL();
-}
 
 
 
@@ -117,6 +118,7 @@ export const TilemapEditor = () => {
         return () => window.removeEventListener('keydown', handleKeys);
     }, [undo, redo]);
 
+    // Initializes with the placeholder tiles
     useEffect(() => {
         const images: string[] = [];
         for(let i=0; i<6; i++) {
@@ -128,10 +130,13 @@ export const TilemapEditor = () => {
             tilesetRef.current?.updateTile(i, img);
         });
     }, []);
+
+    // Whenever the data changes we create a new tilemap object that will be used to export
     const tilemap = useMemo(() => {
         return new Tilemap(mapWidth, mapHeight, new Uint8Array(grid));
     }, [mapWidth, mapHeight, grid]);
 
+    // The following are essentially the same as in the sprite editor, for explanations look there
     const handleExport = async () => {
         try {
             const encodedString = tilemap.encode();
@@ -256,9 +261,31 @@ export const TilemapEditor = () => {
         const w = parseInt(inputSize.w);
         const h = parseInt(inputSize.h);
         if(!isNaN(w) && !isNaN(h) && (w !== mapWidth || h !== mapHeight)) {
+            const prevW = mapWidth;
+            const prevH = mapHeight;
+            const prevGrid = [...grid];
+
+            const newGridUint8 = resizeGrid(grid, mapWidth, mapHeight, w, h, 0);
+            const newGrid = Array.from(newGridUint8);
+
+            record({
+                undo: () => {
+                    setMapWidth(prevW);
+                    setMapHeight(prevH);
+                    setGrid(prevGrid);
+                    setInputSize({ w: prevW.toString(), h: prevH.toString() });
+                },
+                redo: () => {
+                    setMapWidth(w);
+                    setMapHeight(h);
+                    setGrid(newGrid);
+                    setInputSize({ w: w.toString(), h: h.toString() });
+                }
+            });
+
             setMapWidth(w);
             setMapHeight(h);
-            setGrid(new Array(w * h).fill(0));
+            setGrid(newGrid);
             fitToScreen();
         }
     }

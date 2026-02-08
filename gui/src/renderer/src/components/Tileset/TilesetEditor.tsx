@@ -33,10 +33,12 @@ export const TilesetEditor = () => {
 
     const currentGrid = tilesData[selectedTileIndex] || new Uint8Array(width * height).fill(ERASER_COLOR);
 
+    // Whenever the data changes we create a new tileset object that will be used to export
     const tilesetObject = useMemo(() => {
         return new TilesetClass(tilesData.map(t => new Tile(t)));
     }, [tilesData]);
 
+    // When painting we update the current tile's data, creating a new entry if the tile is new
     const onPaint = useCallback((ops: { index: number, color: number }[]) => {
         if (ops.length === 0) return;
         
@@ -53,6 +55,7 @@ export const TilesetEditor = () => {
         });
     }, [selectedTileIndex, width, height]);
 
+    // Executes when the tile data changes, updates the tile thumbnail in the tileset
     useEffect(() => {
         const grid = tilesData[selectedTileIndex];
         if (grid && tilesetRef.current) {
@@ -64,6 +67,10 @@ export const TilesetEditor = () => {
     const tilesDataRef = useRef(tilesData);
     useEffect(() => { tilesDataRef.current = tilesData; }, [tilesData]);
 
+    // This updates all the tiles when data affecting all tiles changes
+    // In order to modify tilesData we would need to add it to the dependencies
+    // However refs don't need to be added as dependencies, so we use a ref (declared and updated above) that matches the tilesetData and that's what we use
+    // in this effect and the one for updating the thumbnail when the current tile changes
     useEffect(() => {
         if (tilesetRef.current) {
              tilesDataRef.current.forEach((grid, index) => {
@@ -78,6 +85,7 @@ export const TilesetEditor = () => {
         const tileIdx = selectedTileIndex;
         const changeList = Array.from(changes.entries()).map(([i, c]) => ({ index: i, ...c }));
         
+        // For undoing or redoing paint operations we just save the changes and the selected tile
         record({
             undo: () => {
                 setTilesData(prev => {
@@ -114,6 +122,8 @@ export const TilesetEditor = () => {
         handleCanvasInputInternal(x, y, type, button, selectedColor, ERASER_COLOR);
     };
 
+    // When we select a tile, if the tile doesn't exist we create a new entry for it with the transparent color
+    // Then we set the tile (new or not) as the selected tile
     const handleSelectTile = (index: number) => {
         if (index >= tilesData.length) {
              setTilesData(prev => {
@@ -136,13 +146,16 @@ export const TilesetEditor = () => {
          newData.splice(index, 1);
          if (newData.length === 0) newData.push(new Uint8Array(width * height).fill(ERASER_COLOR));
 
+         // If the removed tile is the last one, the selected tile will be the new last tile, otherwise the tile that is now in the same index as the removed tile
          const newSelected = index >= newData.length ? Math.max(0, newData.length - 1) : index;
 
          setTilesData(newData);
          setSelectedTileIndex(newSelected);
          tilesetRef.current?.removeTile(index);
 
+         
          record({
+            // For undoing we restore the previous data and update the thumbnails
              undo: () => {
                  setTilesData(prevData);
                  setSelectedTileIndex(prevSelected);
@@ -151,6 +164,8 @@ export const TilesetEditor = () => {
                      tilesetRef.current?.updateTile(i, url);
                  });
              },
+             // For redoing we set the new data
+             // No need to update the thumbnails as the tiles are just shifted and if a placeholder needs to be added that is handled by removeTile 
              redo: () => {
                  setTilesData(newData);
                  setSelectedTileIndex(newSelected);

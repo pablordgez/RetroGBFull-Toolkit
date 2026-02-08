@@ -6,15 +6,19 @@ export const renderTileToDataURL = (
     height: number, 
     palette: string[] = GB_PALETTE
 ): string => {
+    // Creates a canvas (in memory)
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return '';
 
+    // Creates an ImageData object
+    // data is an array where every 4 values represent the RGBA values of a pixel
     const imgData = ctx.createImageData(width, height);
     const data = imgData.data;
 
+    // For each pixel in the grid it gets the color, converts it to RGB and stores it in the ImageData
     for (let i = 0; i < grid.length; i++) {
         const colorIndex = grid[i];
         const hex = palette[colorIndex] || '#000000';
@@ -30,6 +34,7 @@ export const renderTileToDataURL = (
         data[pos + 3] = 255;
     }
 
+    // Gets a base64 URL for the image
     ctx.putImageData(imgData, 0, 0);
     return canvas.toDataURL('image/png');
 };

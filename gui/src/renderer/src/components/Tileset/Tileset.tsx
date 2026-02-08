@@ -8,6 +8,7 @@ export interface TilesetRef {
 }
 
 interface TilesetProps {
+    // Handlers passed as props
     onSelectTile?: (index: number) => void;
     onRemoveTile?: (index: number) => void;
     className?: string;
@@ -23,17 +24,21 @@ export const Tileset = forwardRef<TilesetRef, TilesetProps>(({ onSelectTile, onR
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [page, setPage] = useState(0);
 
+    // useImperativeHandle exposes methods to the parent component
     useImperativeHandle(ref, () => ({
         updateTile: (index: number, imageUrl: string) => {
             setTiles(prev => {
                 const newTiles = [...prev];
                 
+                // Ensure the array is long enough to hold the new index
                 while (newTiles.length <= index) {
                     newTiles.push(null);
                 }
 
+                // Sets the image URL for the tile
                 newTiles[index] = imageUrl;
 
+                // We add a new placeholder (unless we can't add more tiles) if we just filled the last one
                 if (allowAdd && index === newTiles.length - 1 && newTiles.length < MAX_TILES) {
                     newTiles.push(null);
                 }
@@ -44,6 +49,7 @@ export const Tileset = forwardRef<TilesetRef, TilesetProps>(({ onSelectTile, onR
         removeTile: (index: number) => {
              setTiles(prev => {
                  const newTiles = [...prev];
+                 // Removes the tile and adds a placeholder if there are no tiles left
                  if (index >= 0 && index < newTiles.length) {
                      newTiles.splice(index, 1);
                      if (newTiles.length === 0) newTiles.push(null);
@@ -73,14 +79,19 @@ export const Tileset = forwardRef<TilesetRef, TilesetProps>(({ onSelectTile, onR
     const totalPages = Math.ceil(tiles.length / ITEMS_PER_PAGE);
     const startIndex = page * ITEMS_PER_PAGE;
 
+    // Gets the tiles visible on the current page
+    // Creates an array with the length of the items in the page and applies a map function
     const visibleCells = Array.from({ length: ITEMS_PER_PAGE }).map((_, i) => {
+        // For each index within the page, it adds it to the index where the page starts to get the index of the tile
         const globalIndex = startIndex + i;
-        if (globalIndex >= tiles.length) return null; 
+        if (globalIndex >= tiles.length) return null;
+        // Stores the index and the content of the tile in the array 
         return {
             index: globalIndex,
             content: tiles[globalIndex]
         };
-    }).filter(item => item !== null) as { index: number, content: string | null }[];
+    })
+    .filter(item => item !== null) as { index: number, content: string | null }[];
 
     return (
         <div className={`tileset-container ${className || ''}`}>
