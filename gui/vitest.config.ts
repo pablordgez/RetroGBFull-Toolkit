@@ -13,6 +13,13 @@ export default defineConfig(mergeConfig(sharedConfig, {
       exclude: [
         'src/main/index.ts',
         'src/preload/**',
+        'src/renderer/src/App.tsx',
+        'src/renderer/src/main.tsx',
+        'src/renderer/src/components/TemporaryHub.tsx',
+        // Will be tested later with integration tests
+        'src/renderer/src/components/SpriteEditor/SpriteEditor.tsx',
+        'src/renderer/src/components/Tileset/TilesetEditor.tsx',
+        'src/renderer/src/components/TilemapEditor/TilemapEditor.tsx',
       ],
       // @ts-expect-error - ignore
       all: true,

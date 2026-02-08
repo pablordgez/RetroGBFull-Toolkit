@@ -1,0 +1,95 @@
+.tileset-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background-color: transparent;
+    padding: 0;
+    border-radius: 0;
+    width: 100%;
+}
+
+.tileset-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    background-color: #8bac0f;
+    padding: 5px;
+    border: 3px solid #0f380f;
+    box-shadow: inset 2px 2px 5px rgba(15, 56, 15, 0.4);
+}
+
+.tileset-cell {
+    aspect-ratio: 1;
+    background-color: #9bbc0f;
+    border: 2px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    image-rendering: pixelated;
+    transition: none;
+}
+
+.tileset-cell.selected {
+    border: 3px solid #0f380f;
+    box-shadow: inset 0 0 0 2px #c4bebb;
+    position: relative;
+    background-color: #c4bebb;
+}
+
+.tileset-cell:hover:not(.selected) {
+    border: 2px dashed #306230;
+}
+
+.tileset-cell img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    image-rendering: pixelated;
+}
+
+.tileset-placeholder {
+    color: #0f380f;
+    font-size: 20px;
+    font-weight: bold;
+    user-select: none;
+    opacity: 0.3;
+}
+
+.tileset-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #0f380f;
+    font-family: monospace;
+    font-weight: bold;
+    font-size: 1.2em;
+}
+
+.tileset-nav-btn {
+    background-color: #306230;
+    color: #9bbc0f;
+    border: 3px solid #0f380f;
+    padding: 5px;
+    width: 30px;
+    height: 30px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 3px 3px 0px #0f380f;
+}
+
+.tileset-nav-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: #8bac0f;
+    box-shadow: none;
+    transform: translate(3px, 3px);
+}
+
+.tileset-nav-btn:active:not(:disabled) {
+    transform: translate(3px, 3px);
+    box-shadow: none;
+}
