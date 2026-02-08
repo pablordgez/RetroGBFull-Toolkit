@@ -44,8 +44,10 @@ export const SpriteEditor = () => {
         return new Sprite(frames, width, height, fps, is8x16Mode);
     }, [frames, width, height, fps, is8x16Mode]);
 
+    // Passed to the usePixelDraw hook, tells it how to draw the pixels
     const onPaint = useCallback((ops: { index: number, color: number }[]) => {
         if (ops.length === 0) return;
+        // Takes the frames array, clones it and applies changes to the current frame
         setFrames(prevFrames => {
              const newFrames = [...prevFrames];
              newFrames[currentFrame] = applyGridChanges(newFrames[currentFrame], ops);
@@ -53,11 +55,16 @@ export const SpriteEditor = () => {
         });
     }, [currentFrame]);
 
+    // Passed to the usePixelDraw hook, tells it how to record history for the changes
     const onRecordHistory = useCallback((changes: Map<number, { oldColor: number, newColor: number }>) => {
         const frameIdx = currentFrame;
         const changeList = Array.from(changes.entries()).map(([i, c]) => ({ index: i, ...c }));
 
         record({
+            // Initializes a command with the undo and redo functions
+            // Undo sets the pixels back to their old color, redo sets them to the new color
+            // Also changes the current frame because the user might have changed the frame since drawing
+            // and we want to make the changes visible when undoing/redoing
             undo: () => {
                 setFrames(f => {
                     const newF = [...f];
@@ -89,6 +96,7 @@ export const SpriteEditor = () => {
         onRecordHistory
     });
 
+    // For animation playback, sets an interval that updates once per frame according to the fps and changes the current frame
     useEffect(() => {
         let interval: NodeJS.Timeout;
         if (isPlaying) {
@@ -101,6 +109,7 @@ export const SpriteEditor = () => {
 
 
 
+    // Encodes the sprite data and copies it to the clipboard
     const handleExport = async () => {
         try {
             const encodedString = sprite.encode();
@@ -114,6 +123,7 @@ export const SpriteEditor = () => {
         }
     };
 
+    // Ctrl Z for undo and Ctrl Y or Ctrl Shift Z for redo
     useEffect(() => {
         const handleKeys = (e: KeyboardEvent) => {
             if (e.ctrlKey || e.metaKey) {
@@ -130,9 +140,22 @@ export const SpriteEditor = () => {
         return () => window.removeEventListener('keydown', handleKeys);
     }, [undo, redo]);
 
+
+    // To avoid a usability issue where if the user starts changing the size to a number that starts with a number smaller than the minimum size
+    // it will automatically change to the minimum size and the user won't be able to write the rest of the number
+    // we don't impose the size limit in the form, instead when the user finishes changing the size we handle the change
     const commitResize = () => {
-        const safeW = Math.max(1, Math.min(MAX_GB_WIDTH, parseInt(inputSize.w) || 8));
-        const safeH = Math.max(1, Math.min(MAX_GB_HEIGHT, parseInt(inputSize.h) || 8));
+        let safeW = Math.max(1, Math.min(MAX_GB_WIDTH, parseInt(inputSize.w) || 8));
+        let safeH = Math.max(1, Math.min(MAX_GB_HEIGHT, parseInt(inputSize.h) || 8));
+        
+        // Width can only be a multiple of 8, height can only be a multiple of 8 in 8x8 mode and a multiple of 16 in 8x16 mode
+        const multiple = is8x16Mode ? 16 : 8;
+        const minSize = is8x16Mode ? 16 : 8;
+        
+        safeW = Math.max(8, Math.min(MAX_GB_WIDTH, Math.ceil(safeW / 8) * 8));
+        safeH = Math.max(minSize, Math.min(MAX_GB_HEIGHT, Math.ceil(safeH / multiple) * multiple));
+
+        // Reflects the size in the form
         setInputSize({ w: safeW.toString(), h: safeH.toString() });
 
         if (safeW === width && safeH === height) return;
@@ -141,8 +164,10 @@ export const SpriteEditor = () => {
         const prevWidth = width;
         const prevHeight = height;
 
+        // Applies the resize to all frames
         const newFrames = frames.map(src => resizeGrid(src, width, height, safeW, safeH, ERASER_COLOR));
         
+        // Records the resize action in the history, it just stores the entire previous state to restore it (much easier to implement and more efficient CPU wise)
         record({
             undo: () => {
                 setWidth(prevWidth);
@@ -224,6 +249,7 @@ export const SpriteEditor = () => {
                     onSetFrame={setCurrentFrame}
                     onTogglePlay={() => setIsPlaying(!isPlaying)}
                     onFpsChange={setFps}
+                    // For adding or deleting frames it stores the previous frames array
                     onAddFrame={() => {
                         const newFrames = [...frames];
                         newFrames.splice(currentFrame + 1, 0, new Uint8Array(frames[currentFrame]));

@@ -9,6 +9,7 @@ interface PaletteProps {
 
 export const Palette: React.FC<PaletteProps> = ({ colors, selectedColor, onSelect, onReorder }) => {
 
+    // When we start dragging we register the index of the color being dragged in the event's dataTransfer object
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
         e.dataTransfer.setData('text/plain', index.toString());
         e.dataTransfer.effectAllowed = 'move';
@@ -18,15 +19,20 @@ export const Palette: React.FC<PaletteProps> = ({ colors, selectedColor, onSelec
         e.preventDefault();
     };
 
+    // When dropping
     const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetIndex: number) => {
         e.preventDefault();
+        // We get the index of the color being dragged from the event's dataTransfer object
         const sourceIndexStr = e.dataTransfer.getData('text/plain');
         const sourceIndex = parseInt(sourceIndexStr, 10);
 
         if (isNaN(sourceIndex) || sourceIndex === targetIndex) return;
 
+
         const newColors = [...colors];
+        // Removes the color being dragged and assigns it to movedColor (array destructuring makes it so that movedColor is not an array)
         const [movedColor] = newColors.splice(sourceIndex, 1);
+        // Inserts the moved color in the new position
         newColors.splice(targetIndex, 0, movedColor);
 
         onReorder(newColors);

@@ -51,6 +51,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
     }, [pan, scale]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
+        // Middle mouse button for panning
         if (e.button === 1) {
             e.preventDefault();
             isPanning.current = true;
@@ -58,6 +59,8 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
             return;
         }
 
+        // Else we draw, for this we calculate the world coordinates and pass the input to the handler
+        // This handler is passed as a prop
         const rect = canvasRef.current!.getBoundingClientRect();
         const { x, y } = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
         
@@ -65,6 +68,8 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
+        // If panning we calculate the new pan and pass it to the handler
+        // The handler is passed as a prop
         if (isPanning.current) {
             const dx = e.clientX - lastMousePos.current.x;
             const dy = e.clientY - lastMousePos.current.y;
@@ -73,6 +78,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
             return;
         }
 
+        // Else we are drawing, for this we calculate the world coordinates and pass the input to the handler
         const rect = canvasRef.current!.getBoundingClientRect();
         const { x, y } = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
         
@@ -82,17 +88,21 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
     };
 
     const handleMouseUp = (e: React.MouseEvent) => {
+        // If panning we stop panning
         if (isPanning.current) {
             isPanning.current = false;
             return;
         }
+        // Else we are drawing, for this we calculate the world coordinates and pass the input to the handler
         const rect = canvasRef.current!.getBoundingClientRect();
         const { x, y } = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
         onPixelInput(x, y, 'up', e.button);
     };
 
     const handleMouseLeave = () => {
+        // If panning we stop panning
         isPanning.current = false;
+        // Else we are drawing, we pass the leave event to the handler with invalid coordinates (coordinates don't matter for leave event)
         onPixelInput(-1, -1, 'leave', -1);
     }
 
@@ -100,6 +110,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
+        // We add a wheel event listener to handle zooming with the mouse wheel
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
             const rect = canvas.getBoundingClientRect();
