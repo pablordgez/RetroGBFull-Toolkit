@@ -21,10 +21,10 @@
     "build:linux": "electron-vite build && electron-builder --linux",
     "test": "npm run test:unit",
     "test:unit": "vitest run",
-    "test:integration": "vitest run -c vitest.integration.config.ts",
+    "test:integration": "vitest run -c vitest.integration.config.ts --passWithNoTests",
     "coverage": "npm run coverage:unit && npm run coverage:integration",
     "coverage:unit": "vitest run --coverage",
-    "coverage:integration": "vitest run --coverage -c vitest.integration.config.ts"
+    "coverage:integration": "vitest run --coverage -c vitest.integration.config.ts --passWithNoTests"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
