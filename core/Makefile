@@ -48,40 +48,40 @@ OBJS        = $(CSOURCES:%.c=$(OBJDIR)/%.o) $(ASMSOURCES:%.s=$(OBJDIR)/%.o)
 all:    prepare $(BINS)
 
 debug:
-    @$(MAKE) GBDK_DEBUG=1
+	@$(MAKE) GBDK_DEBUG=1
 
 # Modified rule to include FILE_NAME definition
 $(OBJDIR)/%.o:  %.c
-    @$(call MKDIR,$(@D))
-    $(LCC) $(LCCFLAGS) -DFILE_NAME=$(basename $(notdir $<)) -c -o $@ $<
+	@$(call MKDIR,$(@D))
+	$(LCC) $(LCCFLAGS) -DFILE_NAME=$(basename $(notdir $<)) -c -o $@ $<
 
 $(OBJDIR)/%.o:  %.s
-    @$(call MKDIR,$(@D))
-    $(LCC) $(LCCFLAGS) -c -o $@ $<
+	@$(call MKDIR,$(@D))
+	$(LCC) $(LCCFLAGS) -c -o $@ $<
 
 # Modified rule to include FILE_NAME definition (for assembly generation)
 $(OBJDIR)/%.s:  %.c
-    @$(call MKDIR,$(@D))
-    $(LCC) $(LCCFLAGS) -DFILE_NAME=$(basename $(notdir $<)) -S -o $@ $<
+	@$(call MKDIR,$(@D))
+	$(LCC) $(LCCFLAGS) -DFILE_NAME=$(basename $(notdir $<)) -S -o $@ $<
 
 # Link
 $(BINS):    $(OBJS)
-    $(LCC) $(LCCFLAGS) -o $(BINS) $(OBJS)
+	$(LCC) $(LCCFLAGS) -o $(BINS) $(OBJS)
 
 prepare:
-    @$(call MKDIR,$(OBJDIR))
+	@$(call MKDIR,$(OBJDIR))
 
 clean:
 ifneq ($(strip $(OBJDIR)),)
 ifneq ($(strip $(OBJDIR)),/)
 ifneq ($(strip $(OBJDIR)),.)
-    $(RM) $(call FIXPATH,$(OBJDIR))
+	$(RM) $(call FIXPATH,$(OBJDIR))
 else
-    @echo "Error: OBJDIR is set to current directory (.). Aborting clean."
+	@echo "Error: OBJDIR is set to current directory (.). Aborting clean."
 endif
 else
-    @echo "Error: OBJDIR is set to root (/). Aborting clean."
+	@echo "Error: OBJDIR is set to root (/). Aborting clean."
 endif
 else
-    @echo "Error: OBJDIR is undefined or empty. Aborting clean."
+	@echo "Error: OBJDIR is undefined or empty. Aborting clean."
 endif

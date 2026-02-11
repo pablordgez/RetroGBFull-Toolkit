@@ -4,7 +4,7 @@
 #define ACTORS \
     _ACTOR(Player) \
 
-#define _ACTOR(name) name,
+#define _ACTOR(name) _##name,
 typedef enum {
     ACTORS
     NUM_ACTORS
@@ -21,6 +21,10 @@ void init_actor_functions(void);
     void Init_##name(void);
 ACTORS
 #undef _ACTOR
+
+typedef enum {
+    TAG_PLAYER,
+} ActorTags;
 
 #endif // ACTOR_REGISTRY_H
 
