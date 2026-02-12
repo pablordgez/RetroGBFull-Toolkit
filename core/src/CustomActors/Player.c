@@ -1,11 +1,11 @@
 #include "Player.h"
-void INIT(void){
+void AINIT(void){
     Player* player = (Player*) THIS_ACTOR;
     init_actor(player->base);
-    player->base->type = ACTOR_ID;
+    player->base->type = ID;
 }
 
-void UPDATE(void){
+void AUPDATE(void){
 
 }
 

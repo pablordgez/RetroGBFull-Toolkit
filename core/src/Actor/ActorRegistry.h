@@ -17,8 +17,8 @@ extern RVoid_PVoid actor_init_functions[NUM_ACTORS];
 void init_actor_functions(void);
 
 #define _ACTOR(name) \
-    void Update_##name(void); \
-    void Init_##name(void);
+    void Actor_Update_##name(void); \
+    void Actor_Init_##name(void);
 ACTORS
 #undef _ACTOR
 

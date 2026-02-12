@@ -1,6 +1,6 @@
 #ifndef PLAYER_H
 #define PLAYER_H
-#include "../Actor/Actor.h"
+#include "Actor.h"
 typedef struct {
     Actor* base;
 } Player;
