@@ -1,6 +1,7 @@
 #ifndef GAME_MANAGER_H
 #define GAME_MANAGER_H
-#include "../Scene/Scene.h"
+#include "Scene/Scene.h"
+#include "Scene/SceneRegistry.h"
 typedef struct{
     Scene* current_scene;
     

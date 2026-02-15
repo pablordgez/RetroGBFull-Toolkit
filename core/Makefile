@@ -21,6 +21,7 @@ OBJDIR      = obj
 RESDIR      = res
 BINS        = $(OBJDIR)/$(PROJECTNAME).gb
 
+LCCFLAGS += -I$(SRCDIR) -I$(RESDIR)
 
 ifeq ($(OS),Windows_NT)
     # Windows specific settings
@@ -29,7 +30,7 @@ ifeq ($(OS),Windows_NT)
     # Create directory only if it doesn't exist (prevents errors)
     MKDIR   = if not exist $(call FIXPATH,$(1)) mkdir $(call FIXPATH,$(1))
     # Recursively remove directory
-    RM      = rmdir /S /Q
+    RM      = if exist $(call FIXPATH,$(1)) rmdir /S /Q $(call FIXPATH,$(1))
 else
     # Linux/macOS specific settings
     FIXPATH = $(1)
@@ -48,6 +49,7 @@ OBJS        = $(CSOURCES:%.c=$(OBJDIR)/%.o) $(ASMSOURCES:%.s=$(OBJDIR)/%.o)
 all:    prepare $(BINS)
 
 debug:
+	@$(MAKE) clean
 	@$(MAKE) GBDK_DEBUG=1
 
 # Modified rule to include FILE_NAME definition
@@ -75,7 +77,7 @@ clean:
 ifneq ($(strip $(OBJDIR)),)
 ifneq ($(strip $(OBJDIR)),/)
 ifneq ($(strip $(OBJDIR)),.)
-	$(RM) $(call FIXPATH,$(OBJDIR))
+	@$(call RM,$(OBJDIR))
 else
 	@echo "Error: OBJDIR is set to current directory (.). Aborting clean."
 endif

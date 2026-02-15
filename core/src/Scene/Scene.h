@@ -1,11 +1,11 @@
 #ifndef SCENE_H
 #define SCENE_H
-#include "Actor.h"
+#include "Actor/Actor.h"
 #include "SceneRegistry.h"
 #include <stdint.h>
 #include <stdlib.h>
 typedef struct Scene {
-    Actor* actors;
+    Actor** actors;
     uint8_t num_actors;
     SceneType type;
 } Scene;

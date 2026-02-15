@@ -1,6 +1,6 @@
 #ifndef ACTOR_REGISTRY_H
 #define ACTOR_REGISTRY_H
-#include "../MainDefinitions.h"
+#include "MainDefinitions.h"
 #define ACTORS \
     _ACTOR(Player) \
 

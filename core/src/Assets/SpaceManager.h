@@ -1,6 +1,7 @@
 #ifndef SPACE_MANAGER_H
 #define SPACE_MANAGER_H
 #include <stdint.h>
+#include <stdlib.h>
 typedef struct {
     uint8_t bank;
     uint8_t* data;

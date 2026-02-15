@@ -4,13 +4,14 @@ GameManager* THIS_GAME_MANAGER;
 
 void update_game(void){
     THIS_SCENE = THIS_GAME_MANAGER->current_scene;
-    update_actors();
-    draw_actors();
+    scene_update_functions[THIS_SCENE->type]();
 }
 
 void set_scene(Scene* scene){
-    cleanup_scene(THIS_GAME_MANAGER->current_scene);
+    if(THIS_GAME_MANAGER->current_scene != NULL){
+        cleanup_scene(THIS_GAME_MANAGER->current_scene);
+    }
     THIS_GAME_MANAGER->current_scene = scene;
-    init_scene(THIS_GAME_MANAGER->current_scene);
-    THIS_SCENE = THIS_GAME_MANAGER->current_scene;
+    THIS_SCENE = scene;
+    scene_init_state_functions[scene->type]();
 }
