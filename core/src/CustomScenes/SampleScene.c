@@ -7,7 +7,7 @@ void SINIT(void){
     p->base.type = _Player;
     THIS_ACTOR = (Actor*) p;
     actor_init_functions[p->base.type]();
-    move_actor(500, 500);
+    set_actor_position(500, 500);
     add_actor((Actor*) p);
 }
 

@@ -15,7 +15,7 @@ void add_actor(Actor* actor);
 void remove_actor(Actor* actor);
 void update_actors(void);
 void draw_actors(void);
-void get_actors_by_tag(ActorTags tag, Actor* result[], uint8_t result_limit);
+void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t* out_count);
 void cleanup_scene(Scene* scene);
 
 extern Scene* THIS_SCENE;

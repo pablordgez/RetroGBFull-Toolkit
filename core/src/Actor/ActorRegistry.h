@@ -24,7 +24,7 @@ ACTORS
 
 typedef enum {
     TAG_PLAYER,
-} ActorTags;
+} Tags;
 
 #endif // ACTOR_REGISTRY_H
 

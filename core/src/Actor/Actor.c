@@ -4,10 +4,12 @@ Actor* THIS_ACTOR;
 
 void init_actor(Actor* actor){
     actor->current_animation = NULL;
+    actor->child = NULL;
+    actor->sibling = NULL;
     
 }
 
-void set_tag(ActorTags tag, uint8_t index){
+void set_tag(Tags tag, uint8_t index){
     if(index < 5){
         THIS_ACTOR->tags[index] = tag;
     }
@@ -42,7 +44,19 @@ void draw(void){
     update_animation(draw_x, draw_y);
 }
 
-void move_actor(uint16_t x, uint16_t y){
-    THIS_ACTOR->x = x;
-    THIS_ACTOR->y = y;
+void move_actor(uint16_t dx, uint16_t dy){
+    Actor* next_child = THIS_ACTOR->child;
+    while(next_child != NULL){
+        THIS_ACTOR = next_child;
+        move_actor(dx, dy);
+        next_child = next_child->sibling;
+    }
+    THIS_ACTOR->x += dx;
+    THIS_ACTOR->y += dy;
+}
+
+void set_actor_position(uint16_t x, uint16_t y){
+    uint16_t dx = x - THIS_ACTOR->x;
+    uint16_t dy = y - THIS_ACTOR->y;
+    move_actor(dx, dy);
 }
