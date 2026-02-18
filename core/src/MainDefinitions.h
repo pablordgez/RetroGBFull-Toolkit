@@ -13,7 +13,7 @@
 #define ID CONCAT(_, FILE_NAME)
 
 typedef void (*RVoid_PVoid)(void);
-typedef uint8_t (*RUInt8_PUint8)(uint8_t parameter);
+typedef uint8_t (*RUInt8_PVoid)(void);
 
 
 #endif // MAIN_DEFINITIONS_H

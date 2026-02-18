@@ -7,9 +7,9 @@
 
 typedef enum {
     BOX_COLLIDER,
+    CAPSULE_COLLIDER,
     NUM_COLLIDER
 } ColliderType;
 
-extern RUInt8_PUint8 collision_check_functions[NUM_COLLIDER];
 
 #endif

@@ -25,7 +25,8 @@ void disable_collider(Collider* collider){
 void check_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_collisions){
     uint8_t count = 0;
     for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
-        if(collision_check_functions[THIS_COLLIDER->type](active_colliders[i]->type)){
+        OTHER_COLLIDER = active_colliders[i];
+        if(check_collision()){
             out[count++] = active_colliders[i];
         }
     }
@@ -35,7 +36,8 @@ void check_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_coll
 void check_blocking_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_collisions){
     uint8_t count = 0;
     for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
-        if(active_colliders[i]->is_blocking && collision_check_functions[THIS_COLLIDER->type](active_colliders[i]->type)){
+        OTHER_COLLIDER = active_colliders[i];
+        if(active_colliders[i]->is_blocking && check_collision()){
             out[count++] = active_colliders[i];
         }
     }
