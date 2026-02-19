@@ -7,7 +7,6 @@
 
 typedef enum {
     BOX_COLLIDER,
-    CAPSULE_COLLIDER,
     NUM_COLLIDER
 } ColliderType;
 
