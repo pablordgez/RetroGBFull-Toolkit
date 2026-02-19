@@ -35,7 +35,7 @@ else
     # Linux/macOS specific settings
     FIXPATH = $(1)
     MKDIR   = mkdir -p $(1)
-    RM      = rm -rf
+    RM      = rm -rf $(1)
 endif
 
 
@@ -77,6 +77,7 @@ clean:
 ifneq ($(strip $(OBJDIR)),)
 ifneq ($(strip $(OBJDIR)),/)
 ifneq ($(strip $(OBJDIR)),.)
+	@echo "Cleaning $(OBJDIR)..."
 	@$(call RM,$(OBJDIR))
 else
 	@echo "Error: OBJDIR is set to current directory (.). Aborting clean."

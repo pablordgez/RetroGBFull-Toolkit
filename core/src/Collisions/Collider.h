@@ -2,8 +2,6 @@
 #define COLLIDER_H
 #include <stdint.h>
 #include "Actor/ActorRegistry.h"
-#include "BoxCollider.h"
-#include "CapsuleCollider.h"
 
 typedef struct {
     uint16_t x;

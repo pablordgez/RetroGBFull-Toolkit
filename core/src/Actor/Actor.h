@@ -7,6 +7,13 @@
 #include <stdlib.h>
 #include "Collisions/Collider.h"
 #include "Collisions/CollisionManager.h"
+
+typedef enum {
+    HIGH_PERF,
+    BALANCED,
+    HIGH_FIDELITY
+} PhysicsMode;
+
 typedef struct Actor {
     ActorType type;
     Tags tags[5];
@@ -14,16 +21,12 @@ typedef struct Actor {
     AnimationState* animation_state;
     uint16_t x; uint16_t y;
     Collider* collider;
-    Actor* child;
-    Actor* sibling;
+    struct Actor* child;
+    struct Actor* sibling;
     PhysicsMode physics_mode;
 } Actor;
 
-typedef enum {
-    HIGH_PERF,
-    BALANCED,
-    HIGH_FIDELITY
-} PhysicsMode;
+
 
 void init_actor(Actor* actor);
 void set_tag(Tags tag, uint8_t index);

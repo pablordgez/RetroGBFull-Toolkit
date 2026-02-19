@@ -1,5 +1,6 @@
 #include "Collider.h"
 #include "ColliderRegistry.h"
+#include "BoxCollider.h"
 Collider* THIS_COLLIDER;
 Collider* OTHER_COLLIDER;
 
