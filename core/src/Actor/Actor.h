@@ -15,14 +15,21 @@ typedef struct Actor {
     Collider* collider;
     Actor* child;
     Actor* sibling;
+    PhysicsMode physics_mode;
 } Actor;
+
+typedef enum {
+    HIGH_PERF,
+    BALANCED,
+    HIGH_FIDELITY
+} PhysicsMode;
 
 void init_actor(Actor* actor);
 void set_tag(Tags tag, uint8_t index);
 void set_actor_animation(Animation* animation);
 void set_animation_context(void);
 void draw(void);
-void move_actor(uint16_t dx, uint16_t dy);
+void move_actor(int16_t dx, int16_t dy);
 void set_actor_position(uint16_t x, uint16_t y);
 
 extern Actor* THIS_ACTOR;

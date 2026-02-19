@@ -11,6 +11,8 @@ typedef struct {
     uint8_t type;
     uint8_t id;
     uint8_t is_blocking;
+    uint16_t width;
+    uint16_t height;
     Tags tags[5];
 } Collider;
 

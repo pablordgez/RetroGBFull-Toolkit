@@ -7,7 +7,6 @@
 
 typedef struct {
     Collider base;
-    uint8_t width, height;
 } BoxCollider;
 
 
