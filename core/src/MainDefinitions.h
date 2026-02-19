@@ -15,5 +15,6 @@
 typedef void (*RVoid_PVoid)(void);
 typedef uint8_t (*RUInt8_PVoid)(void);
 
+#define STACK_SIZE 10
 
 #endif // MAIN_DEFINITIONS_H

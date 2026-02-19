@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include "Collisions/Collider.h"
+#include "Collisions/CollisionManager.h"
 typedef struct Actor {
     ActorType type;
     Tags tags[5];
@@ -31,6 +32,8 @@ void set_animation_context(void);
 void draw(void);
 void move_actor(int16_t dx, int16_t dy);
 void set_actor_position(uint16_t x, uint16_t y);
+void balanced_physics(int16_t dx, int16_t dy);
+
 
 extern Actor* THIS_ACTOR;
 
