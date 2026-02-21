@@ -6,9 +6,10 @@
 #include <stdio.h>
 typedef struct {
     Actor base;
+    Animation* animation1;
+    Animation* animation2;
 } Player;
 
-extern const Animation* animation1;
-extern const Animation* animation2;
+
 
 #endif // PLAYER_H

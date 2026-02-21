@@ -5,12 +5,14 @@
 
 #include "animationsample1/animationsample1.h"
 #include "animationsample2/animationsample2.h"
+#include "ball/ballsprite.h"
 
 
 // name, width, height, frames, frame duration
 #define ANIMATIONS \
     _ANIMATION(animationsample1, 8, 8, 1, 60, (void*) 0) \
-    _ANIMATION(animationsample2, 16, 16, 2, 30, animationsample2_metasprite_data)
+    _ANIMATION(animationsample2, 16, 16, 2, 30, animationsample2_metasprite_data) \
+    _ANIMATION(ballsprite, 8, 8, 1, 60, (void*) 0)
 
 
 #define _ANIMATION(name, width, height, frames, duration, metasprite) name,

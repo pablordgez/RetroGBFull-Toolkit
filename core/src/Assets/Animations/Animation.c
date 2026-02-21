@@ -78,4 +78,5 @@ void unload_animation(void){
     }
     remove_spaces(&sprite_space_manager, THIS_ANIMATION_STATE->sprite_slot, THIS_ANIMATION->width * THIS_ANIMATION->height / 64);
     remove_spaces(&sprite_tile_manager, animation_tiles[THIS_ANIMATION->animation_id], THIS_ANIMATION->width * THIS_ANIMATION->height * THIS_ANIMATION->number_of_frames / 64);
+    free(THIS_ANIMATION_STATE);
 }

@@ -42,7 +42,7 @@ void draw_actors(void) {
     }
 }
 
-void get_actors_by_tag(ActorTags tag, Actor* result[], uint8_t result_limit){
+void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t* out_count){
     uint8_t count = 0;
     for(int i = 0; i < THIS_SCENE->num_actors && count < result_limit; i++){
         for(int j = 0; j < 5; j++){
@@ -52,6 +52,7 @@ void get_actors_by_tag(ActorTags tag, Actor* result[], uint8_t result_limit){
             }
         }
     }
+    *out_count = count;
 }
 
 void cleanup_scene(Scene* scene){
