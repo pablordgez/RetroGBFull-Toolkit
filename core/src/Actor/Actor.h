@@ -23,6 +23,7 @@ typedef struct Actor {
     Collider* collider;
     struct Actor* child;
     struct Actor* sibling;
+    struct Actor* parent;
     PhysicsMode physics_mode;
 } Actor;
 
@@ -36,6 +37,9 @@ void draw(void);
 void move_actor(int16_t dx, int16_t dy);
 void set_actor_position(uint16_t x, uint16_t y);
 void balanced_physics(int16_t dx, int16_t dy);
+void attach_child(Actor* child);
+void detach_child(Actor* child);
+void set_collider(Collider* collider);
 
 
 extern Actor* THIS_ACTOR;

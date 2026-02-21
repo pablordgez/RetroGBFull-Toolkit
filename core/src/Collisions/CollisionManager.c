@@ -25,6 +25,7 @@ void disable_collider(Collider* collider){
 void check_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_collisions){
     uint8_t count = 0;
     for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
+        if(active_colliders[i] == THIS_COLLIDER) continue;
         OTHER_COLLIDER = active_colliders[i];
         if(check_collision()){
             out[count++] = active_colliders[i];
@@ -33,12 +34,44 @@ void check_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_coll
     *num_collisions = count;
 }
 
+void check_collisions_with_tags(Collider* out[], uint8_t max_collisions, uint8_t* num_collisions, Tags tag){
+    uint8_t count = 0;
+    for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
+        if(active_colliders[i] == THIS_COLLIDER) continue;
+        OTHER_COLLIDER = active_colliders[i];
+        for(uint8_t _tag = 0; _tag < 5; _tag++){
+            if(OTHER_COLLIDER->tags[_tag] == tag && check_collision()){
+                out[count++] = active_colliders[i];
+                break;
+            }
+        }
+    }
+    *num_collisions = count;
+}
+
+
 void check_blocking_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_collisions){
     uint8_t count = 0;
     for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
+        if(active_colliders[i] == THIS_COLLIDER) continue;
         OTHER_COLLIDER = active_colliders[i];
         if(active_colliders[i]->is_blocking && check_collision()){
             out[count++] = active_colliders[i];
+        }
+    }
+    *num_collisions = count;
+}
+
+void check_blocking_collisions_with_tags(Collider* out[], uint8_t max_collisions, uint8_t* num_collisions, Tags tag){
+    uint8_t count = 0;
+    for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
+        if(active_colliders[i] == THIS_COLLIDER) continue;
+        OTHER_COLLIDER = active_colliders[i];
+        for(uint8_t _tag = 0; _tag < 5; _tag++){
+            if(OTHER_COLLIDER->tags[_tag] == tag && OTHER_COLLIDER->is_blocking && check_collision()){
+                out[count++] = active_colliders[i];
+                break;
+            }
         }
     }
     *num_collisions = count;

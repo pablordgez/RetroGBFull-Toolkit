@@ -17,6 +17,6 @@ typedef struct {
 extern Collider* THIS_COLLIDER;
 extern Collider* OTHER_COLLIDER;
 
-uint8_t check_collision();
+uint8_t check_collision(void);
 
 #endif // COLLIDER_H

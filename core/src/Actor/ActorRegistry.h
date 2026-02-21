@@ -3,6 +3,7 @@
 #include "MainDefinitions.h"
 #define ACTORS \
     _ACTOR(Player) \
+    _ACTOR(Ball) \
 
 #define _ACTOR(name) _##name,
 typedef enum {

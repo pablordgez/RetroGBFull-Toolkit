@@ -34,6 +34,17 @@ void set_actor_animation(Animation* animation){
 
 } 
 
+void set_collider(Collider* collider){
+    if(THIS_ACTOR->collider != NULL){
+        disable_collider(THIS_ACTOR->collider);
+        free(THIS_ACTOR->collider);
+    }
+    THIS_ACTOR->collider = collider;
+    if(collider != NULL){
+        enable_collider(collider);
+    }
+}
+
 void set_animation_context(void){ 
     THIS_ANIMATION = THIS_ACTOR->current_animation; 
     THIS_ANIMATION_STATE = THIS_ACTOR->animation_state; 
@@ -46,118 +57,124 @@ void draw(void){
     update_animation(draw_x, draw_y);
 }
 
-void balanced_physics(int16_t dx, int16_t dy){
-    THIS_ACTOR->x += dx;
-    THIS_ACTOR->y += dy;
-    THIS_COLLIDER->x += dx;
-    THIS_COLLIDER->y += dy;
+void balanced_physics(int16_t dx, int16_t dy) {
+    UPDATE_COORD_SAFE(THIS_ACTOR->x, dx);
+    UPDATE_COORD_SAFE(THIS_ACTOR->y, dy);
+    UPDATE_COORD_SAFE(THIS_COLLIDER->x, dx);
+    UPDATE_COORD_SAFE(THIS_COLLIDER->y, dy);
+
     Collider* out[5];
     uint8_t num_collisions = 0;
     check_blocking_collisions(out, 5, &num_collisions);
-    uint16_t finalY = THIS_ACTOR->y;
-    uint16_t finalX = THIS_ACTOR->x;
-    if(num_collisions > 0){
-        if(dx > 0){
-            uint8_t first = 1;
-            for(int i = 0; i < num_collisions; i++){
-                uint16_t candidateX = out[i]->x - THIS_ACTOR->collider->width;
-                if(candidateX < finalX || first){
-                    finalX = candidateX;
-                    first = 0;
-                }
+
+    if (num_collisions > 0) {
+        uint16_t finalX = THIS_COLLIDER->x;
+        uint16_t finalY = THIS_COLLIDER->y;
+
+        if (dx > 0) {
+            for (int i = 0; i < num_collisions; i++) {
+                uint16_t candidateX = out[i]->x - THIS_COLLIDER->width;
+                if (i == 0 || candidateX < finalX) finalX = candidateX;
             }
-        }
-        else if(dx < 0){
-            uint8_t first = 1;
-            for(int i = 0; i < num_collisions; i++){
+        } else if (dx < 0) {
+            for (int i = 0; i < num_collisions; i++) {
                 uint16_t candidateX = out[i]->x + out[i]->width;
-                if(candidateX > finalX || first){
-                    finalX = candidateX;
-                    first = 0;
-                }
+                if (i == 0 || candidateX > finalX) finalX = candidateX;
             }
         }
-        if(dy > 0){
-            uint8_t first = 1;
-            for(int i = 0; i < num_collisions; i++){
-                uint16_t candidateY = out[i]->y - THIS_ACTOR->collider->height;
-                if(candidateY < finalY || first){
-                    finalY = candidateY;
-                    first = 0;
-                }
+
+        if (dy > 0) {
+            for (int i = 0; i < num_collisions; i++) {
+                uint16_t candidateY = out[i]->y - THIS_COLLIDER->height;
+                if (i == 0 || candidateY < finalY) finalY = candidateY;
             }
-        }
-        else if(dy < 0){
-            uint8_t first = 1;
-            for(int i = 0; i < num_collisions; i++){
+        } else if (dy < 0) {
+            for (int i = 0; i < num_collisions; i++) {
                 uint16_t candidateY = out[i]->y + out[i]->height;
-                if(candidateY > finalY || first){
-                    finalY = candidateY;
-                    first = 0;
-                }
+                if (i == 0 || candidateY > finalY) finalY = candidateY;
             }
         }
-        THIS_ACTOR->x = finalX;
-        THIS_ACTOR->y = finalY;
+
+        int16_t correctionX = finalX - THIS_COLLIDER->x;
+        int16_t correctionY = finalY - THIS_COLLIDER->y;
+
+        THIS_ACTOR->x += correctionX;
+        THIS_ACTOR->y += correctionY;
+        THIS_COLLIDER->x += correctionX;
+        THIS_COLLIDER->y += correctionY;
     }
 }
 
-void move_actor(int16_t dx, int16_t dy){
+void move_actor(int16_t dx, int16_t dy) {
     Actor* parent = THIS_ACTOR;
     Actor* stack[STACK_SIZE];
     uint8_t sp = 0;
     stack[sp++] = parent;
-    while(sp > 0){
+
+    while (sp > 0) {
         Actor* current = stack[--sp];
         Actor* next_child = current->child;
-        while(next_child != NULL){
+        while (next_child != NULL) {
             stack[sp++] = next_child;
             next_child = next_child->sibling;
         }
+        
         THIS_ACTOR = current;
-        if(THIS_ACTOR->collider == NULL){
-            THIS_ACTOR->x += dx;
-            THIS_ACTOR->y += dy;
+
+        if (THIS_ACTOR->collider == NULL || THIS_ACTOR->collider->is_blocking == 0) {
+            UPDATE_COORD_SAFE(THIS_ACTOR->x, dx);
+            UPDATE_COORD_SAFE(THIS_ACTOR->y, dy);
+
+            if (THIS_ACTOR->collider != NULL) {
+                UPDATE_COORD_SAFE(THIS_ACTOR->collider->x, dx);
+                UPDATE_COORD_SAFE(THIS_ACTOR->collider->y, dy);
+            }
             continue;
         }
+
         THIS_COLLIDER = THIS_ACTOR->collider;
-        if(THIS_ACTOR->physics_mode == HIGH_PERF){
-            THIS_ACTOR->x += dx;
-            THIS_ACTOR->y += dy;
-            THIS_COLLIDER->x += dx;
-            THIS_COLLIDER->y += dy;
+
+        if (THIS_ACTOR->physics_mode == HIGH_PERF) {
+            UPDATE_COORD_SAFE(THIS_ACTOR->x, dx);
+            UPDATE_COORD_SAFE(THIS_ACTOR->y, dy);
+            UPDATE_COORD_SAFE(THIS_COLLIDER->x, dx);
+            UPDATE_COORD_SAFE(THIS_COLLIDER->y, dy);
+
             Collider* out[1];
             uint8_t num_collisions = 0;
             check_blocking_collisions(out, 1, &num_collisions);
-            if(num_collisions > 0){
-                if(dx > 0){
-                    THIS_ACTOR->x = out[0]->x - THIS_ACTOR->collider->width;
-                } else if(dx < 0){
-                    THIS_ACTOR->x = out[0]->x + out[0]->width;
-                }
-                if(dy > 0){
-                    THIS_ACTOR->y = out[0]->y - THIS_ACTOR->collider->height;
-                } else if(dy < 0){
-                    THIS_ACTOR->y = out[0]->y + out[0]->height;
-                }
+
+            if (num_collisions > 0) {
+                uint16_t pre_correction_x = THIS_COLLIDER->x;
+                uint16_t pre_correction_y = THIS_COLLIDER->y;
+
+                if (dx > 0) THIS_COLLIDER->x = out[0]->x - THIS_COLLIDER->width;
+                else if (dx < 0) THIS_COLLIDER->x = out[0]->x + out[0]->width;
+
+                if (dy > 0) THIS_COLLIDER->y = out[0]->y - THIS_COLLIDER->height;
+                else if (dy < 0) THIS_COLLIDER->y = out[0]->y + out[0]->height;
+
+                THIS_ACTOR->x += (THIS_COLLIDER->x - pre_correction_x);
+                THIS_ACTOR->y += (THIS_COLLIDER->y - pre_correction_y);
             }
-            free(out);
-        }
-        else if(THIS_ACTOR->physics_mode == BALANCED){
+        } 
+        else if (THIS_ACTOR->physics_mode == BALANCED) {
             balanced_physics(dx, dy);
-        } else{
+        } 
+        else {
             uint16_t absdx = dx > 0 ? dx : -dx;
             uint16_t absdy = dy > 0 ? dy : -dy;
-            int8_t sign = dx > 0 ? 1 : -1;
-            for(int i = 0; i < absdx; i++){
+            int8_t signX = dx > 0 ? 1 : -1;
+            int8_t signY = dy > 0 ? 1 : -1;
+
+            for (int i = 0; i < absdx; i++) {
                 THIS_ACTOR->physics_mode = BALANCED;
-                balanced_physics(sign, 0);
+                balanced_physics(signX, 0);
                 THIS_ACTOR->physics_mode = HIGH_FIDELITY;
             }
-            sign = dy > 0 ? 1 : -1;
-            for(int i = 0; i < absdy; i++){
+            for (int i = 0; i < absdy; i++) {
                 THIS_ACTOR->physics_mode = BALANCED;
-                balanced_physics(0, sign);
+                balanced_physics(0, signY);
                 THIS_ACTOR->physics_mode = HIGH_FIDELITY;
             }
         }
@@ -165,23 +182,61 @@ void move_actor(int16_t dx, int16_t dy){
     THIS_ACTOR = parent;
 }
 
-void set_actor_position(uint16_t x, uint16_t y){
+void set_actor_position(uint16_t x, uint16_t y) {
     Actor* parent = THIS_ACTOR;
     Actor* stack[STACK_SIZE];
     uint8_t sp = 0;
     stack[sp++] = parent;
+    
     int16_t dx = x - THIS_ACTOR->x;
     int16_t dy = y - THIS_ACTOR->y;
 
-    while(sp > 0){
+    while (sp > 0) {
         Actor* current = stack[--sp];
         Actor* next_child = current->child;
-        while(next_child != NULL){
+        while (next_child != NULL) {
             stack[sp++] = next_child;
             next_child = next_child->sibling;
         }
-        current->x += dx;
-        current->y += dy;
+        
+        UPDATE_COORD_SAFE(current->x, dx);
+        UPDATE_COORD_SAFE(current->y, dy);
+        
+        if (current->collider != NULL) {
+            UPDATE_COORD_SAFE(current->collider->x, dx);
+            UPDATE_COORD_SAFE(current->collider->y, dy);
+        }
     }
     THIS_ACTOR = parent;
+}
+
+void attach_child(Actor* child){
+    child->parent = THIS_ACTOR;
+    if(THIS_ACTOR->child == NULL){
+        THIS_ACTOR->child = child;
+    } else{
+        Actor* sibling = THIS_ACTOR->child;
+        while(sibling->sibling != NULL){
+            sibling = sibling->sibling;
+        }
+        sibling->sibling = child;
+    }
+}
+
+void detach_child(Actor* child){
+    if(THIS_ACTOR->child == child){
+        THIS_ACTOR->child = child->sibling;
+        child->sibling = NULL;
+        child->parent = NULL;
+    } else{
+        Actor* sibling = THIS_ACTOR->child;
+        while(sibling != NULL && sibling->sibling != child){
+            sibling = sibling->sibling;
+        }
+        if(sibling != NULL){
+            sibling->sibling = child->sibling;
+            child->sibling = NULL;
+            child->parent = NULL;
+        }
+    }
 }

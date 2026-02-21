@@ -17,4 +17,9 @@ typedef uint8_t (*RUInt8_PVoid)(void);
 
 #define STACK_SIZE 10
 
+#define UPDATE_COORD_SAFE(pos, delta) do { \
+    if ((delta) < 0 && (uint16_t)(-(delta)) > (pos)) { (pos) = 0; } \
+    else { (pos) += (delta); } \
+} while(0)
+
 #endif // MAIN_DEFINITIONS_H

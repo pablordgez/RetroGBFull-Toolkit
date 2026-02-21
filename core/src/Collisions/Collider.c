@@ -4,7 +4,7 @@
 Collider* THIS_COLLIDER;
 Collider* OTHER_COLLIDER;
 
-uint8_t check_collision(){
+uint8_t check_collision(void){
     if(THIS_COLLIDER->type == BOX_COLLIDER){
         if(OTHER_COLLIDER->type == BOX_COLLIDER){
             BoxCollider* a = (BoxCollider*) THIS_COLLIDER;
