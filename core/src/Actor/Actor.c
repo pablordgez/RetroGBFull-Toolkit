@@ -6,6 +6,7 @@ void init_actor(Actor* actor){
     actor->current_animation = NULL;
     actor->child = NULL;
     actor->sibling = NULL;
+    actor->collider = NULL;
     actor->physics_mode = BALANCED;
     
 }
@@ -48,6 +49,8 @@ void draw(void){
 void balanced_physics(int16_t dx, int16_t dy){
     THIS_ACTOR->x += dx;
     THIS_ACTOR->y += dy;
+    THIS_COLLIDER->x += dx;
+    THIS_COLLIDER->y += dy;
     Collider* out[5];
     uint8_t num_collisions = 0;
     check_blocking_collisions(out, 5, &num_collisions);
@@ -57,7 +60,7 @@ void balanced_physics(int16_t dx, int16_t dy){
         if(dx > 0){
             uint8_t first = 1;
             for(int i = 0; i < num_collisions; i++){
-                uint16_t candidateX = out[i]->x - THIS_ACTOR->current_animation->width;
+                uint16_t candidateX = out[i]->x - THIS_ACTOR->collider->width;
                 if(candidateX < finalX || first){
                     finalX = candidateX;
                     first = 0;
@@ -77,7 +80,7 @@ void balanced_physics(int16_t dx, int16_t dy){
         if(dy > 0){
             uint8_t first = 1;
             for(int i = 0; i < num_collisions; i++){
-                uint16_t candidateY = out[i]->y - THIS_ACTOR->current_animation->height;
+                uint16_t candidateY = out[i]->y - THIS_ACTOR->collider->height;
                 if(candidateY < finalY || first){
                     finalY = candidateY;
                     first = 0;
@@ -112,20 +115,28 @@ void move_actor(int16_t dx, int16_t dy){
             next_child = next_child->sibling;
         }
         THIS_ACTOR = current;
+        if(THIS_ACTOR->collider == NULL){
+            THIS_ACTOR->x += dx;
+            THIS_ACTOR->y += dy;
+            continue;
+        }
+        THIS_COLLIDER = THIS_ACTOR->collider;
         if(THIS_ACTOR->physics_mode == HIGH_PERF){
             THIS_ACTOR->x += dx;
             THIS_ACTOR->y += dy;
+            THIS_COLLIDER->x += dx;
+            THIS_COLLIDER->y += dy;
             Collider* out[1];
             uint8_t num_collisions = 0;
             check_blocking_collisions(out, 1, &num_collisions);
             if(num_collisions > 0){
                 if(dx > 0){
-                    THIS_ACTOR->x = out[0]->x - THIS_ACTOR->current_animation->width;
+                    THIS_ACTOR->x = out[0]->x - THIS_ACTOR->collider->width;
                 } else if(dx < 0){
                     THIS_ACTOR->x = out[0]->x + out[0]->width;
                 }
                 if(dy > 0){
-                    THIS_ACTOR->y = out[0]->y - THIS_ACTOR->current_animation->height;
+                    THIS_ACTOR->y = out[0]->y - THIS_ACTOR->collider->height;
                 } else if(dy < 0){
                     THIS_ACTOR->y = out[0]->y + out[0]->height;
                 }
@@ -152,7 +163,6 @@ void move_actor(int16_t dx, int16_t dy){
         }
     }
     THIS_ACTOR = parent;
-    
 }
 
 void set_actor_position(uint16_t x, uint16_t y){
