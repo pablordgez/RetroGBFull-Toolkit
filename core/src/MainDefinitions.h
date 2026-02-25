@@ -10,6 +10,9 @@
 #define SUPDATE CONCAT(scene_update_, FILE_NAME) 
 #define SINIT CONCAT(scene_init_state_, FILE_NAME)
 
+#define SCREEN_WIDTH 160
+#define SCREEN_HEIGHT 144
+
 #define ID CONCAT(_, FILE_NAME)
 
 typedef void (*RVoid_PVoid)(void);
