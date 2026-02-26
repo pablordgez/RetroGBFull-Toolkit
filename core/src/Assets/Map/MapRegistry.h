@@ -3,6 +3,7 @@
 
 #include "Map.h"
 #include "Assets/SpaceManager.h"
+#include "map1/map1.h"
 
 // name, width, height
 #define MAPS \

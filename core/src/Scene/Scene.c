@@ -6,6 +6,7 @@ Scene* THIS_SCENE;
 void init_scene(Scene* scene){
     scene->num_actors = 0;
     scene->actors = NULL;
+    scene->map = NULL;
 }
 
 
@@ -60,4 +61,14 @@ void cleanup_scene(Scene* scene){
     scene->actors = NULL;
     scene->num_actors = 0;
     free(scene);
+}
+
+void set_scene_map(Map* map){
+    if(THIS_SCENE->map != NULL){
+        unload_map();
+    }
+    THIS_SCENE->map = map;
+    if(THIS_SCENE->map != NULL){
+        load_map();
+    }
 }

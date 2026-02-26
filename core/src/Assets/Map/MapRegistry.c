@@ -1,10 +1,10 @@
 #include "MapRegistry.h"
 
-#define _MAP(name, width, height) \
+#define _MAP(name, _width, _height) \
     const Map _##name = { \
         .id = name, \
-        .width = width, \
-        .height = height \
+        .width = _width, \
+        .height = _height, \
         .tileset = name##_tileset, \
         .num_tiles = name##_num_tiles \
     };
