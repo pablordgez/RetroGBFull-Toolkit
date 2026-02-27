@@ -27,10 +27,11 @@ typedef struct {
 extern Animation* THIS_ANIMATION;
 extern AnimationState* THIS_ANIMATION_STATE;
 
-void init_animation_system(void);
-void init_animation_state(AnimationState* animation_state);
-void load_animation(uint8_t x, uint8_t y);
-void unload_animation(void);
-void move_animation(uint8_t x, uint8_t y);
-void update_animation(uint8_t x, uint8_t y);
+void init_animation_system(void) BANKED;
+void init_animation_state(AnimationState* animation_state) BANKED;
+void load_animation(uint8_t x, uint8_t y) NONBANKED;
+void unload_animation(void) BANKED;
+void move_animation(uint8_t x, uint8_t y) NONBANKED;
+void update_animation(uint8_t x, uint8_t y) NONBANKED;
+void hide_animation(void) NONBANKED;
 #endif /* ANIMATION_H */

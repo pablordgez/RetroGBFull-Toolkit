@@ -1,4 +1,5 @@
 #include "SpaceManager.h"
+#include <string.h>
 
 void init_space_manager(SpaceManager* manager, uint8_t num_spaces){
     // each space uses only 1 bit, so each entry is 8 spaces
@@ -8,6 +9,7 @@ void init_space_manager(SpaceManager* manager, uint8_t num_spaces){
     if(manager->spaces == (void*)0){
         return; // Memory allocation failed
     }
+    memset(manager->spaces, 0, num_bytes);
 }
 
 uint8_t register_space(SpaceManager* manager, uint8_t size) {

@@ -1,5 +1,6 @@
 #include "Player.h"
 
+uint8_t prev_joy = 0;
 
 void AINIT(void){
     Player* player = (Player*) THIS_ACTOR;
@@ -29,5 +30,10 @@ void AUPDATE(void){
     else if(joypad() & J_DOWN){
         move_actor(0, 10);
     }
+
+    if(joypad() & J_START && !(prev_joy & J_START)){
+        printf("Player position: %u, %u\n", THIS_ACTOR->x, THIS_ACTOR->y);
+    }
+    prev_joy = joypad();
 }
 

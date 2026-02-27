@@ -1,5 +1,6 @@
 #include "Scene.h"
 #include <stdio.h>
+#include "Camera/Camera.h"
 
 Scene* THIS_SCENE;
 
@@ -8,8 +9,6 @@ void init_scene(Scene* scene){
     scene->actors = NULL;
     scene->map = NULL;
 }
-
-
 
 void add_actor(Actor* actor){
     THIS_SCENE->actors = realloc(THIS_SCENE->actors, sizeof(Actor*) * (THIS_SCENE->num_actors + 1));
@@ -33,6 +32,9 @@ void update_actors(void){
     for(int i = 0; i < THIS_SCENE->num_actors; i++){
         THIS_ACTOR = THIS_SCENE->actors[i];
         actor_update_functions[THIS_ACTOR->type]();
+        if(THIS_ACTOR->followed){
+            update_camera(THIS_ACTOR->x, THIS_ACTOR->y);
+        }
     }
 }
 
@@ -68,6 +70,7 @@ void set_scene_map(Map* map){
         unload_map();
     }
     THIS_SCENE->map = map;
+    THIS_MAP = map;
     if(THIS_SCENE->map != NULL){
         load_map();
     }

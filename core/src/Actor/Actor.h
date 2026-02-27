@@ -25,21 +25,22 @@ typedef struct Actor {
     struct Actor* sibling;
     struct Actor* parent;
     PhysicsMode physics_mode;
+    uint8_t followed;
 } Actor;
 
 
 
-void init_actor(Actor* actor);
-void set_tag(Tags tag, uint8_t index);
-void set_actor_animation(Animation* animation);
-void set_animation_context(void);
-void draw(void);
-void move_actor(int16_t dx, int16_t dy);
-void set_actor_position(uint16_t x, uint16_t y);
-void balanced_physics(int16_t dx, int16_t dy);
-void attach_child(Actor* child);
-void detach_child(Actor* child);
-void set_collider(Collider* collider);
+void init_actor(Actor* actor) BANKED;
+void set_tag(Tags tag, uint8_t index) BANKED;
+void set_actor_animation(Animation* animation) NONBANKED;
+void set_animation_context(void) BANKED;
+void draw(void) NONBANKED;
+void move_actor(int16_t dx, int16_t dy) NONBANKED;
+void set_actor_position(uint16_t x, uint16_t y) BANKED;
+void balanced_physics(int16_t dx, int16_t dy) NONBANKED;
+void attach_child(Actor* child) BANKED;
+void detach_child(Actor* child) BANKED;
+void set_collider(Collider* collider) BANKED;
 
 
 extern Actor* THIS_ACTOR;

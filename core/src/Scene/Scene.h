@@ -2,6 +2,7 @@
 #define SCENE_H
 #include "Actor/Actor.h"
 #include "Assets/Map/Map.h"
+#include "Assets/Map/MapRegistry.h"
 #include "SceneRegistry.h"
 #include <stdint.h>
 #include <stdlib.h>

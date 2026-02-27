@@ -1,30 +1,60 @@
+#pragma bank 255
 #include "Actor.h"
+#include "Camera/Camera.h"
+
 
 Actor* THIS_ACTOR;
 
-void init_actor(Actor* actor){
-    actor->current_animation = NULL;
-    actor->child = NULL;
-    actor->sibling = NULL;
-    actor->collider = NULL;
-    actor->physics_mode = BALANCED;
-    
+static void clamp_actor_to_map(Actor* actor) NONBANKED{
+    if (THIS_SCENE == NULL || THIS_SCENE->map == NULL) {
+        return;
+    }
+
+    uint16_t max_x = ((THIS_SCENE->map->width << 3) + 7u) << 4;
+    uint16_t max_y = ((THIS_SCENE->map->height << 3) + 15u) << 4;
+
+    uint16_t old_x = actor->x;
+    uint16_t old_y = actor->y;
+
+    if (actor->x > max_x) actor->x = max_x;
+    if (actor->y > max_y) actor->y = max_y;
+
+    if (actor->collider != NULL) {
+        if (actor->x < old_x) actor->collider->x -= (old_x - actor->x);
+        if (actor->y < old_y) actor->collider->y -= (old_y - actor->y);
+    }
 }
 
-void set_tag(Tags tag, uint8_t index){
+void init_actor(Actor* actor) BANKED{
+    memset(actor->tags, 0, sizeof(actor->tags));
+    actor->current_animation = NULL;
+    actor->animation_state = NULL;
+    actor->x = 0;
+    actor->y = 0;
+    actor->child = NULL;
+    actor->sibling = NULL;
+    actor->parent = NULL;
+    actor->collider = NULL;
+    actor->physics_mode = BALANCED;
+    actor->followed = 0;
+}
+
+void set_tag(Tags tag, uint8_t index) BANKED{
     if(index < 5){
         THIS_ACTOR->tags[index] = tag;
     }
 }
 
-void set_actor_animation(Animation* animation){
+void set_actor_animation(Animation* animation) NONBANKED{
     if(animation == THIS_ACTOR->current_animation){
         return;
     }
     
     if(THIS_ACTOR->current_animation != NULL){
         set_animation_context();
+        hide_animation();
         unload_animation();
+        THIS_ACTOR->animation_state = NULL;
     }
     THIS_ACTOR->current_animation = animation;
     THIS_ACTOR->animation_state = malloc(sizeof(AnimationState));
@@ -34,7 +64,7 @@ void set_actor_animation(Animation* animation){
 
 } 
 
-void set_collider(Collider* collider){
+void set_collider(Collider* collider) BANKED{
     if(THIS_ACTOR->collider != NULL){
         disable_collider(THIS_ACTOR->collider);
         free(THIS_ACTOR->collider);
@@ -45,19 +75,27 @@ void set_collider(Collider* collider){
     }
 }
 
-void set_animation_context(void){ 
+void set_animation_context(void) BANKED{ 
     THIS_ANIMATION = THIS_ACTOR->current_animation; 
     THIS_ANIMATION_STATE = THIS_ACTOR->animation_state; 
 }
 
-void draw(void){
+void draw(void) NONBANKED{
     set_animation_context();
-    uint8_t draw_x = THIS_ACTOR->x >> 4;
-    uint8_t draw_y = THIS_ACTOR->y >> 4;
+    int16_t draw_x = (THIS_ACTOR->x >> 4) - (int16_t)camera_x;
+    int16_t draw_y = (THIS_ACTOR->y >> 4) - (int16_t)camera_y;
+
+    int16_t cull_left = 8 - THIS_ANIMATION->width;
+    int16_t cull_top = 16 - THIS_ANIMATION->height;
+
+    if(draw_x < cull_left || draw_x > SCREEN_WIDTH + 8 || draw_y < cull_top || draw_y > SCREEN_HEIGHT + 16){
+        hide_animation();
+        return;
+    }
     update_animation(draw_x, draw_y);
 }
 
-void balanced_physics(int16_t dx, int16_t dy) {
+void balanced_physics(int16_t dx, int16_t dy) NONBANKED{
     UPDATE_COORD_SAFE(THIS_ACTOR->x, dx);
     UPDATE_COORD_SAFE(THIS_ACTOR->y, dy);
     UPDATE_COORD_SAFE(THIS_COLLIDER->x, dx);
@@ -103,9 +141,10 @@ void balanced_physics(int16_t dx, int16_t dy) {
         THIS_COLLIDER->x += correctionX;
         THIS_COLLIDER->y += correctionY;
     }
+    clamp_actor_to_map(THIS_ACTOR);
 }
 
-void move_actor(int16_t dx, int16_t dy) {
+void move_actor(int16_t dx, int16_t dy) NONBANKED{
     Actor* parent = THIS_ACTOR;
     Actor* stack[STACK_SIZE];
     uint8_t sp = 0;
@@ -129,6 +168,7 @@ void move_actor(int16_t dx, int16_t dy) {
                 UPDATE_COORD_SAFE(THIS_ACTOR->collider->x, dx);
                 UPDATE_COORD_SAFE(THIS_ACTOR->collider->y, dy);
             }
+            clamp_actor_to_map(THIS_ACTOR);
             continue;
         }
 
@@ -157,6 +197,7 @@ void move_actor(int16_t dx, int16_t dy) {
                 THIS_ACTOR->x += (THIS_COLLIDER->x - pre_correction_x);
                 THIS_ACTOR->y += (THIS_COLLIDER->y - pre_correction_y);
             }
+            clamp_actor_to_map(THIS_ACTOR);
         } 
         else if (THIS_ACTOR->physics_mode == BALANCED) {
             balanced_physics(dx, dy);
@@ -177,12 +218,13 @@ void move_actor(int16_t dx, int16_t dy) {
                 balanced_physics(0, signY);
                 THIS_ACTOR->physics_mode = HIGH_FIDELITY;
             }
+            clamp_actor_to_map(THIS_ACTOR);
         }
     }
     THIS_ACTOR = parent;
 }
 
-void set_actor_position(uint16_t x, uint16_t y) {
+void set_actor_position(uint16_t x, uint16_t y) BANKED{
     Actor* parent = THIS_ACTOR;
     Actor* stack[STACK_SIZE];
     uint8_t sp = 0;
@@ -206,11 +248,12 @@ void set_actor_position(uint16_t x, uint16_t y) {
             UPDATE_COORD_SAFE(current->collider->x, dx);
             UPDATE_COORD_SAFE(current->collider->y, dy);
         }
+        clamp_actor_to_map(current);
     }
     THIS_ACTOR = parent;
 }
 
-void attach_child(Actor* child){
+void attach_child(Actor* child) BANKED{
     child->parent = THIS_ACTOR;
     if(THIS_ACTOR->child == NULL){
         THIS_ACTOR->child = child;
@@ -223,7 +266,7 @@ void attach_child(Actor* child){
     }
 }
 
-void detach_child(Actor* child){
+void detach_child(Actor* child) BANKED{
     if(THIS_ACTOR->child == child){
         THIS_ACTOR->child = child->sibling;
         child->sibling = NULL;
