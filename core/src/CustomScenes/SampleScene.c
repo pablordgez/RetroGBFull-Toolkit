@@ -8,6 +8,7 @@ void SINIT(void){
     THIS_ACTOR = (Actor*) p;
     actor_init_functions[p->base.type]();
     set_actor_position(500, 500);
+    p->base.followed = 1;
     Collider* p_collider = (Collider*) malloc(sizeof(Collider));
     p_collider->x = 500;
     p_collider->y = 500;
@@ -50,6 +51,7 @@ void SINIT(void){
     b2_collider->id = 2;
     set_collider(b2_collider);
     add_actor((Actor*) b2);
+    set_scene_map(maps[map1]);
 }
 
 void SUPDATE(void){

@@ -11,6 +11,7 @@ void main(void)
     init_actor_functions();
     init_scene_functions();
     init_animation_system();
+    init_map_system();
 
     GameManager gm;
     THIS_GAME_MANAGER = &gm;
