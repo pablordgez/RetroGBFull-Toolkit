@@ -18,7 +18,7 @@ typedef struct {
 extern Map* THIS_MAP;
 
 void init_map_system(void) BANKED;
-void load_map(void) NONBANKED;
+void load_map(uint8_t window) NONBANKED;
 void unload_map(void) BANKED;
-void load_map_section(uint8_t x, uint8_t y, uint8_t width, uint8_t height) NONBANKED;
+void load_map_section(uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t window) NONBANKED;
 #endif /* MAP_H */

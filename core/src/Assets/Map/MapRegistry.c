@@ -1,7 +1,7 @@
 #include "MapRegistry.h"
 
 #define _MAP(name, _width, _height) \
-    const Map _##name = { \
+    Map _##name = { \
         .id = name, \
         .width = _width, \
         .height = _height, \
@@ -13,7 +13,7 @@
 
 #define _MAP(name, width, height) \
         [name] = &_##name,
-    const Map* maps[] = {
+    Map* maps[] = {
     MAPS
     };
 #undef _MAP

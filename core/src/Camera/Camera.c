@@ -52,17 +52,17 @@ void update_camera(uint16_t worldx, uint16_t worldy){
     uint8_t new_cam_tile_y = camera_y >> 3;
 
     if (new_cam_tile_x > old_cam_tile_x) {
-        load_map_section(new_cam_tile_x + 20, new_cam_tile_y, 1, 19);
+        load_map_section(new_cam_tile_x + 20, new_cam_tile_y, 1, 19, 0);
     } 
     else if (new_cam_tile_x < old_cam_tile_x) {
-        load_map_section(new_cam_tile_x, new_cam_tile_y, 1, 19);
+        load_map_section(new_cam_tile_x, new_cam_tile_y, 1, 19, 0);
     }
 
     if (new_cam_tile_y > old_cam_tile_y) {
-        load_map_section(new_cam_tile_x, new_cam_tile_y + 18, 21, 1);
+        load_map_section(new_cam_tile_x, new_cam_tile_y + 18, 21, 1, 0);
     } 
     else if (new_cam_tile_y < old_cam_tile_y) {
-        load_map_section(new_cam_tile_x, new_cam_tile_y, 21, 1);
+        load_map_section(new_cam_tile_x, new_cam_tile_y, 21, 1, 0);
     }
 
     move_bkg(camera_x, camera_y);

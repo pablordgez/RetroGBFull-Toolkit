@@ -52,12 +52,11 @@ void SINIT(void){
     set_collider(b2_collider);
     add_actor((Actor*) b2);
     set_scene_map(maps[map1]);
+    set_scene_window(maps[ui_test]);
+    move_win(7, SCREEN_HEIGHT - 8);
 }
 
 void SUPDATE(void){
     update_actors();
     draw_actors();
-    __asm \
-        nop \
-    __endasm;
 }  
