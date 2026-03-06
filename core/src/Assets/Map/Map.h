@@ -12,6 +12,9 @@ typedef struct {
     uint8_t* tileset;
     uint8_t num_tiles;
     uint8_t first_tile;
+    // Tile-row positions on screen used only by window split rendering.
+    uint8_t window_top_end;
+    uint8_t window_bottom_start;
 
 } Map;
 

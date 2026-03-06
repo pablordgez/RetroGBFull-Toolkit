@@ -1,6 +1,7 @@
+#pragma bank 255
 #include "SampleScene.h"
 
-void SINIT(void){
+void SINIT(void) BANKED{
     SampleScene* scene = (SampleScene*) THIS_SCENE; 
     init_scene(&scene->base); 
     Player* p = (Player*) malloc(sizeof(Player));
@@ -53,7 +54,6 @@ void SINIT(void){
     add_actor((Actor*) b2);
     set_scene_map(maps[map1]);
     set_scene_window(maps[ui_test]);
-    move_win(7, SCREEN_HEIGHT - 8);
 }
 
 void SUPDATE(void){
