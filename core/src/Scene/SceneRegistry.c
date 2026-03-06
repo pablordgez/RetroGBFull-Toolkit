@@ -1,6 +1,6 @@
 #include "SceneRegistry.h"
 
-RVoid_PVoid scene_init_state_functions[NUM_SCENES]; 
+RVoid_PVoid_BANKED scene_init_state_functions[NUM_SCENES]; 
 RVoid_PVoid scene_update_functions[NUM_SCENES];
 
 #define _SCENE(name) \

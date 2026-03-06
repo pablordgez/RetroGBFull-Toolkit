@@ -1,21 +1,123 @@
+#pragma bank 255
 #include "Scene.h"
 #include <stdio.h>
 #include "Camera/Camera.h"
 
 Scene* THIS_SCENE;
+typedef enum {
+    WINDOW_SPLIT_DISABLED = 0,
+    WINDOW_SPLIT_TOP_ONLY,
+    WINDOW_SPLIT_TOP_AND_BOTTOM
+} WindowSplitMode;
 
-void init_scene(Scene* scene){
+static WindowSplitMode window_split_mode = WINDOW_SPLIT_DISABLED;
+static uint8_t window_split_stage = 0;
+static uint8_t window_split_hide_ly = 0;
+static uint8_t window_split_show_ly = 0;
+static uint8_t window_split_handlers_added = 0;
+
+static void window_split_lcd_isr(void) NONBANKED{
+    if(window_split_mode == WINDOW_SPLIT_DISABLED) return;
+
+    if(window_split_mode == WINDOW_SPLIT_TOP_ONLY){
+        if(window_split_stage == 0){
+            HIDE_WIN;
+            window_split_stage = 1;
+        }
+        return;
+    }
+    if(window_split_stage == 0){
+        HIDE_WIN;
+        if(window_split_show_ly < SCREEN_HEIGHT){
+            LYC_REG = window_split_show_ly;
+            window_split_stage = 1;
+        } else{
+            window_split_stage = 2;
+        }
+    } else if(window_split_stage == 1){
+        SHOW_WIN;
+        window_split_stage = 2;
+    }
+}
+
+static void window_split_vbl_isr(void) NONBANKED{
+    if(window_split_mode == WINDOW_SPLIT_DISABLED) return;
+
+    WY_REG = 0;
+    window_split_stage = 0;
+
+    SHOW_WIN;
+    LYC_REG = window_split_hide_ly;
+}
+
+static void configure_window_split(Map* map) BANKED{
+    uint8_t top_end;
+    uint8_t bottom_start;
+    uint16_t top_ly;
+    uint16_t bottom_ly;
+
+    if(map == NULL){
+        window_split_mode = WINDOW_SPLIT_DISABLED;
+        window_split_stage = 0;
+        STAT_REG &= (uint8_t)~STATF_LYC;
+        return;
+    }
+
+    top_end = map->window_top_end;
+    bottom_start = map->window_bottom_start;
+    top_ly = ((uint16_t)top_end) << 3;
+    bottom_ly = ((uint16_t)bottom_start) << 3;
+
+    if(top_end == 0 && bottom_start == 0){
+        window_split_mode = WINDOW_SPLIT_DISABLED;
+        window_split_stage = 0;
+        STAT_REG &= (uint8_t)~STATF_LYC;
+        SHOW_WIN;
+        return;
+    }
+    if(top_end > 0 && bottom_start == 0 && top_ly < SCREEN_HEIGHT){
+        window_split_mode = WINDOW_SPLIT_TOP_ONLY;
+        window_split_hide_ly = (uint8_t)top_ly;
+    }
+    else if(top_end > 0 && bottom_start > top_end && top_ly < SCREEN_HEIGHT){
+        window_split_mode = WINDOW_SPLIT_TOP_AND_BOTTOM;
+        window_split_hide_ly = (uint8_t)top_ly;
+        window_split_show_ly = (bottom_ly < SCREEN_HEIGHT) ? (uint8_t)bottom_ly : 255;
+    }
+    else{
+        window_split_mode = WINDOW_SPLIT_DISABLED;
+        window_split_stage = 0;
+        STAT_REG &= (uint8_t)~STATF_LYC;
+        SHOW_WIN;
+        return;
+    }
+    if(window_split_handlers_added == 0){
+        add_LCD(window_split_lcd_isr);
+        add_VBL(window_split_vbl_isr);
+        window_split_handlers_added = 1;
+    }
+    window_split_stage = 0;
+    WY_REG = 0;
+    STAT_REG |= STATF_LYC;
+    IE_REG |= (LCD_IFLAG | VBL_IFLAG);
+    enable_interrupts();
+    SHOW_WIN;
+    LYC_REG = window_split_hide_ly;
+}
+
+void init_scene(Scene* scene) BANKED{
     scene->num_actors = 0;
     scene->actors = NULL;
     scene->map = NULL;
+    scene->window = NULL;
 }
 
-void add_actor(Actor* actor){
+void add_actor(Actor* actor) BANKED{
     THIS_SCENE->actors = realloc(THIS_SCENE->actors, sizeof(Actor*) * (THIS_SCENE->num_actors + 1));
     THIS_SCENE->actors[THIS_SCENE->num_actors++] = actor;
 }
 
-void remove_actor(Actor* actor){
+void remove_actor(Actor* actor) BANKED{
     for(int i = 0; i < THIS_SCENE->num_actors; i++){
         if(THIS_SCENE->actors[i] == actor){
             for(int j = i; j < THIS_SCENE->num_actors - 1; j++){
@@ -28,7 +130,7 @@ void remove_actor(Actor* actor){
     }
 }
 
-void update_actors(void){
+void update_actors(void) NONBANKED{
     for(int i = 0; i < THIS_SCENE->num_actors; i++){
         THIS_ACTOR = THIS_SCENE->actors[i];
         actor_update_functions[THIS_ACTOR->type]();
@@ -38,14 +140,14 @@ void update_actors(void){
     }
 }
 
-void draw_actors(void) {
+void draw_actors(void) NONBANKED {
     for(int i = 0; i < THIS_SCENE->num_actors; i++){ 
         THIS_ACTOR = THIS_SCENE->actors[i]; 
         draw(); 
     }
 }
 
-void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t* out_count){
+void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t* out_count) BANKED{
     uint8_t count = 0;
     for(int i = 0; i < THIS_SCENE->num_actors && count < result_limit; i++){
         for(int j = 0; j < 5; j++){
@@ -58,20 +160,38 @@ void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t*
     *out_count = count;
 }
 
-void cleanup_scene(Scene* scene){
+void cleanup_scene(Scene* scene) BANKED{
     free(scene->actors);
     scene->actors = NULL;
     scene->num_actors = 0;
+    set_scene_map(NULL);
+    set_scene_window(NULL);
     free(scene);
 }
 
-void set_scene_map(Map* map){
+void set_scene_map(Map* map) NONBANKED{
     if(THIS_SCENE->map != NULL){
         unload_map();
     }
     THIS_SCENE->map = map;
     THIS_MAP = map;
     if(THIS_SCENE->map != NULL){
-        load_map();
+        load_map(0);
+    }
+}
+
+void set_scene_window(Map* map) NONBANKED{
+    if(THIS_SCENE->window != NULL){
+        THIS_MAP = THIS_SCENE->window;
+        unload_map();
+    }
+    THIS_SCENE->window = map;
+    THIS_MAP = map;
+    if(THIS_SCENE->window != NULL){
+        load_map(1);
+    }
+    configure_window_split(THIS_SCENE->window);
+    if(THIS_SCENE->map != NULL){
+        THIS_MAP = THIS_SCENE->map;
     }
 }

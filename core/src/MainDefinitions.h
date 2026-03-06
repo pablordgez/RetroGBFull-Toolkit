@@ -2,6 +2,7 @@
 #define MAIN_DEFINITIONS_H
 
 #include <stdint.h>
+#include <gb/gb.h>
 
 #define _CONCAT_DELAY(A,B) A ## B
 #define CONCAT(A,B) _CONCAT_DELAY(A,B)
@@ -16,6 +17,7 @@
 #define ID CONCAT(_, FILE_NAME)
 
 typedef void (*RVoid_PVoid)(void);
+typedef void (*RVoid_PVoid_BANKED)(void) BANKED;
 typedef uint8_t (*RUInt8_PVoid)(void);
 
 #define STACK_SIZE 10

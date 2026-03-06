@@ -11,16 +11,18 @@ typedef struct Scene {
     uint8_t num_actors;
     SceneType type;
     Map* map;
+    Map* window;
 } Scene;
 
-void init_scene(Scene* scene);
-void add_actor(Actor* actor);
-void remove_actor(Actor* actor);
-void update_actors(void);
-void draw_actors(void);
-void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t* out_count);
-void cleanup_scene(Scene* scene);
-void set_scene_map(Map* map);
+void init_scene(Scene* scene) BANKED;
+void add_actor(Actor* actor) BANKED;
+void remove_actor(Actor* actor) BANKED;
+void update_actors(void) NONBANKED;
+void draw_actors(void) NONBANKED;
+void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t* out_count) BANKED;
+void cleanup_scene(Scene* scene) BANKED;
+void set_scene_map(Map* map) NONBANKED;
+void set_scene_window(Map* map) NONBANKED;
 
 extern Scene* THIS_SCENE;
 #endif // SCENE_H

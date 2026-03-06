@@ -23,6 +23,7 @@ void main(void)
     set_scene((Scene*) &ss);
 
     DISPLAY_ON;
+    SHOW_WIN;
     SHOW_BKG;
     SHOW_SPRITES;
     
