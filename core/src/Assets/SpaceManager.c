@@ -1,7 +1,8 @@
+#pragma bank 255
 #include "SpaceManager.h"
 #include <string.h>
 
-void init_space_manager(SpaceManager* manager, uint8_t num_spaces){
+void init_space_manager(SpaceManager* manager, uint8_t num_spaces) BANKED{
     // each space uses only 1 bit, so each entry is 8 spaces
     uint8_t num_bytes = (num_spaces + 7) / 8;
     manager->spaces = (uint8_t*)malloc(num_bytes);
@@ -12,7 +13,7 @@ void init_space_manager(SpaceManager* manager, uint8_t num_spaces){
     memset(manager->spaces, 0, num_bytes);
 }
 
-uint8_t register_space(SpaceManager* manager, uint8_t size) {
+uint8_t register_space(SpaceManager* manager, uint8_t size) BANKED{
     uint8_t block_start = 0;
     uint8_t consecutive_free = 0;
     for(uint8_t slot = 0; slot < manager->total_spaces; slot++){
@@ -57,7 +58,7 @@ uint8_t register_space(SpaceManager* manager, uint8_t size) {
 }
 
 
-void remove_spaces(SpaceManager* manager, uint8_t slot, uint8_t size) {
+void remove_spaces(SpaceManager* manager, uint8_t slot, uint8_t size) BANKED{
     if(slot >= manager->total_spaces) {
         return; // Invalid slot
     }

@@ -95,7 +95,7 @@ void draw(void) NONBANKED{
     update_animation(draw_x, draw_y);
 }
 
-void balanced_physics(int16_t dx, int16_t dy) NONBANKED{
+void balanced_physics(int16_t dx, int16_t dy) BANKED{
     UPDATE_COORD_SAFE(THIS_ACTOR->x, dx);
     UPDATE_COORD_SAFE(THIS_ACTOR->y, dy);
     UPDATE_COORD_SAFE(THIS_COLLIDER->x, dx);
@@ -144,7 +144,7 @@ void balanced_physics(int16_t dx, int16_t dy) NONBANKED{
     clamp_actor_to_map(THIS_ACTOR);
 }
 
-void move_actor(int16_t dx, int16_t dy) NONBANKED{
+void move_actor(int16_t dx, int16_t dy) BANKED{
     Actor* parent = THIS_ACTOR;
     Actor* stack[STACK_SIZE];
     uint8_t sp = 0;

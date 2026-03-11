@@ -34,6 +34,9 @@ void AUPDATE(void){
     if(joypad() & J_START && !(prev_joy & J_START)){
         printf("Player position: %u, %u\n", THIS_ACTOR->x, THIS_ACTOR->y);
     }
+    if(joypad() & J_SELECT && !(prev_joy & J_SELECT)){
+        play_song(songs[happybirthday], 0);
+    }
     prev_joy = joypad();
 }
 

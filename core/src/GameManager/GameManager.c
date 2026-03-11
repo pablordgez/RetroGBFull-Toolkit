@@ -5,6 +5,7 @@ GameManager* THIS_GAME_MANAGER;
 void update_game(void){
     THIS_SCENE = THIS_GAME_MANAGER->current_scene;
     scene_update_functions[THIS_SCENE->type]();
+    music_update();
 }
 
 void set_scene(Scene* scene){

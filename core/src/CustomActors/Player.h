@@ -2,6 +2,7 @@
 #define PLAYER_H
 #include "Actor/Actor.h"
 #include "Assets/Animations/AnimationRegistry.h"
+#include "Assets/Music/SongRegistry.h"
 #include "gb/gb.h"
 #include <stdio.h>
 typedef struct {
