@@ -2,6 +2,7 @@
 #define GAME_MANAGER_H
 #include "Scene/Scene.h"
 #include "Scene/SceneRegistry.h"
+#include "Assets/Music/Music.h"
 typedef struct{
     Scene* current_scene;
     

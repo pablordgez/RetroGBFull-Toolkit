@@ -12,7 +12,7 @@ extern uint8_t deadzone_right;
 extern uint8_t deadzone_top;
 extern uint8_t deadzone_bottom;
 
-void update_camera(uint16_t worldx, uint16_t worldy);
+void update_camera(uint16_t worldx, uint16_t worldy) BANKED;
 
 
 #endif // CAMERA_H

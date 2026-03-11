@@ -7,7 +7,7 @@ uint8_t deadzone_right = 20;
 uint8_t deadzone_top = 20;
 uint8_t deadzone_bottom = 20;
 
-void update_camera(uint16_t worldx, uint16_t worldy){
+void update_camera(uint16_t worldx, uint16_t worldy) BANKED{
     uint8_t old_cam_tile_x = camera_x >> 3; 
     uint8_t old_cam_tile_y = camera_y >> 3;
 
