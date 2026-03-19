@@ -2,6 +2,7 @@
 #define COLLIDER_H
 #include <stdint.h>
 #include "Actor/ActorRegistry.h"
+#include "ColliderRegistry.h"
 
 typedef struct {
     uint16_t x;
@@ -12,6 +13,8 @@ typedef struct {
     uint16_t width;
     uint16_t height;
     Tags tags[5];
+    RVoid_PVoid on_collision[MAX_COLLISION_CALLBACKS];
+    uint8_t num_collision_callbacks;
 } Collider;
 
 extern Collider* THIS_COLLIDER;

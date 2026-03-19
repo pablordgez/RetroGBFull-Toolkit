@@ -22,6 +22,32 @@ void disable_collider(Collider* collider){
     }
 }
 
+void set_collision_callback(Collider* collider, RVoid_PVoid callback) BANKED{
+    if(callback == NULL){
+        return;
+    }
+    if(collider->num_collision_callbacks < MAX_COLLISION_CALLBACKS){
+        collider->on_collision[collider->num_collision_callbacks++] = callback;
+    }
+}
+
+static void invoke_collision_callback(Collider* this_collider, Collider* other_collider) NONBANKED{
+    if(this_collider->num_collision_callbacks == 0){
+        return;
+    }
+
+    for(uint8_t i = 0; i < this_collider->num_collision_callbacks; i++){
+        RVoid_PVoid callback = this_collider->on_collision[i];
+        if(callback == NULL){
+            continue;
+        }
+
+        THIS_COLLIDER = this_collider;
+        OTHER_COLLIDER = other_collider;
+        callback();
+    }
+}
+
 void check_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_collisions){
     uint8_t count = 0;
     for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
@@ -32,6 +58,38 @@ void check_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_coll
         }
     }
     *num_collisions = count;
+}
+
+void run_collision_callbacks(void) NONBANKED{
+    Collider* previous_this = THIS_COLLIDER;
+    Collider* previous_other = OTHER_COLLIDER;
+
+    for(int i = 0; i < num_active_colliders; i++){
+        Collider* first = active_colliders[i];
+        if(first == NULL){
+            continue;
+        }
+
+        for(int j = i + 1; j < num_active_colliders; j++){
+            Collider* second = active_colliders[j];
+            if(second == NULL){
+                continue;
+            }
+            if(first->num_collision_callbacks == 0 && second->num_collision_callbacks == 0){
+                continue;
+            }
+
+            THIS_COLLIDER = first;
+            OTHER_COLLIDER = second;
+            if(check_collision()){
+                invoke_collision_callback(first, second);
+                invoke_collision_callback(second, first);
+            }
+        }
+    }
+
+    THIS_COLLIDER = previous_this;
+    OTHER_COLLIDER = previous_other;
 }
 
 void check_collisions_with_tags(Collider* out[], uint8_t max_collisions, uint8_t* num_collisions, Tags tag){

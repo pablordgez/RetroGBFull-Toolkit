@@ -4,6 +4,7 @@
 #include "MainDefinitions.h"
 
 #define MAX_ACTIVE_COLLIDERS 20
+#define MAX_COLLISION_CALLBACKS 4
 
 typedef enum {
     BOX_COLLIDER,
