@@ -2,9 +2,11 @@
 #include <stdint.h>
 #include "Assets/Animations/AnimationRegistry.h"
 #include "GameManager/GameManager.h"
+#include "Saves/SaveData.h"
 #include "Scene/SceneRegistry.h"
 #include "CustomScenes/SampleScene.h"
 
+SaveData save_data;
 
 void main(void)
 {
@@ -12,6 +14,7 @@ void main(void)
     init_scene_functions();
     init_animation_system();
     init_map_system();
+    load_save_data();
 
     GameManager gm;
     THIS_GAME_MANAGER = &gm;

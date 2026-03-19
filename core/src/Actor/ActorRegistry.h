@@ -24,9 +24,9 @@ ACTORS
 #undef _ACTOR
 
 typedef enum {
+    TAG_NONE,
     TAG_PLAYER,
 } Tags;
 
 #endif // ACTOR_REGISTRY_H
-
 

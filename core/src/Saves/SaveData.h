@@ -7,6 +7,8 @@ typedef struct{
     uint8_t signature[4];
 
     // BEGIN SAVE DATA VARIABLES
+    uint16_t sample_box_x;
+    uint16_t sample_box_y;
 
     // END SAVE DATA VARIABLES
 

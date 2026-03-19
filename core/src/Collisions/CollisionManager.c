@@ -48,6 +48,17 @@ static void invoke_collision_callback(Collider* this_collider, Collider* other_c
     }
 }
 
+static void dispatch_collision_callbacks(Collider* first_collider, Collider* second_collider) NONBANKED{
+    Collider* previous_this = THIS_COLLIDER;
+    Collider* previous_other = OTHER_COLLIDER;
+
+    invoke_collision_callback(first_collider, second_collider);
+    invoke_collision_callback(second_collider, first_collider);
+
+    THIS_COLLIDER = previous_this;
+    OTHER_COLLIDER = previous_other;
+}
+
 void check_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_collisions){
     uint8_t count = 0;
     for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
@@ -82,8 +93,7 @@ void run_collision_callbacks(void) NONBANKED{
             THIS_COLLIDER = first;
             OTHER_COLLIDER = second;
             if(check_collision()){
-                invoke_collision_callback(first, second);
-                invoke_collision_callback(second, first);
+                dispatch_collision_callbacks(first, second);
             }
         }
     }
@@ -114,6 +124,7 @@ void check_blocking_collisions(Collider* out[], uint8_t max_collisions, uint8_t*
         if(active_colliders[i] == THIS_COLLIDER) continue;
         OTHER_COLLIDER = active_colliders[i];
         if(active_colliders[i]->is_blocking && check_collision()){
+            dispatch_collision_callbacks(THIS_COLLIDER, OTHER_COLLIDER);
             out[count++] = active_colliders[i];
         }
     }
@@ -127,6 +138,7 @@ void check_blocking_collisions_with_tags(Collider* out[], uint8_t max_collisions
         OTHER_COLLIDER = active_colliders[i];
         for(uint8_t _tag = 0; _tag < 5; _tag++){
             if(OTHER_COLLIDER->tags[_tag] == tag && OTHER_COLLIDER->is_blocking && check_collision()){
+                dispatch_collision_callbacks(THIS_COLLIDER, OTHER_COLLIDER);
                 out[count++] = active_colliders[i];
                 break;
             }
