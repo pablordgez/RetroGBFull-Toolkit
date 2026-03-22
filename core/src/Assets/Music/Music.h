@@ -37,7 +37,7 @@ typedef struct {
 void play_song(const Song* song, uint8_t loop) BANKED;
 void play_music_step(void) NONBANKED;
 void music_update(void) BANKED;
-void stop_music(void) BANKED;
+void stop_music(void) NONBANKED;
 
 extern const Song* current_song;
 #endif /* MUSIC_H */

@@ -46,6 +46,14 @@ CSOURCES    = $(call rwildcard, $(SRCDIR), *.c) $(call rwildcard, $(RESDIR), *.c
 ASMSOURCES  = $(call rwildcard, $(SRCDIR), *.s)
 OBJS        = $(CSOURCES:%.c=$(OBJDIR)/%.o) $(ASMSOURCES:%.s=$(OBJDIR)/%.o)
 
+# -----------------------------------------------------------------------------
+# AUTOMATED SRAM MAPPING
+# This finds any object file ending in "SaveData.o" and appends the SRAM bank 
+# flag to LCCFLAGS specifically for that file during compilation.
+# -----------------------------------------------------------------------------
+$(filter %SaveData.o, $(OBJS)): LCCFLAGS += -Wf-ba0
+
+
 all:    prepare $(BINS)
 
 debug:

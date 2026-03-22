@@ -21,6 +21,9 @@ typedef void (*RVoid_PVoid_BANKED)(void) BANKED;
 typedef uint8_t (*RUInt8_PVoid)(void);
 
 #define STACK_SIZE 10
+#ifndef COLLISION_CALLBACKS_EVERY_FRAME
+#define COLLISION_CALLBACKS_EVERY_FRAME 1
+#endif
 
 #define UPDATE_COORD_SAFE(pos, delta) do { \
     if ((delta) < 0 && (uint16_t)(-(delta)) > (pos)) { (pos) = 0; } \
