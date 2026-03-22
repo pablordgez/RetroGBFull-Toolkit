@@ -8,7 +8,6 @@ void update_game(void){
 #if COLLISION_CALLBACKS_EVERY_FRAME
     run_collision_callbacks();
 #endif
-    music_update();
 }
 
 void set_scene(Scene* scene){
