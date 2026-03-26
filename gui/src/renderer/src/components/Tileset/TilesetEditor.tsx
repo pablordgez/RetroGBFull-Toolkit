@@ -1,6 +1,6 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import '../style/SpriteEditor.css';
-import { DEFAULT_W, DEFAULT_H, GB_PALETTE, ERASER_COLOR } from '../SpriteEditor/SpriteEditorConfig';
+import { GB_PALETTE, ERASER_COLOR } from '../SpriteEditor/SpriteEditorConfig';
 import { PixelCanvas } from '../PixelEditor/PixelCanvas';
 import { useHistory } from '../hooks/history/useHistory';
 import { useViewport } from '../hooks/viewport/useViewport';
@@ -110,7 +110,6 @@ export const TilesetEditor = () => {
 
     const { 
         tool, setTool, 
-        symmetry, setSymmetry, 
         handleCanvasInput: handleCanvasInputInternal 
     } = usePixelDraw({
         width, height, currentGrid,

@@ -25,14 +25,14 @@ export interface GridChange {
     color: number;
 }
 
-export const applyGridChanges = (
-    grid: GridType,
+export const applyGridChanges = <T extends GridType>(
+    grid: T,
     changes: GridChange[]
-): GridType => {
+): T => {
     const isUint8 = grid instanceof Uint8Array;
     const newGrid = isUint8 ? new Uint8Array(grid) : [...grid];
     changes.forEach(({ index, color }) => {
         newGrid[index] = color;
     });
-    return newGrid;
+    return newGrid as T;
 };

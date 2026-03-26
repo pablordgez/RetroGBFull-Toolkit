@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import '../style/SpriteEditor.css';
 import { PixelCanvas } from '../PixelEditor/PixelCanvas';
 import { useViewport } from '../hooks/viewport/useViewport';
@@ -10,8 +10,6 @@ import { applyGridChanges, resizeGrid } from '../utils/gridUtils';
 
 const DEFAULT_MAP_W = 20;
 const DEFAULT_MAP_H = 18;
-const TILE_SIZE = { w: 8, h: 8 };
-
 export const TilemapEditor = () => {
     const [mapWidth, setMapWidth] = useState(DEFAULT_MAP_W);
     const [mapHeight, setMapHeight] = useState(DEFAULT_MAP_H);

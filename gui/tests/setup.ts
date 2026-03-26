@@ -13,3 +13,16 @@ vi.mock('electron', () => {
     },
   };
 });
+
+Object.defineProperty(window, 'api', {
+  configurable: true,
+  writable: true,
+  value: {
+    openSpriteEditorWindow: vi.fn(),
+    pickProjectParentDirectory: vi.fn().mockResolvedValue(null),
+    createProject: vi.fn(),
+    openProjectFromDialog: vi.fn(),
+    loadRecentProject: vi.fn(),
+    getRecentProjects: vi.fn().mockResolvedValue([]),
+  },
+});
