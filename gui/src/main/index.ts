@@ -10,6 +10,7 @@ import {
   validateProjectDirectory
 } from './projectLauncher'
 import {
+  clearDeletedProjectResources,
   createProjectFolder,
   createProjectResource,
   deleteProjectFolder,
@@ -47,6 +48,64 @@ interface AppWindowOptions {
 }
 
 const editorWindowsWaitingForCloseConfirmation = new Set<number>()
+const projectWindowPaths = new Map<number, string>()
+const projectWindowsWaitingForCleanup = new Set<number>()
+const projectWindowsReadyToClose = new Set<number>()
+let isQuittingAfterCleanup = false
+let hasHandledBeforeQuitCleanup = false
+
+const clearDeletedResourcesForProject = async (projectPath: string, reason: string): Promise<void> => {
+  try {
+    await clearDeletedProjectResources(projectPath)
+  } catch (error) {
+    console.error(`[project-resources] failed to clear deleted resources during ${reason}`, error)
+  }
+}
+
+const clearDeletedResourcesForOpenProjects = async (): Promise<void> => {
+  const projectPaths = [...new Set(projectWindowPaths.values())]
+  await Promise.all(projectPaths.map((projectPath) => clearDeletedResourcesForProject(projectPath, 'application shutdown')))
+}
+
+const registerProjectWindow = (projectWindow: BrowserWindow, projectPath: string) => {
+  const windowId = projectWindow.webContents.id
+  projectWindowPaths.set(windowId, projectPath)
+
+  projectWindow.on('close', (event) => {
+    if (isQuittingAfterCleanup || projectWindowsReadyToClose.has(windowId)) {
+      projectWindowsReadyToClose.delete(windowId)
+      projectWindowPaths.delete(windowId)
+      return
+    }
+
+    if (projectWindowsWaitingForCleanup.has(windowId)) {
+      event.preventDefault()
+      return
+    }
+
+    event.preventDefault()
+    projectWindowsWaitingForCleanup.add(windowId)
+
+    void clearDeletedResourcesForProject(projectPath, 'project window close')
+      .finally(() => {
+        projectWindowsWaitingForCleanup.delete(windowId)
+        projectWindowPaths.delete(windowId)
+
+        if (projectWindow.isDestroyed()) {
+          return
+        }
+
+        projectWindowsReadyToClose.add(windowId)
+        projectWindow.close()
+      })
+  })
+
+  projectWindow.on('closed', () => {
+    projectWindowPaths.delete(windowId)
+    projectWindowsWaitingForCleanup.delete(windowId)
+    projectWindowsReadyToClose.delete(windowId)
+  })
+}
 
 const getRecentProjectsStorePath = (): string => {
   return join(app.getPath('userData'), 'recent-projects.json')
@@ -134,12 +193,15 @@ const createProjectEditorWindow = (
     lastOpenedAt: project.lastOpenedAt
   })
 
-  return createAppWindow(`/project-editor?${searchParams.toString()}`, {
+  const projectWindow = createAppWindow(`/project-editor?${searchParams.toString()}`, {
     width: 1440,
     height: 900,
     showWhenReady: false,
     title: `${project.name} - RetroGBFull Toolkit`
   })
+
+  registerProjectWindow(projectWindow, project.path)
+  return projectWindow
 }
 
 const scheduleWindowReplacement = (currentWindow: BrowserWindow | null, nextWindow: BrowserWindow) => {
@@ -174,6 +236,7 @@ const openProject = async (
   launcherWindow?: BrowserWindow | null
 ): Promise<ProjectActionResponse> => {
   try {
+    await clearDeletedResourcesForProject(projectPath, 'project open')
     const project = await rememberRecentProject(getRecentProjectsStorePath(), projectPath)
     const projectWindow = createProjectEditorWindow(project)
 
@@ -244,6 +307,21 @@ app.whenReady().then(() => {
     // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('before-quit', (event) => {
+  if (hasHandledBeforeQuitCleanup) {
+    return
+  }
+
+  hasHandledBeforeQuitCleanup = true
+  event.preventDefault()
+
+  void clearDeletedResourcesForOpenProjects()
+    .finally(() => {
+      isQuittingAfterCleanup = true
+      app.quit()
+    })
 })
 
 

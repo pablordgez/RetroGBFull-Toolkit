@@ -192,6 +192,10 @@ const getDeletedResourceContainerPath = (projectPath: string, deletionId: string
   return join(projectPath, INTERNAL_HISTORY_DIRECTORY, DELETED_RESOURCES_DIRECTORY, deletionId)
 }
 
+const getDeletedResourcesDirectoryPath = (projectPath: string): string => {
+  return join(projectPath, INTERNAL_HISTORY_DIRECTORY, DELETED_RESOURCES_DIRECTORY)
+}
+
 const getDeletedResourceMetadataPath = (projectPath: string, deletionId: string): string => {
   return join(
     getDeletedResourceContainerPath(projectPath, deletionId),
@@ -1428,6 +1432,19 @@ export const finalizeDeletedProjectResource = async (
   const state = await readProjectResourceState(projectPath)
 
   await rm(getDeletedResourceContainerPath(state.projectPath, deletionId), {
+    recursive: true,
+    force: true
+  })
+}
+
+export const clearDeletedProjectResources = async (projectPath: string): Promise<void> => {
+  const validation = await validateProjectDirectory(projectPath)
+
+  if (!validation.isValid) {
+    return
+  }
+
+  await rm(getDeletedResourcesDirectoryPath(validation.path), {
     recursive: true,
     force: true
   })
