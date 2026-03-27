@@ -1,0 +1,109 @@
+.project-workspace {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    box-sizing: border-box;
+    background:
+        linear-gradient(180deg, rgba(196, 190, 187, 0.96) 0%, rgba(196, 190, 187, 0.9) 100%),
+        radial-gradient(circle at top left, rgba(139, 172, 15, 0.18), transparent 34%);
+}
+
+.project-workspace__topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 64px;
+    border: 4px solid #0f380f;
+    padding: 10px 14px;
+    background-color: #9bbc0f;
+    box-shadow: 8px 8px 0 rgba(15, 56, 15, 0.2);
+}
+
+.project-workspace__menu-cluster {
+    flex: 0 0 auto;
+}
+
+.project-workspace__project-summary {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    text-align: right;
+}
+
+.project-workspace__project-summary strong,
+.project-workspace__project-summary span {
+    max-width: 48ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-workspace__project-summary span {
+    font-size: 0.92rem;
+    opacity: 0.82;
+}
+
+.project-workspace__status {
+    border: 3px solid #0f380f;
+    padding: 10px 12px;
+    font-weight: bold;
+    box-shadow: inset 0 0 0 2px rgba(15, 56, 15, 0.1);
+}
+
+.project-workspace__status--error {
+    background-color: #c98364;
+    color: #2f130c;
+}
+
+.project-workspace__status--info {
+    background-color: #c4bebb;
+    color: #0f380f;
+}
+
+.project-workspace__layout {
+    flex: 1;
+    min-height: 0;
+}
+
+.project-workspace__resizable-layout {
+    background-color: transparent;
+    padding: 0;
+}
+
+.project-workspace__surface {
+    width: 100%;
+    height: 100%;
+    border: 4px solid #0f380f;
+    background:
+        linear-gradient(180deg, rgba(196, 190, 187, 0.88) 0%, rgba(196, 190, 187, 0.98) 100%),
+        radial-gradient(circle at top, rgba(48, 98, 48, 0.08), transparent 44%);
+    box-shadow: inset 0 0 0 1px rgba(15, 56, 15, 0.08);
+}
+
+@media (max-width: 860px) {
+    .project-workspace {
+        gap: 10px;
+        padding: 10px;
+    }
+
+    .project-workspace__topbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .project-workspace__project-summary {
+        align-items: flex-start;
+        text-align: left;
+    }
+
+    .project-workspace__project-summary strong,
+    .project-workspace__project-summary span {
+        max-width: none;
+    }
+}

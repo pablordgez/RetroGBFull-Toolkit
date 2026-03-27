@@ -1,4 +1,5 @@
 export interface Command {
-    undo: () => void;
-    redo: () => void;
+    undo: () => void | Promise<void>;
+    redo: () => void | Promise<void>;
+    dispose?: () => void | Promise<void>;
 }

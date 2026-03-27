@@ -119,7 +119,10 @@ const getProjectJsonPath = (projectPath: string): string => {
 const buildProjectFileContents = (projectName: string): string => {
     return `${JSON.stringify({
         name: projectName,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        resources: {
+            items: []
+        }
     }, null, 2)}\n`;
 };
 

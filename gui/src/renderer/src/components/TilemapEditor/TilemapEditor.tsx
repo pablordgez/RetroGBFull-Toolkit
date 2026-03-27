@@ -4,24 +4,53 @@ import { PixelCanvas } from '../PixelEditor/PixelCanvas';
 import { useViewport } from '../hooks/viewport/useViewport';
 import { Tileset, TilesetRef } from '../Tileset/Tileset';
 import { useHistory } from '../hooks/history/useHistory';
+import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts';
+import { useProjectAssetEditor } from '../hooks/useProjectAssetEditor';
 import { floodFill } from '../utils/pixelAlgorithms';
-import { Tilemap } from './Tilemap';
 import { applyGridChanges, resizeGrid } from '../utils/gridUtils';
+import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt';
+import { renderTileToDataURL } from '../utils/imageUtils';
+import {
+    TilemapAssetDocument,
+    TilesetAssetDocument,
+    getProjectAssetDisplayName
+} from '../../../../shared/projectAssets';
 
 const DEFAULT_MAP_W = 20;
 const DEFAULT_MAP_H = 18;
+
+interface TilesetOption {
+    name: string;
+    path: string;
+}
+
+interface AppliedTilesetState {
+    tilesetPath: string | null;
+    tilesetImages: (string | null)[];
+    tilesetTileCount: number;
+    grid: number[];
+    selectedTileIndex: number;
+}
+
 export const TilemapEditor = () => {
     const [mapWidth, setMapWidth] = useState(DEFAULT_MAP_W);
     const [mapHeight, setMapHeight] = useState(DEFAULT_MAP_H);
     
     const [grid, setGrid] = useState<number[]>(new Array(DEFAULT_MAP_W * DEFAULT_MAP_H).fill(0));
     
+    const [tilesetPath, setTilesetPath] = useState<string | null>(null);
     const [tilesetImages, setTilesetImages] = useState<(string | null)[]>([]);
+    const [tilesetTileCount, setTilesetTileCount] = useState(0);
     const [selectedTileIndex, setSelectedTileIndex] = useState(0);
     const [tool, setTool] = useState<'brush' | 'fill'>('brush');
     
     const [inputSize, setInputSize] = useState({ w: DEFAULT_MAP_W.toString(), h: DEFAULT_MAP_H.toString() });
-    const [exportLabel, setExportLabel] = useState("EXPORT DATA");
+    const [isTilesetPickerOpen, setIsTilesetPickerOpen] = useState(false);
+    const [isTilesetPickerLoading, setIsTilesetPickerLoading] = useState(false);
+    const [isTilesetSelectionRequired, setIsTilesetSelectionRequired] = useState(false);
+    const [tilesetPickerError, setTilesetPickerError] = useState<string | null>(null);
+    const [tilesetOptions, setTilesetOptions] = useState<TilesetOption[]>([]);
+    const [isSwitchingTileset, setIsSwitchingTileset] = useState(false);
 
     const tilesetRef = useRef<TilesetRef>(null);
 
@@ -32,121 +61,250 @@ export const TilemapEditor = () => {
 
     const { record, undo, redo, canUndo, canRedo } = useHistory();
 
-    // Placeholder tiles before integrating the tileset editor
-    const createPatternTile = (type: number) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 8;
-        canvas.height = 8;
-        const ctx = canvas.getContext('2d');
-        if(!ctx) return '';
-        
-        const c0 = '#9bbc0f';
-        const c1 = '#8bac0f';
-        const c2 = '#306230';
-        const c3 = '#0f380f';
-
-        ctx.fillStyle = c0;
-        ctx.fillRect(0,0,8,8);
-
-        if (type === 0) {
-            ctx.fillStyle = c1;
-            ctx.fillRect(0,0,8,8);
-            ctx.fillStyle = c2;
-            ctx.fillRect(1,1,1,2);
-            ctx.fillRect(3,5,1,2);
-            ctx.fillRect(6,2,1,2);
-        } else if (type === 1) {
-            ctx.fillStyle = c1;
-            ctx.fillRect(0,0,8,4);
-            ctx.fillStyle = c2;
-            ctx.fillRect(0,3,8,1);
-            ctx.fillRect(0,7,8,1);
-            ctx.fillRect(3,0,1,3);
-            ctx.fillRect(7,4,1,3);
-        } else if (type === 2) {
-            ctx.fillStyle = c0;
-            ctx.fillRect(0,0,8,8);
-            ctx.fillStyle = c1;
-            ctx.fillRect(0,2,2,1); ctx.fillRect(3,1,2,1); ctx.fillRect(6,2,2,1);
-            ctx.fillRect(0,5,2,1); ctx.fillRect(3,6,2,1); ctx.fillRect(6,5,2,1);
-        } else if (type === 3) {
-            ctx.fillStyle = c2;
-            ctx.fillRect(0,0,8,8);
-            ctx.fillStyle = c1;
-            ctx.fillRect(1,1,6,6);
-            ctx.fillStyle = c2;
-            ctx.fillRect(2,2,4,4);
-            ctx.fillStyle = c1;
-            ctx.fillRect(2,2,1,1); ctx.fillRect(5,2,1,1);
-            ctx.fillRect(3,3,2,2);
-            ctx.fillRect(2,5,1,1); ctx.fillRect(5,5,1,1);
-        } else if (type === 4) {
-             ctx.fillStyle = c1;
-             ctx.fillRect(0,0,8,8);
-             ctx.fillStyle = c3;
-             ctx.fillRect(1,1,6,6);
-             ctx.fillStyle = c2;
-             ctx.fillRect(2,2,4,4);
-        } else {
-            ctx.fillStyle = c0;
-            ctx.fillRect(0,0,8,8);
-            ctx.fillStyle = c3;
-            ctx.fillRect(0,0,4,4);
-            ctx.fillRect(4,4,4,4);
-        }
-
-        return canvas.toDataURL();
-    }
-
-
-
-    useEffect(() => {
-        const handleKeys = (e: KeyboardEvent) => {
-            if (e.ctrlKey || e.metaKey) {
-                if (e.key.toLowerCase() === 'z') {
-                    e.preventDefault();
-                    e.shiftKey ? redo() : undo();
-                } else if (e.key.toLowerCase() === 'y') {
-                    e.preventDefault();
-                    redo();
-                }
-            }
+    const assetDocument = useMemo((): TilemapAssetDocument => {
+        return {
+            kind: 'tilemap',
+            version: 1,
+            width: mapWidth,
+            height: mapHeight,
+            grid,
+            tilesetPath,
+            selectedTileIndex,
+            tool
         };
-        window.addEventListener('keydown', handleKeys);
-        return () => window.removeEventListener('keydown', handleKeys);
-    }, [undo, redo]);
+    }, [grid, mapHeight, mapWidth, selectedTileIndex, tilesetPath, tool]);
 
-    // Initializes with the placeholder tiles
-    useEffect(() => {
-        const images: string[] = [];
-        for(let i=0; i<6; i++) {
-            images.push(createPatternTile(i));
-        }
-        setTilesetImages(images);
-        
-        images.forEach((img, i) => {
-            tilesetRef.current?.updateTile(i, img);
+    const applyDocument = useCallback((nextDocument: TilemapAssetDocument) => {
+        setMapWidth(nextDocument.width);
+        setMapHeight(nextDocument.height);
+        setInputSize({
+            w: nextDocument.width.toString(),
+            h: nextDocument.height.toString()
+        });
+        setGrid(nextDocument.grid);
+        setTilesetPath(nextDocument.tilesetPath);
+        setSelectedTileIndex(nextDocument.selectedTileIndex);
+        setTool(nextDocument.tool);
+    }, []);
+
+    const {
+        assetPath,
+        isClosePromptOpen,
+        isDirty,
+        isLoaded,
+        isSaving,
+        projectPath,
+        saveAsset,
+        statusMessage,
+        setStatusMessage,
+        handleCloseDecision
+    } = useProjectAssetEditor({
+        expectedKind: 'tilemap',
+        document: assetDocument,
+        applyDocument
+    });
+
+    useUndoRedoShortcuts(undo, redo);
+
+    const buildTilesetImages = useCallback((tilesetDocument: TilesetAssetDocument): string[] => {
+        return tilesetDocument.tiles.map((tile) => {
+            return renderTileToDataURL(Uint8Array.from(tile), 8, 8, tilesetDocument.palette);
         });
     }, []);
 
-    // Whenever the data changes we create a new tilemap object that will be used to export
-    const tilemap = useMemo(() => {
-        return new Tilemap(mapWidth, mapHeight, new Uint8Array(grid));
-    }, [mapWidth, mapHeight, grid]);
+    const applyTilesetState = useCallback((nextState: AppliedTilesetState) => {
+        setTilesetPath(nextState.tilesetPath);
+        setTilesetImages(nextState.tilesetImages);
+        setTilesetTileCount(nextState.tilesetTileCount);
+        setGrid(nextState.grid);
+        setSelectedTileIndex(nextState.selectedTileIndex);
+        setStatusMessage(null);
+    }, [setStatusMessage]);
 
-    // The following are essentially the same as in the sprite editor, for explanations look there
-    const handleExport = async () => {
-        try {
-            const encodedString = tilemap.encode();
-            await navigator.clipboard.writeText(encodedString);
-            setExportLabel("COPIED!");
-            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
-        } catch (error) {
-            console.error("Export failed:", error);
-            setExportLabel("ERROR!");
-            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
+    const listTilesetOptions = useCallback(async (currentPath = ''): Promise<TilesetOption[]> => {
+        if (!projectPath) {
+            return [];
         }
-    };
+
+        const resourceView = await window.api.getProjectResources(projectPath, currentPath);
+        const localTilesets = resourceView.items
+            .filter((resource): resource is typeof resource & { type: 'file'; resourceType: 'tileset' } => {
+                return resource.type === 'file' && resource.resourceType === 'tileset';
+            })
+            .map((resource) => ({
+                name: resource.name,
+                path: resource.path
+            }));
+
+        const nestedTilesets = await Promise.all(
+            resourceView.items
+                .filter((resource): resource is typeof resource & { type: 'folder' } => resource.type === 'folder')
+                .map((resource) => listTilesetOptions(resource.path))
+        );
+
+        return [...localTilesets, ...nestedTilesets.flat()].sort((left, right) => {
+            return left.path.localeCompare(right.path);
+        });
+    }, [projectPath]);
+
+    const openTilesetPicker = useCallback(async (isRequired: boolean) => {
+        setIsTilesetPickerOpen(true);
+        setIsTilesetSelectionRequired(isRequired);
+        setIsTilesetPickerLoading(true);
+        setTilesetPickerError(null);
+
+        try {
+            const nextTilesetOptions = await listTilesetOptions();
+            setTilesetOptions(nextTilesetOptions);
+        } catch (error) {
+            console.error('[tilemap-editor] listTilesetOptions failed', error);
+            setTilesetPickerError(
+                error instanceof Error
+                    ? error.message
+                    : 'Something went wrong while loading the available tilesets. Please try again.'
+            );
+        } finally {
+            setIsTilesetPickerLoading(false);
+        }
+    }, [listTilesetOptions]);
+
+    useEffect(() => {
+        if (!tilesetPath) {
+            setTilesetImages([]);
+            setTilesetTileCount(0);
+            return;
+        }
+
+        let isCancelled = false;
+
+        const loadTileset = async () => {
+            try {
+                const payload = await window.api.loadProjectAssetFile(projectPath, tilesetPath);
+
+                if (isCancelled) {
+                    return;
+                }
+
+                if (payload.assetKind !== 'tileset') {
+                    throw new Error('The selected tileset reference is not valid.');
+                }
+
+                const tilesetDocument = payload.document as TilesetAssetDocument;
+                const nextTilesetImages = buildTilesetImages(tilesetDocument);
+                const nextTileCount = tilesetDocument.tiles.length;
+
+                setTilesetImages(nextTilesetImages);
+                setTilesetTileCount(nextTileCount);
+
+                if (nextTileCount > 0 && selectedTileIndex >= nextTileCount) {
+                    setSelectedTileIndex(0);
+                }
+            } catch (error) {
+                console.error('[tilemap-editor] loadProjectAssetFile failed', error);
+                setStatusMessage(
+                    error instanceof Error
+                        ? error.message
+                        : 'Something went wrong while loading the selected tileset. Please try again.'
+                );
+                setTilesetImages([]);
+                setTilesetTileCount(0);
+            }
+        };
+
+        void loadTileset();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [buildTilesetImages, projectPath, selectedTileIndex, setStatusMessage, tilesetPath]);
+
+    useEffect(() => {
+        tilesetImages.forEach((imageUrl, index) => {
+            if (!imageUrl) {
+                return;
+            }
+
+            tilesetRef.current?.updateTile(index, imageUrl);
+        });
+    }, [tilesetImages]);
+
+    useEffect(() => {
+        if (!isLoaded || !projectPath || tilesetPath || isTilesetPickerOpen) {
+            return;
+        }
+
+        void openTilesetPicker(true);
+    }, [isLoaded, isTilesetPickerOpen, openTilesetPicker, projectPath, tilesetPath]);
+
+    const handleSelectTileset = useCallback(async (nextTilesetPath: string) => {
+        if (!projectPath) {
+            return;
+        }
+
+        setIsSwitchingTileset(true);
+
+        try {
+            const payload = await window.api.loadProjectAssetFile(projectPath, nextTilesetPath);
+
+            if (payload.assetKind !== 'tileset') {
+                throw new Error('The selected asset is not a tileset.');
+            }
+
+            const nextTilesetDocument = payload.document as TilesetAssetDocument;
+            const nextTilesetImages = buildTilesetImages(nextTilesetDocument);
+            const nextTileCount = nextTilesetDocument.tiles.length;
+            const nextGrid = grid.map((tileIndex) => {
+                return tileIndex >= 0 && tileIndex < nextTileCount ? tileIndex : 0;
+            });
+            const nextSelectedTileIndex =
+                nextTileCount > 0 && selectedTileIndex >= 0 && selectedTileIndex < nextTileCount
+                    ? selectedTileIndex
+                    : 0;
+
+            const previousState: AppliedTilesetState = {
+                tilesetPath,
+                tilesetImages,
+                tilesetTileCount,
+                grid: [...grid],
+                selectedTileIndex
+            };
+            const nextState: AppliedTilesetState = {
+                tilesetPath: nextTilesetPath,
+                tilesetImages: nextTilesetImages,
+                tilesetTileCount: nextTileCount,
+                grid: nextGrid,
+                selectedTileIndex: nextSelectedTileIndex
+            };
+
+            if (
+                previousState.tilesetPath !== nextState.tilesetPath
+                || previousState.selectedTileIndex !== nextState.selectedTileIndex
+                || previousState.grid.some((value, index) => value !== nextState.grid[index])
+            ) {
+                record({
+                    undo: () => {
+                        applyTilesetState(previousState);
+                    },
+                    redo: () => {
+                        applyTilesetState(nextState);
+                    }
+                });
+            }
+
+            applyTilesetState(nextState);
+            setIsTilesetPickerOpen(false);
+            setIsTilesetSelectionRequired(false);
+        } catch (error) {
+            console.error('[tilemap-editor] handleSelectTileset failed', error);
+            setTilesetPickerError(
+                error instanceof Error
+                    ? error.message
+                    : 'Something went wrong while selecting the tileset. Please try again.'
+            );
+        } finally {
+            setIsSwitchingTileset(false);
+        }
+    }, [applyTilesetState, buildTilesetImages, grid, projectPath, record, selectedTileIndex, tilesetImages, tilesetPath, tilesetTileCount]);
 
     const performFloodFill = useCallback((x: number, y: number, targetTile: number) => {
         const startTile = grid[y * mapWidth + x];
@@ -223,7 +381,7 @@ export const TilemapEditor = () => {
              return;
         }
 
-        if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) return;
+        if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight || tilesetTileCount <= 0) return;
 
         const targetTile = (button === 2) ? 0 : selectedTileIndex;
 
@@ -253,7 +411,11 @@ export const TilemapEditor = () => {
              });
         }
 
-    }, [mapWidth, mapHeight, selectedTileIndex, record]);
+    }, [mapWidth, mapHeight, record, selectedTileIndex, tilesetTileCount, tool, performFloodFill]);
+
+    const activeTilesetLabel = tilesetPath
+        ? getProjectAssetDisplayName(tilesetPath.split('/').pop() ?? 'Tileset')
+        : 'No tileset selected';
 
     const handleResize = () => {
         const w = parseInt(inputSize.w);
@@ -326,16 +488,17 @@ export const TilemapEditor = () => {
 
                 <div className="toolbox">
                     <h3>Misc</h3>
+                    {statusMessage && <div className="editor-status">{statusMessage}</div>}
                     <div className="button-row">
                         <button disabled={!canUndo} onClick={undo}>Undo</button>
                         <button disabled={!canRedo} onClick={redo}>Redo</button>
                     </div>
                     <div className="button-row">
                         <button
-                            onClick={handleExport}
-                            style={{ backgroundColor: exportLabel === 'COPIED!' ? '#0f380f' : undefined, color: exportLabel === 'COPIED!' ? '#9bbc0f' : undefined }}
+                            onClick={() => void saveAsset()}
+                            disabled={!isLoaded || isSaving}
                         >
-                            {exportLabel}
+                            {isSaving ? 'Saving...' : isDirty ? 'Save*' : 'Save'}
                         </button>
                     </div>
                     <div className="zoom-controls">
@@ -345,10 +508,26 @@ export const TilemapEditor = () => {
                 </div>
 
                 <h3>Tileset</h3>
+                <div className="toolbox">
+                    <p className="editor-modal-copy tilemap-editor__tileset-label">{activeTilesetLabel}</p>
+                    <div className="button-row" style={{ marginBottom: 0 }}>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                void openTilesetPicker(false);
+                            }}
+                            disabled={isSwitchingTileset || isSaving}
+                        >
+                            {tilesetPath ? 'Select Tileset' : 'Choose Tileset'}
+                        </button>
+                    </div>
+                </div>
                 <div className="toolbox" style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
                     <Tileset 
+                        key={`${tilesetPath ?? 'no-tileset'}:${tilesetTileCount}`}
                         ref={tilesetRef}
                         onSelectTile={setSelectedTileIndex}
+                        selectedIndex={selectedTileIndex}
                         className="tilemap-tileset"
                         allowAdd={false}
                     />
@@ -376,6 +555,88 @@ export const TilemapEditor = () => {
                     eraserIndex={-1}
                 />
             </div>
+
+            {isClosePromptOpen && (
+                <EditorClosePrompt
+                    assetLabel={getProjectAssetDisplayName(assetPath.split('/').pop() ?? 'Tilemap')}
+                    isBusy={isSaving}
+                    onCloseDecision={(decision) => {
+                        void handleCloseDecision(decision);
+                    }}
+                />
+            )}
+
+            {isTilesetPickerOpen && (
+                <div className="editor-modal-backdrop">
+                    <div className="editor-modal" role="dialog" aria-modal="true">
+                        <h2>{isTilesetSelectionRequired ? 'Choose A Tileset' : 'Select Tileset'}</h2>
+                        <p className="editor-modal-copy">
+                            {isTilesetSelectionRequired
+                                ? 'This tilemap needs a tileset before you can edit it.'
+                                : 'Choose which tileset this tilemap should use.'}
+                        </p>
+
+                        {tilesetPickerError && (
+                            <div className="editor-status" style={{ marginTop: '16px', marginBottom: 0 }}>
+                                {tilesetPickerError}
+                            </div>
+                        )}
+
+                        <div className="tilemap-editor__tileset-list" role="list">
+                            {isTilesetPickerLoading && (
+                                <div className="tilemap-editor__tileset-option tilemap-editor__tileset-option--empty">
+                                    Loading tilesets...
+                                </div>
+                            )}
+
+                            {!isTilesetPickerLoading && tilesetOptions.length === 0 && (
+                                <div className="tilemap-editor__tileset-option tilemap-editor__tileset-option--empty">
+                                    No tilesets were found in this project yet.
+                                </div>
+                            )}
+
+                            {!isTilesetPickerLoading && tilesetOptions.map((option) => (
+                                <button
+                                    key={option.path}
+                                    type="button"
+                                    className="tilemap-editor__tileset-option"
+                                    onClick={() => {
+                                        void handleSelectTileset(option.path);
+                                    }}
+                                    disabled={isSwitchingTileset}
+                                >
+                                    <span>{option.name}</span>
+                                    <span className="tilemap-editor__tileset-path">{option.path}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="editor-modal-actions">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    void openTilesetPicker(isTilesetSelectionRequired);
+                                }}
+                                disabled={isTilesetPickerLoading || isSwitchingTileset}
+                            >
+                                Refresh
+                            </button>
+                            {!isTilesetSelectionRequired && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsTilesetPickerOpen(false);
+                                        setTilesetPickerError(null);
+                                    }}
+                                    disabled={isSwitchingTileset}
+                                >
+                                    Cancel
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

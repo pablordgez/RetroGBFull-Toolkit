@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -9,6 +9,22 @@ import {
   rememberRecentProject,
   validateProjectDirectory
 } from './projectLauncher'
+import {
+  createProjectFolder,
+  createProjectResource,
+  deleteProjectFolder,
+  deleteProjectResource,
+  finalizeDeletedProjectResource,
+  getProjectResourceErrorMessage,
+  listProjectResources,
+  renameProjectFolder,
+  renameProjectResource,
+  scanProjectDirectory,
+  restoreDeletedProjectResource,
+  transferProjectResource
+} from './projectResources'
+import { ensureProjectAssetFileAvailable, loadProjectAssetFile, saveProjectAssetFile } from './projectAssetFiles'
+import { PROJECT_ASSET_LABELS, ProjectAssetKind } from '../shared/projectAssets'
 
 interface ProjectActionResponse {
   ok: boolean
@@ -22,6 +38,15 @@ interface ProjectActionResponse {
 }
 
 type ProjectActionKind = 'create' | 'open'
+
+interface AppWindowOptions {
+  width?: number
+  height?: number
+  showWhenReady?: boolean
+  title?: string
+}
+
+const editorWindowsWaitingForCloseConfirmation = new Set<number>()
 
 const getRecentProjectsStorePath = (): string => {
   return join(app.getPath('userData'), 'recent-projects.json')
@@ -50,11 +75,13 @@ const showProjectDialog = async (options: Electron.OpenDialogOptions) => {
   return dialog.showOpenDialog(browserWindow, options)
 }
 
-const createChildWindow = (hash: string, options?: { width?: number; height?: number }): BrowserWindow => {
-  const childWindow = new BrowserWindow({
+const createAppWindow = (hash: string, options?: AppWindowOptions): BrowserWindow => {
+  const appWindow = new BrowserWindow({
     width: options?.width ?? 1000,
     height: options?.height ?? 1000,
+    show: false,
     autoHideMenuBar: true,
+    title: options?.title,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -63,24 +90,99 @@ const createChildWindow = (hash: string, options?: { width?: number; height?: nu
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    childWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#${hash}`)
+    appWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#${hash}`)
   } else {
-    childWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash })
+    appWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash })
+  }
+
+  if (options?.showWhenReady !== false) {
+    appWindow.once('ready-to-show', () => {
+      appWindow.show()
+    })
+  }
+
+  return appWindow
+}
+
+const createChildWindow = (
+  hash: string,
+  options?: { width?: number; height?: number; title?: string; interceptClose?: boolean }
+): BrowserWindow => {
+  const childWindow = createAppWindow(hash, options)
+
+  if (options?.interceptClose) {
+    childWindow.on('close', (event) => {
+      if (editorWindowsWaitingForCloseConfirmation.has(childWindow.webContents.id)) {
+        editorWindowsWaitingForCloseConfirmation.delete(childWindow.webContents.id)
+        return
+      }
+
+      event.preventDefault()
+      childWindow.webContents.send('editor:close-requested')
+    })
   }
 
   return childWindow
 }
 
-const openProject = async (projectPath: string): Promise<ProjectActionResponse> => {
+const createProjectEditorWindow = (
+  project: NonNullable<ProjectActionResponse['project']>
+): BrowserWindow => {
+  const searchParams = new URLSearchParams({
+    projectName: project.name,
+    projectPath: project.path,
+    lastOpenedAt: project.lastOpenedAt
+  })
+
+  return createAppWindow(`/project-editor?${searchParams.toString()}`, {
+    width: 1440,
+    height: 900,
+    showWhenReady: false,
+    title: `${project.name} - RetroGBFull Toolkit`
+  })
+}
+
+const scheduleWindowReplacement = (currentWindow: BrowserWindow | null, nextWindow: BrowserWindow) => {
+  nextWindow.once('ready-to-show', () => {
+    nextWindow.show()
+
+    if (currentWindow && !currentWindow.isDestroyed()) {
+      currentWindow.close()
+    }
+  })
+}
+
+const getSenderWindow = (event: IpcMainInvokeEvent): BrowserWindow | null => {
+  return BrowserWindow.fromWebContents(event.sender)
+}
+
+const closeCurrentProject = async (event: IpcMainInvokeEvent): Promise<boolean> => {
+  const currentWindow = getSenderWindow(event)
+  const launcherWindow = createAppWindow('/', {
+    width: 1080,
+    height: 760,
+    title: 'RetroGBFull Toolkit',
+    showWhenReady: false
+  })
+
+  scheduleWindowReplacement(currentWindow, launcherWindow)
+  return true
+}
+
+const openProject = async (
+  projectPath: string,
+  launcherWindow?: BrowserWindow | null
+): Promise<ProjectActionResponse> => {
   try {
     const project = await rememberRecentProject(getRecentProjectsStorePath(), projectPath)
+    const projectWindow = createProjectEditorWindow(project)
 
-    console.info(`[project-launcher] openProject stub invoked for ${project.path}`)
+    scheduleWindowReplacement(launcherWindow ?? null, projectWindow)
 
     return {
       ok: true,
       canceled: false,
-      message: `Open project stub invoked for "${project.name}".`,
+      message: `Opened "${project.name}".`,
       project
     }
   } catch (error) {
@@ -176,16 +278,16 @@ ipcMain.handle('project:pick-create-location', async () => {
   return result.filePaths[0]
 })
 
-ipcMain.handle('project:create', async (_, parentDirectory: string, projectName: string) => {
+ipcMain.handle('project:create', async (event, parentDirectory: string, projectName: string) => {
   try {
     const project = await createProjectStructure(parentDirectory, projectName)
-    return openProject(project.path)
+    return openProject(project.path, getSenderWindow(event))
   } catch (error) {
     return buildProjectActionErrorResponse('create', error)
   }
 })
 
-ipcMain.handle('project:open-dialog', async () => {
+ipcMain.handle('project:open-dialog', async (event) => {
   try {
     const dialogOptions = {
       title: 'Open Project Folder',
@@ -213,19 +315,215 @@ ipcMain.handle('project:open-dialog', async () => {
       } satisfies ProjectActionResponse
     }
 
-    return openProject(validation.path)
+    return openProject(validation.path, getSenderWindow(event))
   } catch (error) {
     return buildProjectActionErrorResponse('open', error)
   }
 })
 
-ipcMain.handle('project:open-recent', async (_, projectPath: string) => {
+ipcMain.handle('project:open-recent', async (event, projectPath: string) => {
   try {
-    return await openProject(projectPath)
+    return await openProject(projectPath, getSenderWindow(event))
   } catch (error) {
     return buildProjectActionErrorResponse('open', error)
   }
 })
+
+ipcMain.handle('project:close-current', async (event) => {
+  return closeCurrentProject(event)
+})
+
+ipcMain.handle('project:open-in-file-explorer', async (_, projectPath: string) => {
+  const validation = await validateProjectDirectory(projectPath)
+
+  if (!validation.isValid) {
+    throw new Error(validation.message ?? 'The selected project could not be loaded.')
+  }
+
+  const openResult = await shell.openPath(validation.path)
+
+  if (openResult) {
+    throw new Error(openResult)
+  }
+
+  return true
+})
+
+ipcMain.handle('project:assets:open-editor', async (_, assetType: ProjectAssetKind, projectPath: string, assetPath: string) => {
+  await ensureProjectAssetFileAvailable(projectPath, assetPath)
+
+  const searchParams = new URLSearchParams({
+    projectPath,
+    assetPath
+  })
+
+  createChildWindow(`/${assetType}-editor?${searchParams.toString()}`, {
+    width: 1440,
+    height: 900,
+    title: `${PROJECT_ASSET_LABELS[assetType]} Editor`,
+    interceptClose: true
+  })
+
+  return true
+})
+
+ipcMain.handle('project:assets:load', async (_, projectPath: string, assetPath: string) => {
+  return loadProjectAssetFile(projectPath, assetPath)
+})
+
+ipcMain.handle('project:assets:save', async (_, projectPath: string, assetPath: string, document) => {
+  return saveProjectAssetFile(projectPath, assetPath, document)
+})
+
+ipcMain.handle('editor:confirm-close', async (event) => {
+  const editorWindow = getSenderWindow(event)
+
+  if (!editorWindow) {
+    return false
+  }
+
+  editorWindowsWaitingForCloseConfirmation.add(editorWindow.webContents.id)
+  editorWindow.close()
+  return true
+})
+
+ipcMain.handle('project:resources:list', async (_, projectPath: string, currentPath?: string) => {
+  try {
+    return await listProjectResources(projectPath, currentPath)
+  } catch (error) {
+    throw new Error(getProjectResourceErrorMessage(error, 'load'))
+  }
+})
+
+ipcMain.handle('project:resources:create-folder', async (_, projectPath: string, parentPath?: string) => {
+  try {
+    return await createProjectFolder(projectPath, parentPath)
+  } catch (error) {
+    throw new Error(getProjectResourceErrorMessage(error, 'create'))
+  }
+})
+
+ipcMain.handle(
+  'project:resources:create',
+  async (_, projectPath: string, resourceType: string, parentPath?: string, resourceName?: string) => {
+    try {
+      return await createProjectResource(
+        projectPath,
+        resourceType as Parameters<typeof createProjectResource>[1],
+        parentPath,
+        resourceName
+      )
+    } catch (error) {
+      throw new Error(getProjectResourceErrorMessage(error, 'create'))
+    }
+  }
+)
+
+ipcMain.handle(
+  'project:resources:rename-folder',
+  async (_, projectPath: string, folderPath: string, nextName: string) => {
+    try {
+      return await renameProjectFolder(projectPath, folderPath, nextName)
+    } catch (error) {
+      throw new Error(getProjectResourceErrorMessage(error, 'rename'))
+    }
+  }
+)
+
+ipcMain.handle(
+  'project:resources:rename',
+  async (_, projectPath: string, resourceType: string, resourcePath: string, nextName: string) => {
+    try {
+      return await renameProjectResource(
+        projectPath,
+        resourceType as Parameters<typeof renameProjectResource>[1],
+        resourcePath,
+        nextName
+      )
+    } catch (error) {
+      throw new Error(getProjectResourceErrorMessage(error, 'rename'))
+    }
+  }
+)
+
+ipcMain.handle('project:resources:delete-folder', async (_, projectPath: string, folderPath: string) => {
+  try {
+    return await deleteProjectFolder(projectPath, folderPath)
+  } catch (error) {
+    throw new Error(getProjectResourceErrorMessage(error, 'delete'))
+  }
+})
+
+ipcMain.handle(
+  'project:resources:delete',
+  async (_, projectPath: string, resourceType: string, resourcePath: string, deletionId?: string) => {
+    try {
+      return await deleteProjectResource(
+        projectPath,
+        resourceType as Parameters<typeof deleteProjectResource>[1],
+        resourcePath,
+        deletionId
+      )
+    } catch (error) {
+      throw new Error(getProjectResourceErrorMessage(error, 'delete'))
+    }
+  }
+)
+
+ipcMain.handle(
+  'project:resources:transfer',
+  async (
+    _,
+    projectPath: string,
+    resourceType: string,
+    resourcePath: string,
+    destinationParentPath?: string,
+    mode?: string
+  ) => {
+    try {
+      return await transferProjectResource(
+        projectPath,
+        resourceType as Parameters<typeof transferProjectResource>[1],
+        resourcePath,
+        destinationParentPath,
+        mode as Parameters<typeof transferProjectResource>[4]
+      )
+    } catch (error) {
+      throw new Error(getProjectResourceErrorMessage(error, 'paste'))
+    }
+  }
+)
+
+ipcMain.handle('project:resources:scan', async (_, projectPath: string) => {
+  try {
+    return await scanProjectDirectory(projectPath)
+  } catch (error) {
+    throw new Error(getProjectResourceErrorMessage(error, 'load'))
+  }
+})
+
+ipcMain.handle(
+  'project:resources:restore-deleted',
+  async (_, projectPath: string, deletionId: string) => {
+    try {
+      return await restoreDeletedProjectResource(projectPath, deletionId)
+    } catch (error) {
+      throw new Error(getProjectResourceErrorMessage(error, 'create'))
+    }
+  }
+)
+
+ipcMain.handle(
+  'project:resources:finalize-deleted',
+  async (_, projectPath: string, deletionId: string) => {
+    try {
+      await finalizeDeletedProjectResource(projectPath, deletionId)
+      return true
+    } catch (error) {
+      throw new Error(getProjectResourceErrorMessage(error, 'delete'))
+    }
+  }
+)
 
 ipcMain.on('open-sprite-editor-window', () => {
   createChildWindow('/sprite-editor')

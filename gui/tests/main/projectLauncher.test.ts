@@ -30,6 +30,7 @@ describe('projectLauncher helpers', () => {
 
         expect(validation.isValid).toBe(true);
         expect(projectFileContents).toContain('"name": "MyProject"');
+        expect(projectFileContents).toContain('"items": []');
     });
 
     it('returns a friendly message when trying to create a project that already exists', async () => {

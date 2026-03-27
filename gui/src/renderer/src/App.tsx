@@ -1,14 +1,16 @@
-import {HashRouter, Route, Routes} from "react-router-dom";
-import { ProjectLauncher } from "./components/ProjectLauncher/ProjectLauncher";
-import { SpriteEditor } from "./components/SpriteEditor/SpriteEditor";
-import { TilesetEditor } from "./components/Tileset/TilesetEditor";
-import { TilemapEditor } from "./components/TilemapEditor/TilemapEditor";
+import { HashRouter, Route, Routes } from 'react-router-dom'
+import { ProjectLauncher } from './components/ProjectLauncher/ProjectLauncher'
+import { ProjectWorkspace } from './components/ProjectWorkspace/ProjectWorkspace'
+import { SpriteEditor } from './components/SpriteEditor/SpriteEditor'
+import { TilesetEditor } from './components/Tileset/TilesetEditor'
+import { TilemapEditor } from './components/TilemapEditor/TilemapEditor'
 
 function App() {
   return (
     <HashRouter>
       <Routes>
         <Route path="/" element={<ProjectLauncher />} />
+        <Route path="/project-editor" element={<ProjectWorkspace />} />
         <Route path="/sprite-editor" element={<SpriteEditor />} />
         <Route path="/tileset-editor" element={<TilesetEditor />} />
         <Route path="/tilemap-editor" element={<TilemapEditor />} />
@@ -17,4 +19,4 @@ function App() {
   )
 }
 
-export default App;
+export default App
