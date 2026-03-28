@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import '../style/SpriteEditor.css'
 import { ResourceManagementPane } from '../Docking/ResourceManagementPane'
 import { ResizablePaneLayout } from '../Layout/ResizablePaneLayout'
 import { AppMenuBar, AppMenuDefinition, AppMenuItem } from '../MenuBar/AppMenuBar'
+import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt'
+import { SceneHierarchyPane } from '../SceneHierarchy/SceneHierarchyPane'
+import { useSceneWorkspaceSession } from './useSceneWorkspaceSession'
 import './ProjectWorkspace.css'
 
 interface RecentProject {
@@ -54,7 +57,7 @@ const formatScanStatusMessage = (result: ProjectDirectoryScanResult): string => 
   return messageParts.join(' ')
 }
 
-export const ProjectWorkspace = () => {
+export const ProjectWorkspace = (): ReactElement => {
   const [searchParams] = useSearchParams()
   const projectName = searchParams.get('projectName') ?? 'Project Workspace'
   const projectPath = searchParams.get('projectPath') ?? ''
@@ -63,9 +66,30 @@ export const ProjectWorkspace = () => {
   const [statusMessage, setStatusMessage] = useState<WorkspaceStatus | null>(null)
   const [isBusy, setIsBusy] = useState(false)
 
-  const showStatus = (tone: WorkspaceStatusTone, text: string) => {
+  const showStatus = (tone: WorkspaceStatusTone, text: string): void => {
     setStatusMessage({ tone, text })
   }
+
+  const {
+    activeScenePath,
+    activeSceneDocument,
+    activeSceneLabel,
+    isSceneDirty,
+    sceneStatusMessage,
+    isSceneSaving,
+    isSceneLoading,
+    isSceneClosePromptOpen,
+    openScene,
+    updateSceneDocument,
+    saveActiveScene,
+    handleSceneCloseDecision,
+    handleTrackedResourceMutation
+  } = useSceneWorkspaceSession({
+    projectPath,
+    onError: (message) => {
+      showStatus('error', message)
+    }
+  })
 
   const loadRecentProjects = useCallback(async () => {
     try {
@@ -167,6 +191,24 @@ export const ProjectWorkspace = () => {
     }
   }, [projectPath])
 
+  useEffect(() => {
+    if (!activeScenePath || !activeSceneDocument) {
+      return
+    }
+
+    const handleSaveShortcut = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') {
+        return
+      }
+
+      event.preventDefault()
+      void saveActiveScene()
+    }
+
+    window.addEventListener('keydown', handleSaveShortcut)
+    return () => window.removeEventListener('keydown', handleSaveShortcut)
+  }, [activeSceneDocument, activeScenePath, saveActiveScene])
+
   const recentProjectItems = useMemo((): AppMenuItem[] => {
     if (recentProjects.length === 0) {
       return [{ id: 'recent-empty', label: 'No recent projects', disabled: true }]
@@ -258,15 +300,67 @@ export const ProjectWorkspace = () => {
       <div className="project-workspace__layout">
         <ResizablePaneLayout
           className="project-workspace__resizable-layout"
-          pane={<ResourceManagementPane projectPath={projectPath} refreshVersion={refreshVersion} />}
+          pane={
+            <ResourceManagementPane
+              className="project-workspace__resource-pane"
+              onOpenScene={openScene}
+              onResourceMutation={handleTrackedResourceMutation}
+              projectPath={projectPath}
+              refreshVersion={refreshVersion}
+            />
+          }
           initialPaneSize={220}
           minPaneSize={140}
           maxPaneSizeRatio={0.6}
           resizeHandleLabel="Resize bottom pane"
         >
-          <div className="project-workspace__surface" data-testid="project-workspace-surface" />
+          <ResizablePaneLayout
+            className="project-workspace__editor-layout"
+            direction="horizontal"
+            panePosition="start"
+            pane={
+              <SceneHierarchyPane
+                key={activeScenePath ?? 'no-scene'}
+                className="project-workspace__editor-pane project-workspace__editor-pane--sidebar"
+                scene={activeSceneDocument}
+                sceneLabel={activeSceneLabel}
+                isDirty={Boolean(isSceneDirty)}
+                isSaving={isSceneSaving || isSceneLoading}
+                statusMessage={sceneStatusMessage}
+                onSceneChange={updateSceneDocument}
+                onSave={() => {
+                  void saveActiveScene()
+                }}
+              />
+            }
+            initialPaneSize={260}
+            minPaneSize={180}
+            maxPaneSizeRatio={0.45}
+            resizeHandleLabel="Resize scene editor panes"
+          >
+            <section
+              className="project-workspace__editor-pane project-workspace__editor-pane--main"
+              data-testid="project-workspace-surface"
+            >
+              {!activeScenePath && (
+                <div className="project-workspace__empty-state">
+                  Create or load a new scene to start working
+                </div>
+              )}
+            </section>
+          </ResizablePaneLayout>
         </ResizablePaneLayout>
       </div>
+
+      {isSceneClosePromptOpen && activeSceneLabel && (
+        <EditorClosePrompt
+          assetLabel={activeSceneLabel}
+          isBusy={isSceneSaving || isSceneLoading}
+          onCloseDecision={(decision) => {
+            void handleSceneCloseDecision(decision)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ContextMenuOption, ContextMenuRegion } from '../ContextMenu/ContextMenuRegion'
 import { useHistory } from '../hooks/history/useHistory'
 import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts'
+import { getCommandShortcutLabelPrefix, isEditableElementTarget } from '../utils/keyboardShortcuts'
 import { ProjectAssetKind, PROJECT_ASSET_LABELS } from '../../../../shared/projectAssets'
+import { type ResourceMutationEvent } from './projectResourceEvents'
 import {
   RetroFileIcon,
+  RetroSceneIcon,
   RetroFolderIcon,
   RetroSpriteIcon,
   RetroTilemapIcon,
@@ -16,6 +19,8 @@ interface ResourceManagementPaneProps {
   className?: string
   projectPath?: string
   refreshVersion?: number
+  onOpenScene?: (scenePath: string) => void | Promise<void>
+  onResourceMutation?: (event: ResourceMutationEvent) => void
 }
 
 interface ProjectResourceItem {
@@ -98,24 +103,7 @@ const getParentResourcePath = (resourcePath: string): string => {
   return segments.join('/')
 }
 
-const isEditableTarget = (target: EventTarget | null): boolean => {
-  if (!(target instanceof HTMLElement)) {
-    return false
-  }
-
-  const tagName = target.tagName.toLowerCase()
-  return tagName === 'input' || tagName === 'textarea' || target.isContentEditable
-}
-
-const isMacPlatform = (): boolean => {
-  if (typeof navigator === 'undefined') {
-    return false
-  }
-
-  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
-}
-
-const getResourceIcon = (resource: ProjectResourceItem) => {
+const getResourceIcon = (resource: ProjectResourceItem): ReactElement => {
   if (resource.type === 'folder') {
     return <RetroFolderIcon className="resource-management-pane__folder-icon" />
   }
@@ -127,6 +115,8 @@ const getResourceIcon = (resource: ProjectResourceItem) => {
       return <RetroTilesetIcon className="resource-management-pane__folder-icon" />
     case 'tilemap':
       return <RetroTilemapIcon className="resource-management-pane__folder-icon" />
+    case 'scene':
+      return <RetroSceneIcon className="resource-management-pane__folder-icon" />
     default:
       return <RetroFileIcon className="resource-management-pane__folder-icon" />
   }
@@ -135,15 +125,18 @@ const getResourceIcon = (resource: ProjectResourceItem) => {
 export const ResourceManagementPane = ({
   className,
   projectPath = '',
-  refreshVersion = 0
-}: ResourceManagementPaneProps) => {
+  refreshVersion = 0,
+  onOpenScene,
+  onResourceMutation
+}: ResourceManagementPaneProps): ReactElement => {
   const renameInputRef = useRef<HTMLInputElement>(null)
   const isCommittingRenameRef = useRef(false)
   const lastAppliedRefreshVersionRef = useRef(refreshVersion)
   const { record, undo, redo } = useHistory()
   const [resourceView, setResourceView] = useState<ProjectResourceView | null>(null)
   const [editingResource, setEditingResource] = useState<EditingResourceState | null>(null)
-  const [pendingDeleteResource, setPendingDeleteResource] = useState<PendingDeleteResourceState | null>(null)
+  const [pendingDeleteResource, setPendingDeleteResource] =
+    useState<PendingDeleteResourceState | null>(null)
   const [selectedResourcePath, setSelectedResourcePath] = useState<string | null>(null)
   const [clipboardResource, setClipboardResource] = useState<ResourceClipboardState | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -153,13 +146,14 @@ export const ResourceManagementPane = ({
 
   const isInteractionDisabled = isBusy || isHistoryBusy
   const currentResourcePath = resourceView?.currentPath ?? ''
+  const editingResourcePath = editingResource?.path ?? null
 
-  const showErrorStatus = (message: string) => {
+  const showErrorStatus = (message: string): void => {
     setStatusTone('error')
     setStatusMessage(message)
   }
 
-  const showInfoStatus = (message: string) => {
+  const showInfoStatus = (message: string): void => {
     setStatusTone('info')
     setStatusMessage(message)
   }
@@ -222,7 +216,9 @@ export const ResourceManagementPane = ({
       return
     }
 
-    const matchingResource = resourceView?.items.find((resource) => resource.path === editingResource.path)
+    const matchingResource = resourceView?.items.find(
+      (resource) => resource.path === editingResource.path
+    )
 
     if (!matchingResource) {
       setEditingResource(null)
@@ -234,7 +230,9 @@ export const ResourceManagementPane = ({
       return
     }
 
-    const matchingResource = resourceView?.items.find((resource) => resource.path === selectedResourcePath)
+    const matchingResource = resourceView?.items.find(
+      (resource) => resource.path === selectedResourcePath
+    )
 
     if (!matchingResource) {
       setSelectedResourcePath(null)
@@ -242,7 +240,7 @@ export const ResourceManagementPane = ({
   }, [resourceView, selectedResourcePath])
 
   useEffect(() => {
-    if (!editingResource || !renameInputRef.current) {
+    if (!editingResourcePath || !renameInputRef.current) {
       return
     }
 
@@ -252,18 +250,27 @@ export const ResourceManagementPane = ({
     })
 
     return () => window.cancelAnimationFrame(animationFrame)
-  }, [editingResource?.path])
+  }, [editingResourcePath])
 
-  const applyResourceMutation = (result: ProjectResourceMutationResult | ProjectDeletedResourceResult) => {
+  const applyResourceMutation = (
+    result: ProjectResourceMutationResult | ProjectDeletedResourceResult
+  ): void => {
     setResourceView(result.view)
     setStatusMessage(null)
   }
+
+  const notifyResourceMutation = useCallback(
+    (event: ResourceMutationEvent) => {
+      onResourceMutation?.(event)
+    },
+    [onResourceMutation]
+  )
 
   const beginResourceEditing = (
     resourcePath: string,
     resourceName: string,
     resourceType: Exclude<ProjectResourceKind, 'script'>
-  ) => {
+  ): void => {
     setSelectedResourcePath(resourcePath)
     setEditingResource({
       path: resourcePath,
@@ -299,7 +306,9 @@ export const ResourceManagementPane = ({
   )
 
   const selectedTrackedResource = useMemo(() => {
-    const matchingResource = resourceView?.items.find((resource) => resource.path === selectedResourcePath)
+    const matchingResource = resourceView?.items.find(
+      (resource) => resource.path === selectedResourcePath
+    )
 
     if (!matchingResource) {
       return null
@@ -309,7 +318,7 @@ export const ResourceManagementPane = ({
   }, [resourceView, selectedResourcePath])
 
   const shortcutLabels = useMemo(() => {
-    const commandKey = isMacPlatform() ? '\u2318' : 'Ctrl+'
+    const commandKey = getCommandShortcutLabelPrefix()
 
     return {
       copy: `${commandKey}C`,
@@ -320,16 +329,18 @@ export const ResourceManagementPane = ({
 
   const canPasteClipboardResource = useMemo(() => {
     if (
-      !projectPath
-      || !clipboardResource
-      || isInteractionDisabled
-      || Boolean(pendingDeleteResource)
-      || Boolean(editingResource)
+      !projectPath ||
+      !clipboardResource ||
+      isInteractionDisabled ||
+      Boolean(pendingDeleteResource) ||
+      Boolean(editingResource)
     ) {
       return false
     }
 
-    return !(clipboardResource.operation === 'cut' && clipboardResource.parentPath === currentResourcePath)
+    return !(
+      clipboardResource.operation === 'cut' && clipboardResource.parentPath === currentResourcePath
+    )
   }, [
     clipboardResource,
     currentResourcePath,
@@ -340,12 +351,9 @@ export const ResourceManagementPane = ({
   ])
 
   const placeClipboardResource = useCallback(
-    (
-      resource: ProjectResourceItem,
-      operation: ResourceClipboardOperation
-    ) => {
+    (resource: ProjectResourceItem, operation: ResourceClipboardOperation) => {
       const resourceType: Exclude<ProjectResourceKind, 'script'> | null =
-        resource.type === 'folder' ? 'folder' : resource.resourceType ?? null
+        resource.type === 'folder' ? 'folder' : (resource.resourceType ?? null)
 
       if (!resourceType || isInteractionDisabled) {
         return
@@ -360,9 +368,7 @@ export const ResourceManagementPane = ({
         parentPath: getParentResourcePath(resource.path)
       })
       showInfoStatus(
-        operation === 'copy'
-          ? `Copied "${resource.name}".`
-          : `"${resource.name}" is ready to move.`
+        operation === 'copy' ? `Copied "${resource.name}".` : `"${resource.name}" is ready to move.`
       )
     },
     [isInteractionDisabled]
@@ -408,6 +414,11 @@ export const ResourceManagementPane = ({
             )
             deletionId = deletedResult.deletionId
             applyResourceMutation(deletedResult)
+            notifyResourceMutation({
+              action: 'delete',
+              resourceType: result.resourceType as Exclude<ProjectResourceKind, 'script'>,
+              resourcePath: deletedResult.resourcePath
+            })
           },
           redo: async () => {
             if (deletionId) {
@@ -416,6 +427,11 @@ export const ResourceManagementPane = ({
                 deletionId
               )
               applyResourceMutation(restoredResult)
+              notifyResourceMutation({
+                action: 'restore',
+                resourceType: restoredResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+                resourcePath: restoredResult.resourcePath
+              })
               return
             }
 
@@ -427,6 +443,12 @@ export const ResourceManagementPane = ({
               'copy'
             )
             applyResourceMutation(redoneResult)
+            notifyResourceMutation({
+              action: 'copy',
+              resourceType: redoneResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+              resourcePath: redoneResult.resourcePath,
+              previousResourcePath: clipboardResource.resourcePath
+            })
           },
           dispose: async () => {
             if (!deletionId) {
@@ -451,6 +473,12 @@ export const ResourceManagementPane = ({
               'move'
             )
             applyResourceMutation(revertedResult)
+            notifyResourceMutation({
+              action: 'move',
+              resourceType: clipboardResource.resourceType,
+              resourcePath: revertedResult.resourcePath,
+              previousResourcePath: destinationResourcePath
+            })
           },
           redo: async () => {
             const redoneResult = await window.api.transferProjectResource(
@@ -461,6 +489,12 @@ export const ResourceManagementPane = ({
               'move'
             )
             applyResourceMutation(redoneResult)
+            notifyResourceMutation({
+              action: 'move',
+              resourceType: clipboardResource.resourceType,
+              resourcePath: redoneResult.resourcePath,
+              previousResourcePath: sourceResourcePath
+            })
           }
         })
 
@@ -469,6 +503,12 @@ export const ResourceManagementPane = ({
 
       applyResourceMutation(result)
       setSelectedResourcePath(result.resourcePath)
+      notifyResourceMutation({
+        action: clipboardResource.operation === 'copy' ? 'copy' : 'move',
+        resourceType: result.resourceType as Exclude<ProjectResourceKind, 'script'>,
+        resourcePath: result.resourcePath,
+        previousResourcePath: clipboardResource.resourcePath
+      })
     } catch (error) {
       console.error('[resource-management-pane] transferProjectResource failed', error)
       showErrorStatus(
@@ -483,6 +523,7 @@ export const ResourceManagementPane = ({
     canPasteClipboardResource,
     clipboardResource,
     currentResourcePath,
+    notifyResourceMutation,
     projectPath,
     record
   ])
@@ -492,20 +533,32 @@ export const ResourceManagementPane = ({
       return
     }
 
-    const handleShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || isEditableTarget(event.target)) {
+    const handleShortcut = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || isEditableElementTarget(event.target)) {
         return
       }
 
       const lowerKey = event.key.toLowerCase()
 
-      if (lowerKey === 'c' && selectedTrackedResource && !isInteractionDisabled && !editingResource && !pendingDeleteResource) {
+      if (
+        lowerKey === 'c' &&
+        selectedTrackedResource &&
+        !isInteractionDisabled &&
+        !editingResource &&
+        !pendingDeleteResource
+      ) {
         event.preventDefault()
         placeClipboardResource(selectedTrackedResource, 'copy')
         return
       }
 
-      if (lowerKey === 'x' && selectedTrackedResource && !isInteractionDisabled && !editingResource && !pendingDeleteResource) {
+      if (
+        lowerKey === 'x' &&
+        selectedTrackedResource &&
+        !isInteractionDisabled &&
+        !editingResource &&
+        !pendingDeleteResource
+      ) {
         event.preventDefault()
         placeClipboardResource(selectedTrackedResource, 'cut')
         return
@@ -569,6 +622,12 @@ export const ResourceManagementPane = ({
             previousName
           )
           applyResourceMutation(revertedResult)
+          notifyResourceMutation({
+            action: 'rename',
+            resourceType: editingResource.resourceType,
+            resourcePath: revertedResult.resourcePath,
+            previousResourcePath: result.resourcePath
+          })
         },
         redo: async () => {
           const redoneResult = await window.api.renameProjectResource(
@@ -578,12 +637,24 @@ export const ResourceManagementPane = ({
             trimmedName
           )
           applyResourceMutation(redoneResult)
+          notifyResourceMutation({
+            action: 'rename',
+            resourceType: editingResource.resourceType,
+            resourcePath: redoneResult.resourcePath,
+            previousResourcePath: previousPath
+          })
         }
       })
 
       applyResourceMutation(result)
       setSelectedResourcePath(result.resourcePath)
       setEditingResource(null)
+      notifyResourceMutation({
+        action: 'rename',
+        resourceType: editingResource.resourceType,
+        resourcePath: result.resourcePath,
+        previousResourcePath: previousPath
+      })
     } catch (error) {
       console.error('[resource-management-pane] renameProjectResource failed', error)
       showErrorStatus(
@@ -595,7 +666,7 @@ export const ResourceManagementPane = ({
       isCommittingRenameRef.current = false
       setIsBusy(false)
     }
-  }, [editingResource, projectPath, record])
+  }, [editingResource, notifyResourceMutation, projectPath, record])
 
   const handleCreateResource = useCallback(
     async (resourceType: Exclude<ProjectResourceKind, 'script'>) => {
@@ -623,6 +694,11 @@ export const ResourceManagementPane = ({
             )
             deletionId = deletedResult.deletionId
             applyResourceMutation(deletedResult)
+            notifyResourceMutation({
+              action: 'delete',
+              resourceType: result.resourceType as Exclude<ProjectResourceKind, 'script'>,
+              resourcePath: deletedResult.resourcePath
+            })
           },
           redo: async () => {
             if (deletionId) {
@@ -631,6 +707,11 @@ export const ResourceManagementPane = ({
                 deletionId
               )
               applyResourceMutation(restoredResult)
+              notifyResourceMutation({
+                action: 'restore',
+                resourceType: restoredResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+                resourcePath: restoredResult.resourcePath
+              })
               return
             }
 
@@ -641,6 +722,11 @@ export const ResourceManagementPane = ({
               result.resourceName
             )
             applyResourceMutation(recreatedResult)
+            notifyResourceMutation({
+              action: 'create',
+              resourceType: recreatedResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+              resourcePath: recreatedResult.resourcePath
+            })
           },
           dispose: async () => {
             if (!deletionId) {
@@ -653,6 +739,11 @@ export const ResourceManagementPane = ({
 
         applyResourceMutation(result)
         setSelectedResourcePath(result.resourcePath)
+        notifyResourceMutation({
+          action: 'create',
+          resourceType: result.resourceType as Exclude<ProjectResourceKind, 'script'>,
+          resourcePath: result.resourcePath
+        })
         beginResourceEditing(
           result.resourcePath,
           result.resourceName,
@@ -669,7 +760,7 @@ export const ResourceManagementPane = ({
         setIsBusy(false)
       }
     },
-    [projectPath, record, resourceView?.currentPath]
+    [notifyResourceMutation, projectPath, record, resourceView?.currentPath]
   )
 
   const handleDeleteResource = useCallback(async () => {
@@ -693,6 +784,11 @@ export const ResourceManagementPane = ({
             deletedResult.deletionId
           )
           applyResourceMutation(restoredResult)
+          notifyResourceMutation({
+            action: 'restore',
+            resourceType: restoredResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+            resourcePath: restoredResult.resourcePath
+          })
         },
         redo: async () => {
           const redoneResult = await window.api.deleteProjectResource(
@@ -702,6 +798,11 @@ export const ResourceManagementPane = ({
             deletedResult.deletionId
           )
           applyResourceMutation(redoneResult)
+          notifyResourceMutation({
+            action: 'delete',
+            resourceType: deletedResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+            resourcePath: redoneResult.resourcePath
+          })
         },
         dispose: async () => {
           await window.api.finalizeDeletedProjectResource(projectPath, deletedResult.deletionId)
@@ -712,6 +813,11 @@ export const ResourceManagementPane = ({
       setSelectedResourcePath(null)
       setEditingResource(null)
       setPendingDeleteResource(null)
+      notifyResourceMutation({
+        action: 'delete',
+        resourceType: pendingDeleteResource.resourceType,
+        resourcePath: deletedResult.resourcePath
+      })
     } catch (error) {
       console.error('[resource-management-pane] deleteProjectResource failed', error)
       showErrorStatus(
@@ -722,7 +828,7 @@ export const ResourceManagementPane = ({
     } finally {
       setIsBusy(false)
     }
-  }, [pendingDeleteResource, projectPath, record])
+  }, [notifyResourceMutation, pendingDeleteResource, projectPath, record])
 
   const handleOpenResource = useCallback(
     async (resource: ProjectResourceItem) => {
@@ -745,6 +851,11 @@ export const ResourceManagementPane = ({
           return
         }
 
+        if (resource.resourceType === 'scene' && onOpenScene) {
+          await onOpenScene(resource.path)
+          return
+        }
+
         if (resource.resourceType) {
           await window.api.openProjectAssetEditor(resource.resourceType, projectPath, resource.path)
         }
@@ -758,7 +869,7 @@ export const ResourceManagementPane = ({
         )
       }
     },
-    [currentResourcePath, isInteractionDisabled, loadResources, projectPath]
+    [currentResourcePath, isInteractionDisabled, loadResources, onOpenScene, projectPath]
   )
 
   const rootMenuOptions = useMemo((): ContextMenuOption[] => {
@@ -790,6 +901,12 @@ export const ResourceManagementPane = ({
             label: 'Tilemap',
             disabled: !projectPath || isInteractionDisabled,
             onSelect: () => void handleCreateResource('tilemap')
+          },
+          {
+            id: 'new-scene',
+            label: 'Scene',
+            disabled: !projectPath || isInteractionDisabled,
+            onSelect: () => void handleCreateResource('scene')
           },
           { id: 'new-script', label: 'Script', disabled: true }
         ]
@@ -849,11 +966,12 @@ export const ResourceManagementPane = ({
           <div className="resource-management-pane__grid" role="list">
             {resourceView?.items.map((resource) => {
               const resourceType: Exclude<ProjectResourceKind, 'script'> | null =
-                resource.type === 'folder' ? 'folder' : resource.resourceType ?? null
+                resource.type === 'folder' ? 'folder' : (resource.resourceType ?? null)
               const isEditing = editingResource?.path === resource.path
               const isSelected = selectedResourcePath === resource.path
               const isPendingCut =
-                clipboardResource?.operation === 'cut' && clipboardResource.resourcePath === resource.path
+                clipboardResource?.operation === 'cut' &&
+                clipboardResource.resourcePath === resource.path
 
               if (resourceType) {
                 const resourceMenuOptions: ContextMenuOption[] = [
@@ -989,7 +1107,9 @@ export const ResourceManagementPane = ({
                     {formatFileBadge(resource)}
                   </span>
                   <span className="resource-management-pane__item-name">{resource.name}</span>
-                  <span className="resource-management-pane__item-badge">{formatFileBadge(resource)}</span>
+                  <span className="resource-management-pane__item-badge">
+                    {formatFileBadge(resource)}
+                  </span>
                 </div>
               )
             })}
@@ -999,9 +1119,10 @@ export const ResourceManagementPane = ({
         {pendingDeleteResource && (
           <div className="resource-management-pane__modal-backdrop">
             <div className="resource-management-pane__modal" role="dialog" aria-modal="true">
-              <h2>Delete "{pendingDeleteResource.name}"?</h2>
+              <h2>Delete &quot;{pendingDeleteResource.name}&quot;?</h2>
               <p className="resource-management-pane__modal-copy">
-                This action cannot be reversed and will remove everything inside that {getResourceTypeLabel(pendingDeleteResource.resourceType).toLowerCase()}.
+                This action cannot be reversed and will remove everything inside that{' '}
+                {getResourceTypeLabel(pendingDeleteResource.resourceType).toLowerCase()}.
               </p>
 
               <div className="resource-management-pane__modal-actions">

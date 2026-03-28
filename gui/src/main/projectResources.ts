@@ -185,7 +185,7 @@ const isStoredResourceKind = (value: string): value is 'folder' | 'file' => {
 }
 
 const isTrackedAssetKind = (value: string): value is ProjectAssetKind => {
-  return value === 'sprite' || value === 'tileset' || value === 'tilemap'
+  return value === 'sprite' || value === 'tileset' || value === 'tilemap' || value === 'scene'
 }
 
 const getDeletedResourceContainerPath = (projectPath: string, deletionId: string): string => {
@@ -204,7 +204,10 @@ const getDeletedResourceMetadataPath = (projectPath: string, deletionId: string)
 }
 
 const getDeletedResourceContentPath = (projectPath: string, deletionId: string): string => {
-  return join(getDeletedResourceContainerPath(projectPath, deletionId), DELETED_RESOURCE_CONTENT_NAME)
+  return join(
+    getDeletedResourceContainerPath(projectPath, deletionId),
+    DELETED_RESOURCE_CONTENT_NAME
+  )
 }
 
 const resolveResourceDirectory = (projectPath: string, resourcePath: string): string => {
@@ -220,7 +223,9 @@ const resolveResourceDirectory = (projectPath: string, resourcePath: string): st
 }
 
 const isSameOrDescendantPath = (resourcePath: string, potentialAncestorPath: string): boolean => {
-  return resourcePath === potentialAncestorPath || resourcePath.startsWith(`${potentialAncestorPath}/`)
+  return (
+    resourcePath === potentialAncestorPath || resourcePath.startsWith(`${potentialAncestorPath}/`)
+  )
 }
 
 const sortResources = (resources: ProjectStoredResourceRecord[]): ProjectStoredResourceRecord[] => {
@@ -313,7 +318,9 @@ const parseLegacyFolders = (value: unknown): ProjectFolderRecord[] => {
     }
 
     const legacyFolder = entry as LegacyStoredFolder
-    const normalizedPath = normalizeResourcePath(typeof legacyFolder.path === 'string' ? legacyFolder.path : '')
+    const normalizedPath = normalizeResourcePath(
+      typeof legacyFolder.path === 'string' ? legacyFolder.path : ''
+    )
 
     if (!normalizedPath) {
       return []
@@ -321,7 +328,8 @@ const parseLegacyFolders = (value: unknown): ProjectFolderRecord[] => {
 
     const createdAt =
       typeof legacyFolder.createdAt === 'string' ? legacyFolder.createdAt : new Date().toISOString()
-    const updatedAt = typeof legacyFolder.updatedAt === 'string' ? legacyFolder.updatedAt : createdAt
+    const updatedAt =
+      typeof legacyFolder.updatedAt === 'string' ? legacyFolder.updatedAt : createdAt
 
     return [
       {
@@ -335,7 +343,8 @@ const parseLegacyFolders = (value: unknown): ProjectFolderRecord[] => {
             ? legacyFolder.name
             : basename(normalizedPath),
         path: normalizedPath,
-        parentPath: normalizeParentPath(legacyFolder.parentPath) ?? getResourceParentPath(normalizedPath),
+        parentPath:
+          normalizeParentPath(legacyFolder.parentPath) ?? getResourceParentPath(normalizedPath),
         createdAt,
         updatedAt
       }
@@ -367,8 +376,9 @@ const parseStoredResourceRecord = (value: unknown): ProjectStoredResourceRecord 
           ? value.name
           : basename(normalizedPath),
       path: normalizedPath,
-      parentPath: normalizeParentPath(value.parentPath as string | null | undefined)
-        ?? getResourceParentPath(normalizedPath),
+      parentPath:
+        normalizeParentPath(value.parentPath as string | null | undefined) ??
+        getResourceParentPath(normalizedPath),
       createdAt,
       updatedAt
     }
@@ -393,8 +403,9 @@ const parseStoredResourceRecord = (value: unknown): ProjectStoredResourceRecord 
         ? value.name
         : getProjectAssetDisplayName(basename(normalizedPath)),
     path: normalizedPath,
-    parentPath: normalizeParentPath(value.parentPath as string | null | undefined)
-      ?? getResourceParentPath(normalizedPath),
+    parentPath:
+      normalizeParentPath(value.parentPath as string | null | undefined) ??
+      getResourceParentPath(normalizedPath),
     resourceType,
     createdAt,
     updatedAt
@@ -422,12 +433,16 @@ const parseDeletedResourceMetadata = (value: unknown): StoredDeletedResourceMeta
   const deletionId = typeof value.deletionId === 'string' ? value.deletionId : ''
   const resourceType =
     typeof value.resourceType === 'string' ? (value.resourceType as ProjectResourceKind) : 'folder'
-  const resourcePath = normalizeResourcePath(typeof value.resourcePath === 'string' ? value.resourcePath : '')
+  const resourcePath = normalizeResourcePath(
+    typeof value.resourcePath === 'string' ? value.resourcePath : ''
+  )
   const resourceName =
     typeof value.resourceName === 'string' && value.resourceName.length > 0
       ? value.resourceName
       : basename(resourcePath)
-  const parentPath = normalizeResourcePath(typeof value.parentPath === 'string' ? value.parentPath : '')
+  const parentPath = normalizeResourcePath(
+    typeof value.parentPath === 'string' ? value.parentPath : ''
+  )
   const parsedResources = parseStoredResources(value.resources)
 
   if (!deletionId || !resourcePath || !resourceName) {
@@ -445,7 +460,9 @@ const parseDeletedResourceMetadata = (value: unknown): StoredDeletedResourceMeta
         ? parsedResources
         : [
             buildStoredResourceRecord(
-              resourceType === 'folder' || !isTrackedAssetKind(resourceType) ? 'folder' : resourceType,
+              resourceType === 'folder' || !isTrackedAssetKind(resourceType)
+                ? 'folder'
+                : resourceType,
               resourcePath
             )
           ]
@@ -463,7 +480,9 @@ const readProjectFile = async (
   const validation = await validateProjectDirectory(projectPath)
 
   if (!validation.isValid) {
-    throw new ProjectLauncherError(validation.message ?? 'The selected project could not be loaded.')
+    throw new ProjectLauncherError(
+      validation.message ?? 'The selected project could not be loaded.'
+    )
   }
 
   const rawContent = await readFile(validation.jsonPath, 'utf-8')
@@ -483,7 +502,8 @@ const writeProjectFile = async (
   resources: ProjectStoredResourceRecord[]
 ): Promise<void> => {
   const resourcesSection = isRecord(projectFile.resources) ? projectFile.resources : {}
-  const { folders: _legacyFolders, ...remainingResourcesSection } = resourcesSection
+  const remainingResourcesSection = { ...resourcesSection }
+  delete remainingResourcesSection.folders
   const nextProjectFile: StoredProjectFile = {
     ...projectFile,
     resources: {
@@ -543,7 +563,9 @@ const scanLegacyProjectResources = async (
           updatedAt: legacyFolder?.updatedAt
         })
       )
-      resources.push(...(await scanLegacyProjectResources(projectPath, resourcePath, legacyFoldersByPath)))
+      resources.push(
+        ...(await scanLegacyProjectResources(projectPath, resourcePath, legacyFoldersByPath))
+      )
       continue
     }
 
@@ -605,7 +627,10 @@ const readDeletedResourceMetadata = async (
   projectPath: string,
   deletionId: string
 ): Promise<StoredDeletedResourceMetadata> => {
-  const rawContent = await readFile(getDeletedResourceMetadataPath(projectPath, deletionId), 'utf-8')
+  const rawContent = await readFile(
+    getDeletedResourceMetadataPath(projectPath, deletionId),
+    'utf-8'
+  )
   return parseDeletedResourceMetadata(JSON.parse(rawContent))
 }
 
@@ -659,7 +684,10 @@ const discoverUntrackedProjectResources = async (
     }
 
     try {
-      const rawContent = await readFile(resolveResourceDirectory(projectPath, resourcePath), 'utf-8')
+      const rawContent = await readFile(
+        resolveResourceDirectory(projectPath, resourcePath),
+        'utf-8'
+      )
       const document = parseProjectAssetDocument(JSON.parse(rawContent))
 
       if (document.kind !== resourceType) {
@@ -710,7 +738,9 @@ const buildProjectResourceView = (
   const expectedParentPath = normalizeParentPath(normalizedCurrentPath)
   const items = resources
     .filter((resource) => resource.parentPath === expectedParentPath)
-    .map((resource) => (resource.type === 'folder' ? buildFolderItem(resource) : buildFileItem(resource)))
+    .map((resource) =>
+      resource.type === 'folder' ? buildFolderItem(resource) : buildFileItem(resource)
+    )
     .sort((left, right) => {
       if (left.type !== right.type) {
         return left.type === 'folder' ? -1 : 1
@@ -794,7 +824,9 @@ const reconcileTrackedProjectResources = async (
       }
     } catch (error) {
       const errorCode =
-        typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String(error.code)
+          : undefined
 
       if (errorCode !== 'ENOENT') {
         throw error
@@ -824,14 +856,18 @@ const assertTrackedResourceType = (
   resourceType: CreatableProjectResourceKind
 ): void => {
   if (resourceType === 'folder' && resource.type !== 'folder') {
-    throw new ProjectLauncherError('The selected resource type does not match the project metadata.')
+    throw new ProjectLauncherError(
+      'The selected resource type does not match the project metadata.'
+    )
   }
 
   if (
-    resourceType !== 'folder'
-    && (resource.type !== 'file' || resource.resourceType !== resourceType)
+    resourceType !== 'folder' &&
+    (resource.type !== 'file' || resource.resourceType !== resourceType)
   ) {
-    throw new ProjectLauncherError('The selected resource type does not match the project metadata.')
+    throw new ProjectLauncherError(
+      'The selected resource type does not match the project metadata.'
+    )
   }
 }
 
@@ -918,7 +954,8 @@ const buildUniqueResourceName = (
     resourceType === 'folder'
       ? 'New Folder'
       : `New ${resourceType[0].toUpperCase()}${resourceType.slice(1)}`
-  const buildTargetName = (candidateName: string) => buildResourceFileName(resourceType, candidateName)
+  const buildTargetName = (candidateName: string): string =>
+    buildResourceFileName(resourceType, candidateName)
 
   if (!siblingNames.has(buildTargetName(baseName))) {
     return baseName
@@ -996,7 +1033,8 @@ export const getProjectResourceErrorMessage = (
     paste: 'Something went wrong while pasting the resource. Please try again.'
   }
 
-  const errorCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined
+  const errorCode =
+    typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined
 
   if (errorCode === 'EEXIST') {
     return action === 'rename'
@@ -1068,14 +1106,18 @@ export const listProjectResources = async (
     }
 
     try {
-      const currentStats = await stat(resolveResourceDirectory(state.projectPath, normalizedCurrentPath))
+      const currentStats = await stat(
+        resolveResourceDirectory(state.projectPath, normalizedCurrentPath)
+      )
 
       if (!currentStats.isDirectory()) {
         throw new ProjectLauncherError('The selected folder no longer exists on disk.')
       }
     } catch (error) {
       const errorCode =
-        typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String(error.code)
+          : undefined
 
       if (errorCode === 'ENOENT' || error instanceof ProjectLauncherError) {
         await removeTrackedResourceSubtree(state, normalizedCurrentPath)
@@ -1116,12 +1158,14 @@ export const createProjectResource = async (
   await assertTrackedParentFolder(state, normalizedParentPath)
 
   const parentDirectory = resolveResourceDirectory(state.projectPath, normalizedParentPath)
-  const safeResourceName =
-    resourceName
-      ? assertFolderName(resourceName)
-      : buildUniqueResourceName(state.resources, normalizedParentPath, resourceType)
+  const safeResourceName = resourceName
+    ? assertFolderName(resourceName)
+    : buildUniqueResourceName(state.resources, normalizedParentPath, resourceType)
   const targetResourceFileName = buildResourceFileName(resourceType, safeResourceName)
-  const targetResourcePath = joinResourcePath(normalizeParentPath(normalizedParentPath), targetResourceFileName)
+  const targetResourcePath = joinResourcePath(
+    normalizeParentPath(normalizedParentPath),
+    targetResourceFileName
+  )
 
   if (resourceType === 'folder') {
     await mkdir(join(parentDirectory, targetResourceFileName), { recursive: false })
@@ -1264,7 +1308,9 @@ export const deleteProjectResource = async (
 
   const nextResources = await writeProjectResources(
     state,
-    state.resources.filter((resource) => !isSameOrDescendantPath(resource.path, normalizedResourcePath))
+    state.resources.filter(
+      (resource) => !isSameOrDescendantPath(resource.path, normalizedResourcePath)
+    )
   )
 
   return {
@@ -1292,7 +1338,10 @@ export const restoreDeletedProjectResource = async (
     resolveResourceDirectory(state.projectPath, metadata.resourcePath)
   )
 
-  const nextResources = await writeProjectResources(state, [...state.resources, ...metadata.resources])
+  const nextResources = await writeProjectResources(state, [
+    ...state.resources,
+    ...metadata.resources
+  ])
 
   return {
     view: buildProjectResourceView(state, nextResources, metadata.parentPath),
@@ -1331,8 +1380,8 @@ export const transferProjectResource = async (
   assertTrackedResourceType(trackedResource, resourceType)
 
   if (
-    resourceType === 'folder'
-    && isSameOrDescendantPath(normalizedDestinationParentPath, normalizedResourcePath)
+    resourceType === 'folder' &&
+    isSameOrDescendantPath(normalizedDestinationParentPath, normalizedResourcePath)
   ) {
     throw new ProjectLauncherError('Folders cannot be pasted into themselves.')
   }
@@ -1406,7 +1455,10 @@ export const scanProjectDirectory = async (
   const state = await readProjectResourceState(projectPath)
   const reconciledResources = await reconcileTrackedProjectResources(state)
   const trackedPaths = new Set(reconciledResources.resources.map((resource) => resource.path))
-  const discoveredResources = await discoverUntrackedProjectResources(state.projectPath, trackedPaths)
+  const discoveredResources = await discoverUntrackedProjectResources(
+    state.projectPath,
+    trackedPaths
+  )
 
   if (reconciledResources.removedCount === 0 && discoveredResources.length === 0) {
     return {

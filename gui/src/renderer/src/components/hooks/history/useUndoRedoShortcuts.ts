@@ -1,24 +1,16 @@
 import { useEffect } from 'react'
+import { isEditableElementTarget } from '../../utils/keyboardShortcuts'
 
 interface UseUndoRedoShortcutsOptions {
   enabled?: boolean
   ignoreEditableTargets?: boolean
 }
 
-const isEditableTarget = (target: EventTarget | null): boolean => {
-  if (!(target instanceof HTMLElement)) {
-    return false
-  }
-
-  const tagName = target.tagName.toLowerCase()
-  return tagName === 'input' || tagName === 'textarea' || target.isContentEditable
-}
-
 export const useUndoRedoShortcuts = (
   undo: () => void | Promise<void>,
   redo: () => void | Promise<void>,
   options?: UseUndoRedoShortcutsOptions
-) => {
+): void => {
   const { enabled = true, ignoreEditableTargets = false } = options ?? {}
 
   useEffect(() => {
@@ -26,12 +18,12 @@ export const useUndoRedoShortcuts = (
       return
     }
 
-    const handleKeys = (event: KeyboardEvent) => {
+    const handleKeys = (event: KeyboardEvent): void => {
       if (!(event.ctrlKey || event.metaKey)) {
         return
       }
 
-      if (ignoreEditableTargets && isEditableTarget(event.target)) {
+      if (ignoreEditableTargets && isEditableElementTarget(event.target)) {
         return
       }
 

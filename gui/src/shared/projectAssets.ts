@@ -1,4 +1,12 @@
-export type ProjectAssetKind = 'sprite' | 'tileset' | 'tilemap'
+export type ProjectAssetKind = 'sprite' | 'tileset' | 'tilemap' | 'scene'
+
+export interface SceneAssetNode {
+  id: string
+  type: 'actor' | 'folder'
+  name: string
+  isCollapsed: boolean
+  children: SceneAssetNode[]
+}
 
 export interface SpriteAssetDocument {
   kind: 'sprite'
@@ -33,24 +41,36 @@ export interface TilemapAssetDocument {
   tool: 'brush' | 'fill'
 }
 
+export interface SceneAssetDocument {
+  kind: 'scene'
+  version: 1
+  nodes: SceneAssetNode[]
+}
+
 export type ProjectAssetDocument =
   | SpriteAssetDocument
   | TilesetAssetDocument
   | TilemapAssetDocument
+  | SceneAssetDocument
 
 export const PROJECT_ASSET_EXTENSIONS: Record<ProjectAssetKind, string> = {
   sprite: '.rgbsprite.json',
   tileset: '.rgbtileset.json',
-  tilemap: '.rgbtilemap.json'
+  tilemap: '.rgbtilemap.json',
+  scene: '.rgbscene.json'
 }
 
 export const PROJECT_ASSET_LABELS: Record<ProjectAssetKind, string> = {
   sprite: 'Sprite',
   tileset: 'Tileset',
-  tilemap: 'Tilemap'
+  tilemap: 'Tilemap',
+  scene: 'Scene'
 }
 
-export const buildProjectAssetFileName = (assetKind: ProjectAssetKind, assetName: string): string => {
+export const buildProjectAssetFileName = (
+  assetKind: ProjectAssetKind,
+  assetName: string
+): string => {
   return `${assetName}${PROJECT_ASSET_EXTENSIONS[assetKind]}`
 }
 
@@ -115,6 +135,12 @@ export const createDefaultProjectAssetDocument = (
         selectedTileIndex: 0,
         tool: 'brush'
       }
+    case 'scene':
+      return {
+        kind: 'scene',
+        version: 1,
+        nodes: []
+      }
   }
 }
 
@@ -134,6 +160,21 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null
 }
 
+const isSceneAssetNode = (value: unknown): value is SceneAssetNode => {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  return (
+    typeof value.id === 'string' &&
+    (value.type === 'actor' || value.type === 'folder') &&
+    typeof value.name === 'string' &&
+    typeof value.isCollapsed === 'boolean' &&
+    Array.isArray(value.children) &&
+    value.children.every(isSceneAssetNode)
+  )
+}
+
 export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDocument => {
   if (!isRecord(rawDocument) || typeof rawDocument.kind !== 'string' || rawDocument.version !== 1) {
     throw new Error('The asset file is invalid.')
@@ -142,15 +183,15 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
   switch (rawDocument.kind) {
     case 'sprite':
       if (
-        !Number.isInteger(rawDocument.width)
-        || !Number.isInteger(rawDocument.height)
-        || !Number.isInteger(rawDocument.fps)
-        || typeof rawDocument.is8x16Mode !== 'boolean'
-        || !Number.isInteger(rawDocument.currentFrame)
-        || !Array.isArray(rawDocument.frames)
-        || !rawDocument.frames.every(isIntegerArray)
-        || !isStringArray(rawDocument.palette)
-        || !Number.isInteger(rawDocument.selectedColor)
+        !Number.isInteger(rawDocument.width) ||
+        !Number.isInteger(rawDocument.height) ||
+        !Number.isInteger(rawDocument.fps) ||
+        typeof rawDocument.is8x16Mode !== 'boolean' ||
+        !Number.isInteger(rawDocument.currentFrame) ||
+        !Array.isArray(rawDocument.frames) ||
+        !rawDocument.frames.every(isIntegerArray) ||
+        !isStringArray(rawDocument.palette) ||
+        !Number.isInteger(rawDocument.selectedColor)
       ) {
         throw new Error('The sprite asset file is invalid.')
       }
@@ -158,11 +199,11 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
       return asAssetDocument<SpriteAssetDocument>(rawDocument)
     case 'tileset':
       if (
-        !Array.isArray(rawDocument.tiles)
-        || !rawDocument.tiles.every(isIntegerArray)
-        || !isStringArray(rawDocument.palette)
-        || !Number.isInteger(rawDocument.selectedColor)
-        || !Number.isInteger(rawDocument.selectedTileIndex)
+        !Array.isArray(rawDocument.tiles) ||
+        !rawDocument.tiles.every(isIntegerArray) ||
+        !isStringArray(rawDocument.palette) ||
+        !Number.isInteger(rawDocument.selectedColor) ||
+        !Number.isInteger(rawDocument.selectedTileIndex)
       ) {
         throw new Error('The tileset asset file is invalid.')
       }
@@ -170,14 +211,14 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
       return asAssetDocument<TilesetAssetDocument>(rawDocument)
     case 'tilemap':
       if (
-        !Number.isInteger(rawDocument.width)
-        || !Number.isInteger(rawDocument.height)
-        || !isIntegerArray(rawDocument.grid)
-        || (rawDocument.tilesetPath !== undefined
-          && rawDocument.tilesetPath !== null
-          && typeof rawDocument.tilesetPath !== 'string')
-        || !Number.isInteger(rawDocument.selectedTileIndex)
-        || (rawDocument.tool !== 'brush' && rawDocument.tool !== 'fill')
+        !Number.isInteger(rawDocument.width) ||
+        !Number.isInteger(rawDocument.height) ||
+        !isIntegerArray(rawDocument.grid) ||
+        (rawDocument.tilesetPath !== undefined &&
+          rawDocument.tilesetPath !== null &&
+          typeof rawDocument.tilesetPath !== 'string') ||
+        !Number.isInteger(rawDocument.selectedTileIndex) ||
+        (rawDocument.tool !== 'brush' && rawDocument.tool !== 'fill')
       ) {
         throw new Error('The tilemap asset file is invalid.')
       }
@@ -186,6 +227,12 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
         ...rawDocument,
         tilesetPath: rawDocument.tilesetPath ?? null
       })
+    case 'scene':
+      if (!Array.isArray(rawDocument.nodes) || !rawDocument.nodes.every(isSceneAssetNode)) {
+        throw new Error('The scene asset file is invalid.')
+      }
+
+      return asAssetDocument<SceneAssetDocument>(rawDocument)
     default:
       throw new Error('The asset type is not supported.')
   }
