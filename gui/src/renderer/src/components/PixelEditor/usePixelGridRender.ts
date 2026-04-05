@@ -1,4 +1,4 @@
-import { useLayoutEffect, RefObject, useRef } from 'react';
+import { useLayoutEffect, RefObject, useRef, useState } from 'react';
 
 export interface PixelGridRenderOptions {
     canvasRef: RefObject<HTMLCanvasElement>;
@@ -45,6 +45,7 @@ export const usePixelGridRender = ({
     eraserIndex = 0
 }: PixelGridRenderOptions) => {
     const imageCache = useRef<Map<string, HTMLImageElement>>(new Map());
+    const [imageRenderTick, setImageRenderTick] = useState(0);
 
     // Runs on render before the render happens
     useLayoutEffect(() => {
@@ -94,6 +95,9 @@ export const usePixelGridRender = ({
                             // Else we create a new image with the url and cache it
                             if (!img) {
                                 img = new Image();
+                                img.onload = () => {
+                                    setImageRenderTick((tick) => tick + 1);
+                                };
                                 img.src = tileUrl;
                                 imageCache.current.set(tileUrl, img);
                             }
@@ -182,7 +186,7 @@ export const usePixelGridRender = ({
         
     }, [
         canvasRef, grid, width, height, viewportSize, scale, pan,
-        palette, transparentColor, backgroundColor, gridColor,
+        palette, tileset, imageRenderTick, transparentColor, backgroundColor, gridColor,
         majorGridColor, gridSize.w, gridSize.h, eraserIndex
     ]);
 };

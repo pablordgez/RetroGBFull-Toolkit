@@ -1,0 +1,69 @@
+.scene-inspector-pane {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.scene-inspector-pane__empty {
+  color: rgba(15, 56, 15, 0.72);
+  font-weight: bold;
+  padding-top: 2px;
+}
+
+.scene-inspector-pane__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scene-inspector-pane__field span {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+
+.scene-inspector-pane__coords {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.scene-inspector-pane__coords--collision {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.scene-inspector-pane__coords label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: bold;
+}
+
+.scene-inspector-pane__coords input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.scene-inspector-pane__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+}
+
+.scene-inspector-pane__toggle input {
+  width: auto;
+  margin: 0;
+}
+
+.scene-inspector-pane__hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(15, 56, 15, 0.72);
+}

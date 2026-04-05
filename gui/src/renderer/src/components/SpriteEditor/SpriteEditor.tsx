@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import '../style/SpriteEditor.css';
 import { ERASER_COLOR, MAX_GB_WIDTH, MAX_GB_HEIGHT, MAX_HARDWARE_SPRITES, DEFAULT_W, DEFAULT_H, GB_PALETTE } from './SpriteEditorConfig';
 import { PixelCanvas } from '../PixelEditor/PixelCanvas';
 import { useSpriteStats } from '../hooks/useSpriteStats';
 import { useHistory } from '../hooks/history/useHistory';
+import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts';
+import { useProjectAssetEditor } from '../hooks/useProjectAssetEditor';
 import { usePixelDraw } from '../hooks/usePixelDraw';
 import { useViewport } from '../hooks/viewport/useViewport';
+import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt';
 import { Palette } from './Palette';
 import { AnimationControls } from './AnimationControls';
-import { Sprite } from './Sprite';
 import { resizeGrid, applyGridChanges } from '../utils/gridUtils';
+import { SpriteAssetDocument, getProjectAssetDisplayName } from '../../../../shared/projectAssets';
 
 export const SpriteEditor = () => { 
     const [width, setWidth] = useState(DEFAULT_W); 
@@ -34,16 +37,55 @@ export const SpriteEditor = () => {
         record, undo, redo, 
         canUndo, canRedo 
     } = useHistory();
-    const [exportLabel, setExportLabel] = useState("EXPORT DATA");
 
 
     const grid = frames[currentFrame];
     const spriteUsage = useSpriteStats(grid, width, height, is8x16Mode);
 
-    // Whenever the data changes we create a new sprite object that will be used to export
-    const sprite = useMemo(() => {
-        return new Sprite(frames, width, height, fps, is8x16Mode);
-    }, [frames, width, height, fps, is8x16Mode]);
+    const assetDocument = useMemo((): SpriteAssetDocument => {
+        return {
+            kind: 'sprite',
+            version: 1,
+            width,
+            height,
+            fps,
+            is8x16Mode,
+            currentFrame,
+            frames: frames.map((frame) => Array.from(frame)),
+            palette,
+            selectedColor
+        };
+    }, [currentFrame, fps, frames, height, is8x16Mode, palette, selectedColor, width]);
+
+    const applyDocument = useCallback((nextDocument: SpriteAssetDocument) => {
+        setWidth(nextDocument.width);
+        setHeight(nextDocument.height);
+        setInputSize({
+            w: nextDocument.width.toString(),
+            h: nextDocument.height.toString()
+        });
+        setIs8x16Mode(nextDocument.is8x16Mode);
+        setFrames(nextDocument.frames.map((frame) => Uint8Array.from(frame)));
+        setCurrentFrame(nextDocument.currentFrame);
+        setPalette(nextDocument.palette);
+        setSelectedColor(nextDocument.selectedColor);
+        setFps(nextDocument.fps);
+    }, []);
+
+    const {
+        assetPath,
+        isClosePromptOpen,
+        isDirty,
+        isLoaded,
+        isSaving,
+        saveAsset,
+        statusMessage,
+        handleCloseDecision
+    } = useProjectAssetEditor({
+        expectedKind: 'sprite',
+        document: assetDocument,
+        applyDocument
+    });
 
     // Passed to the usePixelDraw hook, tells it how to draw the pixels
     const onPaint = useCallback((ops: { index: number, color: number }[]) => {
@@ -108,38 +150,7 @@ export const SpriteEditor = () => {
         return () => clearInterval(interval);
     }, [isPlaying, fps, frames.length]);
 
-
-
-    // Encodes the sprite data and copies it to the clipboard
-    const handleExport = async () => {
-        try {
-            const encodedString = sprite.encode();
-            await navigator.clipboard.writeText(encodedString);
-            setExportLabel("COPIED!");
-            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
-        } catch (error) {
-            console.error("Export failed:", error);
-            setExportLabel("ERROR!");
-            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
-        }
-    };
-
-    // Ctrl Z for undo and Ctrl Y or Ctrl Shift Z for redo
-    useEffect(() => {
-        const handleKeys = (e: KeyboardEvent) => {
-            if (e.ctrlKey || e.metaKey) {
-                if (e.key.toLowerCase() === 'z') {
-                    e.preventDefault();
-                    e.shiftKey ? redo() : undo();
-                } else if (e.key.toLowerCase() === 'y') {
-                    e.preventDefault();
-                    redo();
-                }
-            }
-        };
-        window.addEventListener('keydown', handleKeys);
-        return () => window.removeEventListener('keydown', handleKeys);
-    }, [undo, redo]);
+    useUndoRedoShortcuts(undo, redo);
 
 
     // To avoid a usability issue where if the user starts changing the size to a number that starts with a number smaller than the minimum size
@@ -306,6 +317,7 @@ export const SpriteEditor = () => {
 
                 <div className="toolbox">
                     <h3>Misc</h3>
+                    {statusMessage && <div className="editor-status">{statusMessage}</div>}
                     <div className="button-row">
                         <button onClick={undo} disabled={!canUndo}>Undo</button>
                         <button onClick={redo} disabled={!canRedo}>Redo</button>
@@ -313,10 +325,10 @@ export const SpriteEditor = () => {
 
                     <div className="button-row">
                         <button
-                            onClick={handleExport}
-                            style={{ backgroundColor: exportLabel === 'COPIED!' ? '#0f380f' : undefined, color: exportLabel === 'COPIED!' ? '#9bbc0f' : undefined }}
+                            onClick={() => void saveAsset()}
+                            disabled={!isLoaded || isSaving}
                         >
-                            {exportLabel}
+                            {isSaving ? 'Saving...' : isDirty ? 'Save*' : 'Save'}
                         </button>
                     </div>
                     <div className="zoom-controls">
@@ -345,6 +357,16 @@ export const SpriteEditor = () => {
                     onZoom={handleZoom}
                 />
             </div>
+
+            {isClosePromptOpen && (
+                <EditorClosePrompt
+                    assetLabel={getProjectAssetDisplayName(assetPath.split('/').pop() ?? 'Sprite')}
+                    isBusy={isSaving}
+                    onCloseDecision={(decision) => {
+                        void handleCloseDecision(decision);
+                    }}
+                />
+            )}
         </div>
     );
 };

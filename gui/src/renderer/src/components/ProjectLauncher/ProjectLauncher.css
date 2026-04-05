@@ -1,0 +1,245 @@
+.launcher-screen {
+    min-height: 100%;
+    display: grid;
+    grid-template-columns: minmax(300px, 380px) minmax(420px, 1fr);
+    gap: 24px;
+    padding: 24px;
+    box-sizing: border-box;
+    background:
+        radial-gradient(circle at top left, rgba(15, 56, 15, 0.12), transparent 32%),
+        linear-gradient(180deg, rgba(196, 190, 187, 0.92) 0%, rgba(139, 172, 15, 0.18) 100%);
+}
+
+.launcher-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    border: 4px solid #0f380f;
+    border-radius: 8px;
+    padding: 24px;
+    background-color: #9bbc0f;
+    box-shadow: 10px 10px 0 rgba(15, 56, 15, 0.22);
+    overflow: hidden;
+}
+
+.launcher-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(rgba(15, 56, 15, 0.04) 1px, transparent 1px);
+    background-size: 100% 14px;
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.launcher-panel > * {
+    position: relative;
+    z-index: 1;
+}
+
+.launcher-panel--hero {
+    justify-content: flex-start;
+}
+
+.launcher-panel--recent {
+    min-height: 0;
+}
+
+.launcher-brand {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.launcher-eyebrow {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: bold;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.launcher-title,
+.launcher-panel h2 {
+    margin: 0;
+    font-size: 2.4rem;
+    line-height: 0.95;
+    text-transform: uppercase;
+}
+
+.launcher-copy {
+    margin: 0;
+    max-width: 24ch;
+    font-size: 1.1rem;
+    line-height: 1.45;
+}
+
+.launcher-status {
+    border: 3px solid #0f380f;
+    padding: 12px 14px;
+    font-size: 1rem;
+    font-weight: bold;
+    box-shadow: inset 0 0 0 2px rgba(15, 56, 15, 0.12);
+}
+
+.launcher-status--success {
+    background-color: #8bac0f;
+}
+
+.launcher-status--error {
+    background-color: #c98364;
+    color: #2f130c;
+}
+
+.launcher-status--info {
+    background-color: #c4bebb;
+}
+
+.launcher-action-group {
+    display: grid;
+    gap: 16px;
+}
+
+.launcher-action-group button {
+    width: 100%;
+    justify-self: start;
+}
+
+.launcher-section-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.launcher-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    min-height: 48px;
+    border: 3px solid #0f380f;
+    background-color: #c4bebb;
+    font-size: 1.35rem;
+    font-weight: bold;
+    box-shadow: 4px 4px 0 rgba(15, 56, 15, 0.18);
+}
+
+.launcher-recent-list {
+    flex: 1;
+    min-height: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.launcher-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+    padding: 20px;
+    text-align: center;
+    border: 3px dashed rgba(15, 56, 15, 0.45);
+    background-color: rgba(196, 190, 187, 0.5);
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.launcher-recent-item {
+    display: grid;
+    gap: 6px;
+    text-align: left;
+    background-color: #c4bebb;
+    color: #0f380f;
+    box-shadow: 6px 6px 0 rgba(15, 56, 15, 0.18);
+}
+
+.launcher-recent-item.selected {
+    background-color: #306230;
+    color: #9bbc0f;
+    box-shadow: 6px 6px 0 #0f380f;
+}
+
+.launcher-recent-name {
+    font-size: 1.2rem;
+}
+
+.launcher-recent-path,
+.launcher-recent-meta,
+.launcher-selection-summary span,
+.launcher-location-card span {
+    display: block;
+    font-size: 0.92rem;
+    opacity: 0.82;
+    word-break: break-word;
+}
+
+.launcher-selection-summary,
+.launcher-location-card {
+    border: 3px solid #0f380f;
+    background-color: #c4bebb;
+    padding: 14px;
+    line-height: 1.45;
+}
+
+.launcher-selection-summary strong,
+.launcher-location-card strong {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.launcher-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background-color: rgba(15, 56, 15, 0.45);
+    z-index: 10;
+}
+
+.launcher-modal {
+    width: min(100%, 520px);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    border: 4px solid #0f380f;
+    border-radius: 8px;
+    padding: 24px;
+    background-color: #9bbc0f;
+    box-shadow: 12px 12px 0 rgba(15, 56, 15, 0.22);
+}
+
+.launcher-modal h2 {
+    margin: 0;
+}
+
+.launcher-field {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    font-size: 1.1rem;
+}
+
+.launcher-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 920px) {
+    .launcher-screen {
+        grid-template-columns: 1fr;
+    }
+
+    .launcher-copy {
+        max-width: none;
+    }
+}

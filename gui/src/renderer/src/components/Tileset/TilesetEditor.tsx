@@ -1,16 +1,18 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import '../style/SpriteEditor.css';
-import { DEFAULT_W, DEFAULT_H, GB_PALETTE, ERASER_COLOR } from '../SpriteEditor/SpriteEditorConfig';
+import { GB_PALETTE, ERASER_COLOR } from '../SpriteEditor/SpriteEditorConfig';
 import { PixelCanvas } from '../PixelEditor/PixelCanvas';
 import { useHistory } from '../hooks/history/useHistory';
+import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts';
 import { useViewport } from '../hooks/viewport/useViewport';
 import { usePixelDraw } from '../hooks/usePixelDraw';
 import { Palette } from '../SpriteEditor/Palette';
 import { Tileset, TilesetRef } from './Tileset';
-import { Tileset as TilesetClass } from './TilesetModel';
-import { Tile } from '../PixelEditor/Tile';
 import { renderTileToDataURL } from '../utils/imageUtils';
 import { applyGridChanges } from '../utils/gridUtils';
+import { useProjectAssetEditor } from '../hooks/useProjectAssetEditor';
+import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt';
+import { TilesetAssetDocument, getProjectAssetDisplayName } from '../../../../shared/projectAssets';
 
 export const TilesetEditor = () => {
     const width = 8;
@@ -29,14 +31,47 @@ export const TilesetEditor = () => {
     } = useViewport(width, height);
 
     const { record, undo, redo, canUndo, canRedo } = useHistory();
-    const [exportLabel, setExportLabel] = useState("EXPORT DATA");
 
     const currentGrid = tilesData[selectedTileIndex] || new Uint8Array(width * height).fill(ERASER_COLOR);
 
-    // Whenever the data changes we create a new tileset object that will be used to export
-    const tilesetObject = useMemo(() => {
-        return new TilesetClass(tilesData.map(t => new Tile(t)));
-    }, [tilesData]);
+    const assetDocument = useMemo((): TilesetAssetDocument => {
+        return {
+            kind: 'tileset',
+            version: 1,
+            tiles: tilesData.map((tileData) => Array.from(tileData)),
+            palette,
+            selectedColor,
+            selectedTileIndex
+        };
+    }, [palette, selectedColor, selectedTileIndex, tilesData]);
+
+    const applyDocument = useCallback((nextDocument: TilesetAssetDocument) => {
+        const nextTilesData = nextDocument.tiles.length > 0
+            ? nextDocument.tiles.map((tileData) => Uint8Array.from(tileData))
+            : [new Uint8Array(width * height).fill(ERASER_COLOR)];
+
+        setTilesData(nextTilesData);
+        setPalette(nextDocument.palette);
+        setSelectedColor(nextDocument.selectedColor);
+        setSelectedTileIndex(
+            Math.max(0, Math.min(nextDocument.selectedTileIndex, nextTilesData.length - 1))
+        );
+    }, []);
+
+    const {
+        assetPath,
+        isClosePromptOpen,
+        isDirty,
+        isLoaded,
+        isSaving,
+        saveAsset,
+        statusMessage,
+        handleCloseDecision
+    } = useProjectAssetEditor({
+        expectedKind: 'tileset',
+        document: assetDocument,
+        applyDocument
+    });
 
     // When painting we update the current tile's data, creating a new entry if the tile is new
     const onPaint = useCallback((ops: { index: number, color: number }[]) => {
@@ -110,7 +145,6 @@ export const TilesetEditor = () => {
 
     const { 
         tool, setTool, 
-        symmetry, setSymmetry, 
         handleCanvasInput: handleCanvasInputInternal 
     } = usePixelDraw({
         width, height, currentGrid,
@@ -174,35 +208,7 @@ export const TilesetEditor = () => {
          });
     };
 
-    useEffect(() => {
-        const handleKeys = (e: KeyboardEvent) => {
-            if (e.ctrlKey || e.metaKey) {
-                if (e.key.toLowerCase() === 'z') {
-                    e.preventDefault();
-                    e.shiftKey ? redo() : undo();
-                } else if (e.key.toLowerCase() === 'y') {
-                    e.preventDefault();
-                    redo();
-                }
-            }
-        };
-        window.addEventListener('keydown', handleKeys);
-        return () => window.removeEventListener('keydown', handleKeys);
-    }, [undo, redo]);
-
-    const handleExport = async () => {
-        try {
-            const encodedString = tilesetObject.encode();
-            await navigator.clipboard.writeText(encodedString);
-            setExportLabel("COPIED!");
-            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
-        } catch (error) {
-            console.error("Export failed:", error);
-            setExportLabel("ERROR!");
-            setTimeout(() => setExportLabel("EXPORT DATA"), 2000);
-        }
-    };
-
+    useUndoRedoShortcuts(undo, redo);
 
     return (
         <div className="main-layout">
@@ -239,6 +245,7 @@ export const TilesetEditor = () => {
 
                 <div className="toolbox">
                     <h3>Misc</h3>
+                    {statusMessage && <div className="editor-status">{statusMessage}</div>}
                     <div className="button-row">
                         <button onClick={undo} disabled={!canUndo}>Undo</button>
                         <button onClick={redo} disabled={!canRedo}>Redo</button>
@@ -246,10 +253,10 @@ export const TilesetEditor = () => {
                     
                     <div className="button-row">
                         <button
-                            onClick={handleExport}
-                            style={{ backgroundColor: exportLabel === 'COPIED!' ? '#0f380f' : undefined, color: exportLabel === 'COPIED!' ? '#9bbc0f' : undefined }}
+                            onClick={() => void saveAsset()}
+                            disabled={!isLoaded || isSaving}
                         >
-                            {exportLabel}
+                            {isSaving ? 'Saving...' : isDirty ? 'Save*' : 'Save'}
                         </button>
                     </div>
 
@@ -279,6 +286,16 @@ export const TilesetEditor = () => {
                     onZoom={handleZoom}
                 />
             </div>
+
+            {isClosePromptOpen && (
+                <EditorClosePrompt
+                    assetLabel={getProjectAssetDisplayName(assetPath.split('/').pop() ?? 'Tileset')}
+                    isBusy={isSaving}
+                    onCloseDecision={(decision) => {
+                        void handleCloseDecision(decision);
+                    }}
+                />
+            )}
         </div>
     );
 };

@@ -125,6 +125,164 @@ button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #8bac0f; 
     display: flex;
 }
 
+.editor-status {
+    margin-bottom: 15px;
+    padding: 10px 12px;
+    border: 3px solid #0f380f;
+    background-color: #c4bebb;
+    font-weight: bold;
+}
+
+.editor-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(15, 56, 15, 0.48);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    box-sizing: border-box;
+    z-index: 1000;
+}
+
+.editor-modal {
+    width: min(520px, 100%);
+    border: 4px solid #0f380f;
+    background-color: #9bbc0f;
+    box-shadow: 8px 8px 0px rgba(15, 56, 15, 0.45);
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+.editor-modal h2 {
+    margin: 0 0 14px 0;
+    font-size: 2em;
+    text-transform: uppercase;
+}
+
+.editor-modal-copy {
+    margin: 0;
+    font-size: 1.2em;
+    font-weight: bold;
+    line-height: 1.4;
+}
+
+.editor-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 14px;
+    margin-top: 24px;
+}
+
+.tilemap-editor__tileset-label {
+    margin-bottom: 16px;
+}
+
+.tilemap-editor__tileset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 20px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+.tilemap-editor__tileset-option {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    text-align: left;
+}
+
+.tilemap-editor__tileset-option--empty {
+    border: 3px solid #0f380f;
+    background-color: #c4bebb;
+    padding: 14px;
+    font-weight: bold;
+}
+
+.tilemap-editor__tileset-path {
+    font-size: 0.85em;
+    opacity: 0.8;
+    text-transform: none;
+    word-break: break-word;
+}
+
+.tilemap-editor__split-copy {
+    margin-bottom: 16px;
+}
+
+.tilemap-editor__split-hint {
+    margin: 14px 0 0;
+    font-size: 1.05em;
+    font-weight: bold;
+    line-height: 1.4;
+}
+
+.tilemap-editor__split-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.tilemap-editor__split-guide {
+    position: absolute;
+    height: 0;
+    border-top: 3px dashed rgba(196, 190, 187, 0.96);
+    box-shadow:
+        0 0 0 2px rgba(15, 56, 15, 0.72),
+        0 0 18px rgba(196, 190, 187, 0.38);
+}
+
+.tilemap-editor__split-guide--bottom {
+    border-top-style: solid;
+}
+
+.tilemap-editor__split-section {
+    position: absolute;
+}
+
+.tilemap-editor__split-section--visible {
+    background: rgba(139, 172, 15, 0.12);
+    outline: 1px solid rgba(155, 188, 15, 0.28);
+}
+
+.tilemap-editor__split-section--hidden {
+    background:
+        repeating-linear-gradient(
+            -45deg,
+            rgba(196, 131, 100, 0.28) 0px,
+            rgba(196, 131, 100, 0.28) 10px,
+            rgba(15, 56, 15, 0.16) 10px,
+            rgba(15, 56, 15, 0.16) 20px
+        );
+    outline: 2px solid rgba(196, 131, 100, 0.62);
+}
+
+.tilemap-editor__split-badge {
+    position: absolute;
+    padding: 4px 8px;
+    border: 2px solid #0f380f;
+    background-color: #c4bebb;
+    color: #0f380f;
+    font-size: 0.95em;
+    font-weight: bold;
+    line-height: 1;
+    white-space: nowrap;
+    box-shadow: 3px 3px 0 rgba(15, 56, 15, 0.3);
+}
+
+.tilemap-editor__split-badge--top {
+    background-color: #9bbc0f;
+}
+
+.tilemap-editor__split-badge--bottom {
+    background-color: #c98364;
+}
+
 .canvas-wrapper {
     margin: auto;
     width: fit-content;

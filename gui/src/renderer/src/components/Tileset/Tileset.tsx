@@ -13,16 +13,18 @@ interface TilesetProps {
     onRemoveTile?: (index: number) => void;
     className?: string;
     allowAdd?: boolean;
+    selectedIndex?: number;
 }
 
 const ITEMS_PER_PAGE = 10;
 const MAX_TILES = 256;
 
-export const Tileset = forwardRef<TilesetRef, TilesetProps>(({ onSelectTile, onRemoveTile, className, allowAdd = true }, ref) => {
+export const Tileset = forwardRef<TilesetRef, TilesetProps>(({ onSelectTile, onRemoveTile, className, allowAdd = true, selectedIndex: controlledSelectedIndex }, ref) => {
 
     const [tiles, setTiles] = useState<(string | null)[]>(allowAdd ? [null] : []);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [page, setPage] = useState(0);
+    const activeSelectedIndex = controlledSelectedIndex ?? selectedIndex;
 
     // useImperativeHandle exposes methods to the parent component
     useImperativeHandle(ref, () => ({
@@ -100,7 +102,7 @@ export const Tileset = forwardRef<TilesetRef, TilesetProps>(({ onSelectTile, onR
                 {visibleCells.map(({ index, content }) => (
                     <div 
                         key={index}
-                        className={`tileset-cell ${selectedIndex === index ? 'selected' : ''}`}
+                        className={`tileset-cell ${activeSelectedIndex === index ? 'selected' : ''}`}
                         onClick={() => handleTileClick(index)}
                         onContextMenu={(e) => { if(allowAdd) handleRightClick(e, index) }}
                         title={`Tile ${index}`}
