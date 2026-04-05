@@ -2,16 +2,19 @@ import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } 
 import { ContextMenuOption, ContextMenuRegion } from '../ContextMenu/ContextMenuRegion'
 import { useHistory } from '../hooks/history/useHistory'
 import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts'
+import { canDragProjectAsset, writeProjectAssetDragPayload } from '../ProjectAssets/projectAssetDrag'
 import { getCommandShortcutLabelPrefix, isEditableElementTarget } from '../utils/keyboardShortcuts'
 import { ProjectAssetKind, PROJECT_ASSET_LABELS } from '../../../../shared/projectAssets'
 import { type ResourceMutationEvent } from './projectResourceEvents'
 import {
+  RetroActorIcon,
   RetroFileIcon,
   RetroSceneIcon,
   RetroFolderIcon,
   RetroSpriteIcon,
   RetroTilemapIcon,
-  RetroTilesetIcon
+  RetroTilesetIcon,
+  RetroWindowIcon
 } from './ResourceIcons'
 import './ResourceManagementPane.css'
 
@@ -109,12 +112,16 @@ const getResourceIcon = (resource: ProjectResourceItem): ReactElement => {
   }
 
   switch (resource.resourceType) {
+    case 'actor':
+      return <RetroActorIcon className="resource-management-pane__folder-icon" />
     case 'sprite':
       return <RetroSpriteIcon className="resource-management-pane__folder-icon" />
     case 'tileset':
       return <RetroTilesetIcon className="resource-management-pane__folder-icon" />
     case 'tilemap':
       return <RetroTilemapIcon className="resource-management-pane__folder-icon" />
+    case 'window':
+      return <RetroWindowIcon className="resource-management-pane__folder-icon" />
     case 'scene':
       return <RetroSceneIcon className="resource-management-pane__folder-icon" />
     default:
@@ -129,6 +136,7 @@ export const ResourceManagementPane = ({
   onOpenScene,
   onResourceMutation
 }: ResourceManagementPaneProps): ReactElement => {
+  const paneRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const isCommittingRenameRef = useRef(false)
   const lastAppliedRefreshVersionRef = useRef(refreshVersion)
@@ -379,6 +387,7 @@ export const ResourceManagementPane = ({
     () => executeHistoryAction('redo'),
     {
       enabled: Boolean(projectPath) && !pendingDeleteResource,
+      containerRef: paneRef,
       ignoreEditableTargets: true
     }
   )
@@ -856,6 +865,11 @@ export const ResourceManagementPane = ({
           return
         }
 
+        if (resource.resourceType === 'actor') {
+          showInfoStatus('Load actor resources from the scene hierarchy.')
+          return
+        }
+
         if (resource.resourceType) {
           await window.api.openProjectAssetEditor(resource.resourceType, projectPath, resource.path)
         }
@@ -885,6 +899,12 @@ export const ResourceManagementPane = ({
             onSelect: () => void handleCreateResource('folder')
           },
           {
+            id: 'new-actor',
+            label: 'Actor',
+            disabled: !projectPath || isInteractionDisabled,
+            onSelect: () => void handleCreateResource('actor')
+          },
+          {
             id: 'new-sprite',
             label: 'Sprite',
             disabled: !projectPath || isInteractionDisabled,
@@ -901,6 +921,12 @@ export const ResourceManagementPane = ({
             label: 'Tilemap',
             disabled: !projectPath || isInteractionDisabled,
             onSelect: () => void handleCreateResource('tilemap')
+          },
+          {
+            id: 'new-window',
+            label: 'Window',
+            disabled: !projectPath || isInteractionDisabled,
+            onSelect: () => void handleCreateResource('window')
           },
           {
             id: 'new-scene',
@@ -930,7 +956,11 @@ export const ResourceManagementPane = ({
 
   return (
     <ContextMenuRegion options={rootMenuOptions}>
-      <div className={buildClassName(className)} data-testid="resource-management-pane">
+      <div
+        ref={paneRef}
+        className={buildClassName(className)}
+        data-testid="resource-management-pane"
+      >
         <div className="resource-management-pane__chrome">
           <div className="resource-management-pane__toolbar">
             <div className="resource-management-pane__location">
@@ -972,6 +1002,8 @@ export const ResourceManagementPane = ({
               const isPendingCut =
                 clipboardResource?.operation === 'cut' &&
                 clipboardResource.resourcePath === resource.path
+              const isDraggableAsset =
+                resource.type === 'file' && canDragProjectAsset(resource.resourceType)
 
               if (resourceType) {
                 const resourceMenuOptions: ContextMenuOption[] = [
@@ -1086,6 +1118,20 @@ export const ResourceManagementPane = ({
                         onContextMenuCapture={() => setSelectedResourcePath(resource.path)}
                         onDoubleClick={() => {
                           void handleOpenResource(resource)
+                        }}
+                        draggable={isDraggableAsset}
+                        onDragStart={(event) => {
+                          if (resource.type !== 'file' || !canDragProjectAsset(resource.resourceType)) {
+                            return
+                          }
+
+                          const dragKind = resource.resourceType
+
+                          setSelectedResourcePath(resource.path)
+                          writeProjectAssetDragPayload(event.dataTransfer, {
+                            kind: dragKind,
+                            path: resource.path
+                          })
                         }}
                         disabled={isInteractionDisabled}
                       >

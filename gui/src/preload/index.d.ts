@@ -54,6 +54,12 @@ interface ProjectAssetFilePayload {
   document: ProjectAssetDocument
 }
 
+interface ProjectAssetSavedEventPayload {
+  projectPath: string
+  assetPath: string
+  assetKind: ProjectAssetKind
+}
+
 interface ProjectDirectoryScanResult {
   trackedCount: number
   removedCount: number
@@ -122,6 +128,9 @@ declare global {
       ) => Promise<ProjectResourceMutationResult>
       deleteProjectFolder: (projectPath: string, folderPath: string) => Promise<ProjectDeletedResourceResult>
       onEditorCloseRequested: (listener: () => void) => () => void
+      onProjectAssetSaved: (
+        listener: (payload: ProjectAssetSavedEventPayload) => void
+      ) => () => void
       confirmEditorClose: () => Promise<boolean>
     }
   }

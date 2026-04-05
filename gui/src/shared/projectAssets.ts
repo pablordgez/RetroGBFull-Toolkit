@@ -1,12 +1,34 @@
-export type ProjectAssetKind = 'sprite' | 'tileset' | 'tilemap' | 'scene'
+export type ProjectAssetKind = 'sprite' | 'tileset' | 'tilemap' | 'window' | 'scene' | 'actor'
 
-export interface SceneAssetNode {
+interface BaseSceneAssetNode {
   id: string
-  type: 'actor' | 'folder'
   name: string
   isCollapsed: boolean
   children: SceneAssetNode[]
 }
+
+export interface SceneAssetFolderNode extends BaseSceneAssetNode {
+  type: 'folder'
+}
+
+export interface SceneAssetActorNode extends BaseSceneAssetNode {
+  type: 'actor'
+  spritePath: string | null
+  x: number
+  y: number
+  followCamera: boolean
+}
+
+export interface SceneAssetCollisionNode extends BaseSceneAssetNode {
+  type: 'collision'
+  x: number
+  y: number
+  width: number
+  height: number
+  isBlocking: boolean
+}
+
+export type SceneAssetNode = SceneAssetFolderNode | SceneAssetActorNode | SceneAssetCollisionNode
 
 export interface SpriteAssetDocument {
   kind: 'sprite'
@@ -41,30 +63,139 @@ export interface TilemapAssetDocument {
   tool: 'brush' | 'fill'
 }
 
+export interface WindowAssetDocument {
+  kind: 'window'
+  version: 1
+  width: number
+  height: number
+  grid: number[]
+  tilesetPath: string | null
+  selectedTileIndex: number
+  tool: 'brush' | 'fill'
+  windowTopEnd: number
+  windowBottomStart: number
+}
+
 export interface SceneAssetDocument {
   kind: 'scene'
   version: 1
+  tilemapPath: string | null
+  windowPath: string | null
   nodes: SceneAssetNode[]
+}
+
+export interface ActorAssetDocument {
+  kind: 'actor'
+  version: 1
+  root: SceneAssetActorNode
 }
 
 export type ProjectAssetDocument =
   | SpriteAssetDocument
   | TilesetAssetDocument
   | TilemapAssetDocument
+  | WindowAssetDocument
   | SceneAssetDocument
+  | ActorAssetDocument
+
+export const createDefaultSceneActorNode = (name = 'Actor'): SceneAssetActorNode => {
+  return {
+    id: 'scene-actor-root',
+    type: 'actor',
+    name,
+    isCollapsed: false,
+    spritePath: null,
+    x: 0,
+    y: 0,
+    followCamera: false,
+    children: []
+  }
+}
+
+export const createDefaultSceneCollisionNode = (name = 'Collision'): SceneAssetCollisionNode => {
+  return {
+    id: 'scene-collision-node',
+    type: 'collision',
+    name,
+    isCollapsed: false,
+    x: 0,
+    y: 0,
+    width: 128,
+    height: 128,
+    isBlocking: true,
+    children: []
+  }
+}
 
 export const PROJECT_ASSET_EXTENSIONS: Record<ProjectAssetKind, string> = {
   sprite: '.rgbsprite.json',
   tileset: '.rgbtileset.json',
   tilemap: '.rgbtilemap.json',
-  scene: '.rgbscene.json'
+  window: '.rgbwindow.json',
+  scene: '.rgbscene.json',
+  actor: '.rgbactor.json'
 }
 
 export const PROJECT_ASSET_LABELS: Record<ProjectAssetKind, string> = {
   sprite: 'Sprite',
   tileset: 'Tileset',
   tilemap: 'Tilemap',
-  scene: 'Scene'
+  window: 'Window',
+  scene: 'Scene',
+  actor: 'Actor'
+}
+
+export interface WindowSplitSettings {
+  windowTopEnd: number
+  windowBottomStart: number
+}
+
+export const normalizeWindowSplitSettings = (
+  windowTopEnd: number,
+  windowBottomStart: number,
+  height: number
+): WindowSplitSettings => {
+  const clampedHeight = Math.max(0, Math.trunc(height))
+  const clampRow = (value: number): number => {
+    if (!Number.isFinite(value)) {
+      return 0
+    }
+
+    return Math.max(0, Math.min(clampedHeight, Math.trunc(value)))
+  }
+
+  const nextWindowTopEnd = clampRow(windowTopEnd)
+
+  if (nextWindowTopEnd === 0) {
+    return {
+      windowTopEnd: 0,
+      windowBottomStart: 0
+    }
+  }
+
+  const nextWindowBottomStart = clampRow(windowBottomStart)
+
+  if (nextWindowBottomStart === 0) {
+    return {
+      windowTopEnd: nextWindowTopEnd,
+      windowBottomStart: 0
+    }
+  }
+
+  if (nextWindowBottomStart > nextWindowTopEnd) {
+    return {
+      windowTopEnd: nextWindowTopEnd,
+      windowBottomStart: nextWindowBottomStart
+    }
+  }
+
+  const normalizedBottomStart =
+    nextWindowTopEnd < clampedHeight ? Math.min(clampedHeight, nextWindowTopEnd + 1) : 0
+
+  return {
+    windowTopEnd: nextWindowTopEnd,
+    windowBottomStart: normalizedBottomStart
+  }
 }
 
 export const buildProjectAssetFileName = (
@@ -135,11 +266,32 @@ export const createDefaultProjectAssetDocument = (
         selectedTileIndex: 0,
         tool: 'brush'
       }
+    case 'window':
+      return {
+        kind: 'window',
+        version: 1,
+        width: 20,
+        height: 18,
+        grid: new Array(20 * 18).fill(0),
+        tilesetPath: null,
+        selectedTileIndex: 0,
+        tool: 'brush',
+        windowTopEnd: 0,
+        windowBottomStart: 0
+      }
     case 'scene':
       return {
         kind: 'scene',
         version: 1,
+        tilemapPath: null,
+        windowPath: null,
         nodes: []
+      }
+    case 'actor':
+      return {
+        kind: 'actor',
+        version: 1,
+        root: createDefaultSceneActorNode()
       }
   }
 }
@@ -160,19 +312,123 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null
 }
 
-const isSceneAssetNode = (value: unknown): value is SceneAssetNode => {
-  if (!isRecord(value)) {
-    return false
+const isOptionalString = (value: unknown): value is string | null | undefined => {
+  return value === undefined || value === null || typeof value === 'string'
+}
+
+export const isSceneActorNode = (node: SceneAssetNode): node is SceneAssetActorNode => {
+  return node.type === 'actor'
+}
+
+export const isSceneCollisionNode = (node: SceneAssetNode): node is SceneAssetCollisionNode => {
+  return node.type === 'collision'
+}
+
+const normalizeSceneFollowCameraNodes = (nodes: SceneAssetNode[]): SceneAssetNode[] => {
+  let hasFollowedActor = false
+
+  const normalizeNode = (node: SceneAssetNode): SceneAssetNode => {
+    if (node.type === 'folder') {
+      return {
+        ...node,
+        children: node.children.map(normalizeNode)
+      }
+    }
+
+    if (node.type === 'collision') {
+      return {
+        ...node,
+        children: []
+      }
+    }
+
+    const followCamera = !hasFollowedActor && node.followCamera
+
+    if (followCamera) {
+      hasFollowedActor = true
+    }
+
+    return {
+      ...node,
+      followCamera,
+      children: node.children.map(normalizeNode)
+    }
   }
 
-  return (
-    typeof value.id === 'string' &&
-    (value.type === 'actor' || value.type === 'folder') &&
-    typeof value.name === 'string' &&
-    typeof value.isCollapsed === 'boolean' &&
-    Array.isArray(value.children) &&
-    value.children.every(isSceneAssetNode)
-  )
+  return nodes.map(normalizeNode)
+}
+
+const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  if (
+    typeof value.id !== 'string' ||
+    typeof value.name !== 'string' ||
+    typeof value.isCollapsed !== 'boolean' ||
+    !Array.isArray(value.children)
+  ) {
+    return null
+  }
+
+  const normalizedChildren = value.children.map(normalizeSceneAssetNode)
+
+  if (normalizedChildren.some((childNode) => childNode === null)) {
+    return null
+  }
+
+  if (value.type === 'folder') {
+    return {
+      id: value.id,
+      type: 'folder',
+      name: value.name,
+      isCollapsed: value.isCollapsed,
+      children: normalizedChildren as SceneAssetNode[]
+    }
+  }
+
+  if (value.type === 'collision') {
+    if (
+      normalizedChildren.length > 0 ||
+      !Number.isInteger(value.x) ||
+      !Number.isInteger(value.y) ||
+      !Number.isInteger(value.width) ||
+      !Number.isInteger(value.height) ||
+      typeof value.isBlocking !== 'boolean'
+    ) {
+      return null
+    }
+
+    return {
+      id: value.id,
+      type: 'collision',
+      name: value.name,
+      isCollapsed: value.isCollapsed,
+      children: [],
+      x: Number(value.x),
+      y: Number(value.y),
+      width: Number(value.width),
+      height: Number(value.height),
+      isBlocking: value.isBlocking
+    }
+  }
+
+  if (value.type !== 'actor') {
+    return null
+  }
+
+  return {
+    id: value.id,
+    type: 'actor',
+    name: value.name,
+    isCollapsed: value.isCollapsed,
+    children: normalizedChildren as SceneAssetNode[],
+    spritePath: isOptionalString(value.spritePath) ? (value.spritePath ?? null) : null,
+    x: Number.isInteger(value.x) ? Number(value.x) : 0,
+    y: Number.isInteger(value.y) ? Number(value.y) : 0,
+    followCamera: typeof value.followCamera === 'boolean' ? value.followCamera : false
+  }
 }
 
 export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDocument => {
@@ -227,12 +483,68 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
         ...rawDocument,
         tilesetPath: rawDocument.tilesetPath ?? null
       })
-    case 'scene':
-      if (!Array.isArray(rawDocument.nodes) || !rawDocument.nodes.every(isSceneAssetNode)) {
+    case 'window': {
+      if (
+        !Number.isInteger(rawDocument.width) ||
+        !Number.isInteger(rawDocument.height) ||
+        !isIntegerArray(rawDocument.grid) ||
+        (rawDocument.tilesetPath !== undefined &&
+          rawDocument.tilesetPath !== null &&
+          typeof rawDocument.tilesetPath !== 'string') ||
+        !Number.isInteger(rawDocument.selectedTileIndex) ||
+        (rawDocument.tool !== 'brush' && rawDocument.tool !== 'fill') ||
+        !Number.isInteger(rawDocument.windowTopEnd) ||
+        !Number.isInteger(rawDocument.windowBottomStart)
+      ) {
+        throw new Error('The window asset file is invalid.')
+      }
+
+      const splitSettings = normalizeWindowSplitSettings(
+        Number(rawDocument.windowTopEnd),
+        Number(rawDocument.windowBottomStart),
+        Number(rawDocument.height)
+      )
+
+      return asAssetDocument<WindowAssetDocument>({
+        ...rawDocument,
+        tilesetPath: rawDocument.tilesetPath ?? null,
+        ...splitSettings
+      })
+    }
+    case 'scene': {
+      if (
+        !Array.isArray(rawDocument.nodes) ||
+        !isOptionalString(rawDocument.tilemapPath) ||
+        !isOptionalString(rawDocument.windowPath)
+      ) {
         throw new Error('The scene asset file is invalid.')
       }
 
-      return asAssetDocument<SceneAssetDocument>(rawDocument)
+      const normalizedSceneNodes = rawDocument.nodes.map(normalizeSceneAssetNode)
+
+      if (normalizedSceneNodes.some((node) => node === null)) {
+        throw new Error('The scene asset file is invalid.')
+      }
+
+      return asAssetDocument<SceneAssetDocument>({
+        ...rawDocument,
+        tilemapPath: rawDocument.tilemapPath ?? null,
+        windowPath: rawDocument.windowPath ?? null,
+        nodes: normalizeSceneFollowCameraNodes(normalizedSceneNodes as SceneAssetNode[])
+      })
+    }
+    case 'actor': {
+      const normalizedRootNode = normalizeSceneAssetNode(rawDocument.root)
+
+      if (!normalizedRootNode || normalizedRootNode.type !== 'actor') {
+        throw new Error('The actor asset file is invalid.')
+      }
+
+      return asAssetDocument<ActorAssetDocument>({
+        ...rawDocument,
+        root: normalizedRootNode
+      })
+    }
     default:
       throw new Error('The asset type is not supported.')
   }

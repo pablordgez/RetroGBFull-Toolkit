@@ -5,7 +5,7 @@ import { ResourceManagementPane } from '../Docking/ResourceManagementPane'
 import { ResizablePaneLayout } from '../Layout/ResizablePaneLayout'
 import { AppMenuBar, AppMenuDefinition, AppMenuItem } from '../MenuBar/AppMenuBar'
 import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt'
-import { SceneHierarchyPane } from '../SceneHierarchy/SceneHierarchyPane'
+import { SceneEditorWorkspace } from './SceneEditorWorkspace'
 import { useSceneWorkspaceSession } from './useSceneWorkspaceSession'
 import './ProjectWorkspace.css'
 
@@ -314,41 +314,24 @@ export const ProjectWorkspace = (): ReactElement => {
           maxPaneSizeRatio={0.6}
           resizeHandleLabel="Resize bottom pane"
         >
-          <ResizablePaneLayout
-            className="project-workspace__editor-layout"
-            direction="horizontal"
-            panePosition="start"
-            pane={
-              <SceneHierarchyPane
-                key={activeScenePath ?? 'no-scene'}
-                className="project-workspace__editor-pane project-workspace__editor-pane--sidebar"
-                scene={activeSceneDocument}
-                sceneLabel={activeSceneLabel}
-                isDirty={Boolean(isSceneDirty)}
-                isSaving={isSceneSaving || isSceneLoading}
-                statusMessage={sceneStatusMessage}
-                onSceneChange={updateSceneDocument}
-                onSave={() => {
-                  void saveActiveScene()
-                }}
-              />
-            }
-            initialPaneSize={260}
-            minPaneSize={180}
-            maxPaneSizeRatio={0.45}
-            resizeHandleLabel="Resize scene editor panes"
-          >
-            <section
-              className="project-workspace__editor-pane project-workspace__editor-pane--main"
-              data-testid="project-workspace-surface"
-            >
-              {!activeScenePath && (
-                <div className="project-workspace__empty-state">
-                  Create or load a new scene to start working
-                </div>
-              )}
-            </section>
-          </ResizablePaneLayout>
+          <SceneEditorWorkspace
+            key={activeScenePath ?? 'no-scene'}
+            projectPath={projectPath}
+            scenePath={activeScenePath}
+            scene={activeSceneDocument}
+            sceneLabel={activeSceneLabel}
+            isDirty={Boolean(isSceneDirty)}
+            isSaving={isSceneSaving || isSceneLoading}
+            statusMessage={sceneStatusMessage}
+            onSceneChange={updateSceneDocument}
+            onSave={() => {
+              void saveActiveScene()
+            }}
+            onStatus={showStatus}
+            onResourcesChanged={() => {
+              setRefreshVersion((currentVersion) => currentVersion + 1)
+            }}
+          />
         </ResizablePaneLayout>
       </div>
 

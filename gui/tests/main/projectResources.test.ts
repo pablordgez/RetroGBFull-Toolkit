@@ -108,7 +108,7 @@ describe('project resource helpers', () => {
   it('creates supported asset files, lists them as typed resources, and persists saved data', async () => {
     const workspaceDirectory = await createTempWorkspace()
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
-    const assetKinds: ProjectAssetKind[] = ['sprite', 'tileset', 'tilemap']
+    const assetKinds: ProjectAssetKind[] = ['sprite', 'tileset', 'tilemap', 'window']
 
     for (const assetKind of assetKinds) {
       const createdAsset = await createProjectResource(project.path, assetKind, '', `Demo ${assetKind}`)
@@ -131,7 +131,8 @@ describe('project resource helpers', () => {
     ).toEqual([
       ['file', 'Demo sprite', 'sprite'],
       ['file', 'Demo tilemap', 'tilemap'],
-      ['file', 'Demo tileset', 'tileset']
+      ['file', 'Demo tileset', 'tileset'],
+      ['file', 'Demo window', 'window']
     ])
 
     const spritePath = `Demo sprite${PROJECT_ASSET_EXTENSIONS.sprite}`

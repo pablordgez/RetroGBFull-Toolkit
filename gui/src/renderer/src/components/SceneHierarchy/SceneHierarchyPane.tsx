@@ -1,47 +1,30 @@
-import {
-  type CSSProperties,
-  type ReactElement,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react'
+import { type CSSProperties, type ReactElement, useEffect, useMemo, useRef, useState } from 'react'
 import { ContextMenuOption, ContextMenuRegion } from '../ContextMenu/ContextMenuRegion'
-import { RetroActorIcon, RetroFolderIcon } from '../Docking/ResourceIcons'
-import { useHistory } from '../hooks/history/useHistory'
-import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts'
-import { isEditableElementTarget, getCommandShortcutLabelPrefix } from '../utils/keyboardShortcuts'
-import { SceneAssetDocument, SceneAssetNode } from '../../../../shared/projectAssets'
 import {
-  type EditingSceneNodeState,
-  type SceneHierarchyClipboardState,
-  type SceneHierarchyClipboardOperation,
-  type SceneHierarchyHistoryState,
-  buildUniqueSceneNodeName,
-  cloneSceneNodeSnapshot,
-  cloneSceneNodeWithFreshIds,
-  findSceneNodeById,
-  findSceneNodeRecord,
-  getDefaultSceneNodeName,
-  getSceneChildNodes,
-  insertSceneNode,
-  isValidScenePasteTarget,
-  removeSceneNodeById,
-  sceneSubtreeContainsNodeId,
-  updateSceneNodeById
-} from './sceneHierarchyModel'
+  RetroActorIcon,
+  RetroCollisionIcon,
+  RetroFolderIcon,
+  RetroTilemapIcon,
+  RetroWindowIcon
+} from '../Docking/ResourceIcons'
+import { getCommandShortcutLabelPrefix, isEditableElementTarget } from '../utils/keyboardShortcuts'
+import type { SceneAssetNode } from '../../../../shared/projectAssets'
+import { isSceneActorNode, isSceneCollisionNode } from './sceneHierarchyModel'
+import type { SceneDocumentEditor } from './useSceneDocumentEditor'
 import './SceneHierarchyPane.css'
 
 interface SceneHierarchyPaneProps {
   className?: string
-  scene: SceneAssetDocument | null
+  editor: SceneDocumentEditor
   sceneLabel?: string | null
   isDirty: boolean
   isSaving: boolean
   statusMessage?: string | null
-  onSceneChange: (document: SceneAssetDocument) => void
   onSave: () => void
+  onRequestTilemapLoad: () => void
+  onRequestWindowLoad: () => void
+  onRequestActorLoad: (parentId: string | null) => void
+  onSaveActorResource: (nodeId: string) => void
 }
 
 const buildClassName = (baseClassName: string, extraClassName?: string): string => {
@@ -49,100 +32,33 @@ const buildClassName = (baseClassName: string, extraClassName?: string): string 
 }
 
 const getNodeIcon = (type: SceneAssetNode['type']): ReactElement => {
-  return type === 'actor' ? (
-    <RetroActorIcon className="scene-hierarchy-pane__icon" />
-  ) : (
-    <RetroFolderIcon className="scene-hierarchy-pane__icon" />
-  )
+  switch (type) {
+    case 'actor':
+      return <RetroActorIcon className="scene-hierarchy-pane__icon" />
+    case 'collision':
+      return <RetroCollisionIcon className="scene-hierarchy-pane__icon" />
+    default:
+      return <RetroFolderIcon className="scene-hierarchy-pane__icon" />
+  }
 }
 
 export const SceneHierarchyPane = ({
   className,
-  scene,
+  editor,
   sceneLabel,
   isDirty,
   isSaving,
   statusMessage,
-  onSceneChange,
-  onSave
+  onSave,
+  onRequestTilemapLoad,
+  onRequestWindowLoad,
+  onRequestActorLoad,
+  onSaveActorResource
 }: SceneHierarchyPaneProps): ReactElement => {
   const paneRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
-  const nextNodeIdRef = useRef(1)
-  const [nodes, setNodes] = useState<SceneAssetNode[]>(scene?.nodes ?? [])
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [clipboard, setClipboard] = useState<SceneHierarchyClipboardState | null>(null)
-  const [editingNode, setEditingNode] = useState<EditingSceneNodeState | null>(null)
   const [isPaneFocused, setIsPaneFocused] = useState(false)
-  const { record, undo, redo } = useHistory()
-
-  const canEdit = Boolean(scene)
-  const editingNodeId = editingNode?.nodeId ?? null
-
-  const publishSceneNodes = useCallback(
-    (nextNodes: SceneAssetNode[]) => {
-      setNodes(nextNodes)
-
-      if (!scene) {
-        return
-      }
-
-      onSceneChange({
-        ...scene,
-        nodes: nextNodes
-      })
-    },
-    [onSceneChange, scene]
-  )
-
-  const createNodeId = useCallback((): string => {
-    const nextNodeId = nextNodeIdRef.current
-    nextNodeIdRef.current += 1
-    return `scene-node-${nextNodeId}`
-  }, [])
-
-  const applyHistoryState = useCallback(
-    (nextState: SceneHierarchyHistoryState) => {
-      publishSceneNodes(nextState.nodes)
-      setSelectedNodeId(nextState.selectedNodeId)
-      setClipboard(nextState.clipboard)
-      setEditingNode(null)
-    },
-    [publishSceneNodes]
-  )
-
-  const captureHistoryState = useCallback(
-    (nextValues?: Partial<SceneHierarchyHistoryState>): SceneHierarchyHistoryState => {
-      return {
-        nodes: nextValues?.nodes ?? nodes,
-        selectedNodeId:
-          nextValues && 'selectedNodeId' in nextValues
-            ? (nextValues.selectedNodeId ?? null)
-            : selectedNodeId,
-        clipboard:
-          nextValues && 'clipboard' in nextValues ? (nextValues.clipboard ?? null) : clipboard
-      }
-    },
-    [clipboard, nodes, selectedNodeId]
-  )
-
-  const recordHistoryTransition = useCallback(
-    (previousState: SceneHierarchyHistoryState, nextState: SceneHierarchyHistoryState) => {
-      record({
-        undo: () => {
-          applyHistoryState(previousState)
-        },
-        redo: () => {
-          applyHistoryState(nextState)
-        }
-      })
-    },
-    [applyHistoryState, record]
-  )
-
-  const selectedNode = useMemo(() => {
-    return selectedNodeId ? findSceneNodeById(nodes, selectedNodeId) : null
-  }, [nodes, selectedNodeId])
+  const editingNodeId = editor.editingNode?.nodeId ?? null
 
   const shortcutLabels = useMemo(() => {
     const commandKey = getCommandShortcutLabelPrefix()
@@ -153,28 +69,6 @@ export const SceneHierarchyPane = ({
       paste: `${commandKey}V`
     }
   }, [])
-
-  const canPasteToRoot = useMemo(() => {
-    return canEdit && isValidScenePasteTarget(nodes, clipboard, null)
-  }, [canEdit, clipboard, nodes])
-
-  const beginEditingNode = useCallback(
-    (nodeId: string) => {
-      const node = findSceneNodeById(nodes, nodeId)
-
-      if (!node || !canEdit) {
-        return
-      }
-
-      setSelectedNodeId(nodeId)
-      setEditingNode({
-        nodeId,
-        draftName: node.name,
-        originalName: node.name
-      })
-    },
-    [canEdit, nodes]
-  )
 
   useEffect(() => {
     if (!editingNodeId || !renameInputRef.current) {
@@ -189,249 +83,8 @@ export const SceneHierarchyPane = ({
     return () => window.cancelAnimationFrame(animationFrame)
   }, [editingNodeId])
 
-  const handleCreateNode = useCallback(
-    (type: SceneAssetNode['type'], parentId: string | null) => {
-      if (!scene || editingNode) {
-        return
-      }
-
-      const nodeName = buildUniqueSceneNodeName(
-        getSceneChildNodes(nodes, parentId),
-        getDefaultSceneNodeName(type)
-      )
-      const nextNode: SceneAssetNode = {
-        id: createNodeId(),
-        type,
-        name: nodeName,
-        isCollapsed: false,
-        children: []
-      }
-      const nextNodes = insertSceneNode(nodes, parentId, nextNode)
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({
-        nodes: nextNodes,
-        selectedNodeId: nextNode.id
-      })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
-      setEditingNode({
-        nodeId: nextNode.id,
-        draftName: nextNode.name,
-        originalName: nextNode.name
-      })
-    },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      createNodeId,
-      editingNode,
-      nodes,
-      recordHistoryTransition,
-      scene
-    ]
-  )
-
-  const handleDeleteNode = useCallback(
-    (nodeId: string): void => {
-      if (!scene || editingNode) {
-        return
-      }
-
-      const removal = removeSceneNodeById(nodes, nodeId)
-
-      if (!removal) {
-        return
-      }
-
-      const nextClipboard =
-        clipboard?.operation === 'cut' &&
-        clipboard.sourceNodeId &&
-        sceneSubtreeContainsNodeId(removal.removedNode, clipboard.sourceNodeId)
-          ? null
-          : clipboard
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({
-        nodes: removal.nodes,
-        selectedNodeId: removal.parentId,
-        clipboard: nextClipboard
-      })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
-    },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      clipboard,
-      editingNode,
-      nodes,
-      recordHistoryTransition,
-      scene
-    ]
-  )
-
-  const handleToggleCollapsed = useCallback(
-    (nodeId: string): void => {
-      if (!scene) {
-        return
-      }
-
-      const nextNodes = updateSceneNodeById(nodes, nodeId, (node) => ({
-        ...node,
-        isCollapsed: !node.isCollapsed
-      }))
-
-      publishSceneNodes(nextNodes)
-    },
-    [nodes, publishSceneNodes, scene]
-  )
-
-  const handleStageClipboard = useCallback(
-    (nodeId: string, operation: SceneHierarchyClipboardOperation) => {
-      if (!scene || editingNode) {
-        return
-      }
-
-      const node = findSceneNodeById(nodes, nodeId)
-
-      if (!node) {
-        return
-      }
-
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({
-        selectedNodeId: nodeId,
-        clipboard: {
-          operation,
-          node: cloneSceneNodeSnapshot(node),
-          sourceNodeId: operation === 'cut' ? nodeId : null
-        }
-      })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
-    },
-    [applyHistoryState, captureHistoryState, editingNode, nodes, recordHistoryTransition, scene]
-  )
-
-  const handlePasteNodes = useCallback(
-    (targetParentId: string | null): void => {
-      if (
-        !scene ||
-        editingNode ||
-        !isValidScenePasteTarget(nodes, clipboard, targetParentId) ||
-        !clipboard
-      ) {
-        return
-      }
-
-      const previousState = captureHistoryState()
-
-      if (clipboard.operation === 'copy') {
-        const pastedNode = cloneSceneNodeWithFreshIds(clipboard.node, createNodeId)
-        pastedNode.name = buildUniqueSceneNodeName(
-          getSceneChildNodes(nodes, targetParentId),
-          clipboard.node.name
-        )
-
-        const nextNodes = insertSceneNode(nodes, targetParentId, pastedNode)
-        const nextState = captureHistoryState({
-          nodes: nextNodes,
-          selectedNodeId: pastedNode.id
-        })
-
-        applyHistoryState(nextState)
-        recordHistoryTransition(previousState, nextState)
-        return
-      }
-
-      if (!clipboard.sourceNodeId) {
-        return
-      }
-
-      const removal = removeSceneNodeById(nodes, clipboard.sourceNodeId)
-
-      if (!removal) {
-        return
-      }
-
-      const nextNodes = insertSceneNode(removal.nodes, targetParentId, removal.removedNode)
-      const nextState = captureHistoryState({
-        nodes: nextNodes,
-        selectedNodeId: removal.removedNode.id,
-        clipboard: null
-      })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
-    },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      clipboard,
-      createNodeId,
-      editingNode,
-      nodes,
-      recordHistoryTransition,
-      scene
-    ]
-  )
-
-  const commitRename = useCallback(() => {
-    if (!scene || !editingNode) {
-      return
-    }
-
-    const trimmedName = editingNode.draftName.trim()
-
-    if (trimmedName.length === 0 || trimmedName === editingNode.originalName) {
-      setEditingNode(null)
-      return
-    }
-
-    const nodeRecord = findSceneNodeRecord(nodes, editingNode.nodeId)
-
-    if (!nodeRecord) {
-      setEditingNode(null)
-      return
-    }
-
-    const siblingNodes = getSceneChildNodes(nodes, nodeRecord.parentId)
-    const nextName = buildUniqueSceneNodeName(siblingNodes, trimmedName, editingNode.nodeId)
-    const nextNodes = updateSceneNodeById(nodes, editingNode.nodeId, (node) => ({
-      ...node,
-      name: nextName
-    }))
-    const previousState = captureHistoryState()
-    const nextState = captureHistoryState({ nodes: nextNodes })
-
-    applyHistoryState(nextState)
-    recordHistoryTransition(previousState, nextState)
-  }, [applyHistoryState, captureHistoryState, editingNode, nodes, recordHistoryTransition, scene])
-
-  const executeHistoryAction = useCallback(
-    async (action: 'undo' | 'redo') => {
-      if (!scene || editingNode) {
-        return
-      }
-
-      await (action === 'undo' ? undo() : redo())
-    },
-    [editingNode, redo, scene, undo]
-  )
-
-  useUndoRedoShortcuts(
-    () => executeHistoryAction('undo'),
-    () => executeHistoryAction('redo'),
-    {
-      enabled: isPaneFocused && canEdit,
-      ignoreEditableTargets: true
-    }
-  )
-
   useEffect(() => {
-    if (!isPaneFocused || !canEdit) {
+    if (!isPaneFocused || !editor.canEdit) {
       return
     }
 
@@ -440,41 +93,27 @@ export const SceneHierarchyPane = ({
         return
       }
 
-      if (event.key.toLowerCase() === 'c' && selectedNode) {
+      if (event.key.toLowerCase() === 'c' && editor.selectedNode) {
         event.preventDefault()
-        handleStageClipboard(selectedNode.id, 'copy')
+        editor.stageClipboard(editor.selectedNode.id, 'copy')
         return
       }
 
-      if (event.key.toLowerCase() === 'x' && selectedNode) {
+      if (event.key.toLowerCase() === 'x' && editor.selectedNode) {
         event.preventDefault()
-        handleStageClipboard(selectedNode.id, 'cut')
+        editor.stageClipboard(editor.selectedNode.id, 'cut')
         return
       }
 
-      if (event.key.toLowerCase() === 'v') {
-        const targetParentId = selectedNode?.id ?? null
-
-        if (!isValidScenePasteTarget(nodes, clipboard, targetParentId)) {
-          return
-        }
-
+      if (event.key.toLowerCase() === 'v' && editor.canPasteTo(editor.selectedNode?.id ?? null)) {
         event.preventDefault()
-        handlePasteNodes(targetParentId)
+        editor.pasteNodes(editor.selectedNode?.id ?? null)
       }
     }
 
     window.addEventListener('keydown', handleShortcuts)
     return () => window.removeEventListener('keydown', handleShortcuts)
-  }, [
-    canEdit,
-    clipboard,
-    handlePasteNodes,
-    handleStageClipboard,
-    isPaneFocused,
-    nodes,
-    selectedNode
-  ])
+  }, [editor, isPaneFocused])
 
   const rootMenuOptions = useMemo((): ContextMenuOption[] => {
     return [
@@ -485,14 +124,38 @@ export const SceneHierarchyPane = ({
           {
             id: 'scene-new-actor',
             label: 'Actor',
-            disabled: !canEdit || Boolean(editingNode),
-            onSelect: () => handleCreateNode('actor', null)
+            disabled: !editor.canCreateNode('actor', null),
+            onSelect: () => editor.createNode('actor', null)
+          },
+          {
+            id: 'scene-new-collision',
+            label: 'Collision',
+            disabled: !editor.canCreateNode('collision', null),
+            onSelect: () => editor.createNode('collision', null)
           },
           {
             id: 'scene-new-folder',
             label: 'Folder',
-            disabled: !canEdit || Boolean(editingNode),
-            onSelect: () => handleCreateNode('folder', null)
+            disabled: !editor.canCreateNode('folder', null),
+            onSelect: () => editor.createNode('folder', null)
+          }
+        ]
+      },
+      {
+        id: 'scene-load',
+        label: 'Load...',
+        children: [
+          {
+            id: 'scene-load-tilemap',
+            label: 'Tilemap',
+            disabled: !editor.canEdit || Boolean(editor.editingNode),
+            onSelect: onRequestTilemapLoad
+          },
+          {
+            id: 'scene-load-actor',
+            label: 'Actor',
+            disabled: !editor.canEdit || Boolean(editor.editingNode),
+            onSelect: () => onRequestActorLoad(null)
           }
         ]
       },
@@ -500,83 +163,108 @@ export const SceneHierarchyPane = ({
         id: 'scene-paste',
         label: 'Paste',
         shortcutLabel: shortcutLabels.paste,
-        disabled: !canPasteToRoot || Boolean(editingNode),
-        onSelect: () => handlePasteNodes(null)
+        disabled: !editor.canPasteTo(null) || Boolean(editor.editingNode),
+        onSelect: () => editor.pasteNodes(null)
       }
     ]
-  }, [
-    canEdit,
-    canPasteToRoot,
-    editingNode,
-    handleCreateNode,
-    handlePasteNodes,
-    shortcutLabels.paste
-  ])
+  }, [editor, onRequestActorLoad, onRequestTilemapLoad, shortcutLabels.paste])
 
-  const footerStatus = scene
+  const footerStatus = editor.canEdit
     ? (statusMessage ?? (isDirty ? 'Unsaved changes.' : 'No unsaved changes.'))
     : 'Open a scene to edit its hierarchy.'
 
   const renderNode = (node: SceneAssetNode, depth: number): ReactElement => {
     const hasChildren = node.children.length > 0
-    const isSelected = selectedNodeId === node.id
-    const isEditing = editingNode?.nodeId === node.id
-    const isCut = clipboard?.operation === 'cut' && clipboard.sourceNodeId === node.id
-    const canPasteIntoNode = canEdit && isValidScenePasteTarget(nodes, clipboard, node.id)
+    const isSelected = editor.selectedNodeId === node.id
+    const isEditing = editor.editingNode?.nodeId === node.id
+    const isCut = editor.clipboard?.operation === 'cut' && editor.clipboard.sourceNodeId === node.id
+    const canPasteIntoNode = editor.canPasteTo(node.id)
     const rowStyle: CSSProperties = {
       paddingLeft: `${depth * 18}px`
     }
     const nodeMenuOptions: ContextMenuOption[] = [
-      {
-        id: `node-new-${node.id}`,
-        label: 'New...',
-        children: [
-          {
-            id: `node-new-actor-${node.id}`,
-            label: 'Actor',
-            disabled: !canEdit || Boolean(editingNode),
-            onSelect: () => handleCreateNode('actor', node.id)
-          },
-          {
-            id: `node-new-folder-${node.id}`,
-            label: 'Folder',
-            disabled: !canEdit || Boolean(editingNode),
-            onSelect: () => handleCreateNode('folder', node.id)
-          }
-        ]
-      },
+      ...(isSceneCollisionNode(node)
+        ? []
+        : [
+            {
+              id: `node-new-${node.id}`,
+              label: 'New...',
+              children: [
+                {
+                  id: `node-new-actor-${node.id}`,
+                  label: 'Actor',
+                  disabled: !editor.canCreateNode('actor', node.id),
+                  onSelect: () => editor.createNode('actor', node.id)
+                },
+                {
+                  id: `node-new-collision-${node.id}`,
+                  label: 'Collision',
+                  disabled: !editor.canCreateNode('collision', node.id),
+                  onSelect: () => editor.createNode('collision', node.id)
+                },
+                {
+                  id: `node-new-folder-${node.id}`,
+                  label: 'Folder',
+                  disabled: !editor.canCreateNode('folder', node.id),
+                  onSelect: () => editor.createNode('folder', node.id)
+                }
+              ]
+            } satisfies ContextMenuOption,
+            {
+              id: `node-load-${node.id}`,
+              label: 'Load...',
+              children: [
+                {
+                  id: `node-load-actor-${node.id}`,
+                  label: 'Actor',
+                  disabled: !editor.canEdit || Boolean(editor.editingNode),
+                  onSelect: () => onRequestActorLoad(node.id)
+                }
+              ]
+            } satisfies ContextMenuOption
+          ]),
       {
         id: `node-copy-${node.id}`,
         label: 'Copy',
         shortcutLabel: shortcutLabels.copy,
-        disabled: !canEdit || Boolean(editingNode),
-        onSelect: () => handleStageClipboard(node.id, 'copy')
+        disabled: !editor.canEdit || Boolean(editor.editingNode),
+        onSelect: () => editor.stageClipboard(node.id, 'copy')
       },
       {
         id: `node-cut-${node.id}`,
         label: 'Cut',
         shortcutLabel: shortcutLabels.cut,
-        disabled: !canEdit || Boolean(editingNode),
-        onSelect: () => handleStageClipboard(node.id, 'cut')
+        disabled: !editor.canEdit || Boolean(editor.editingNode),
+        onSelect: () => editor.stageClipboard(node.id, 'cut')
       },
       {
         id: `node-paste-${node.id}`,
         label: 'Paste',
         shortcutLabel: shortcutLabels.paste,
-        disabled: !canPasteIntoNode || Boolean(editingNode),
-        onSelect: () => handlePasteNodes(node.id)
+        disabled: !canPasteIntoNode || Boolean(editor.editingNode),
+        onSelect: () => editor.pasteNodes(node.id)
       },
       {
         id: `node-rename-${node.id}`,
         label: 'Rename',
-        disabled: !canEdit || Boolean(editingNode),
-        onSelect: () => beginEditingNode(node.id)
+        disabled: !editor.canEdit || Boolean(editor.editingNode),
+        onSelect: () => editor.beginEditingNode(node.id)
       },
+      ...(isSceneActorNode(node)
+        ? [
+            {
+              id: `node-save-actor-${node.id}`,
+              label: 'Save As Resource',
+              disabled: !editor.canEdit || Boolean(editor.editingNode),
+              onSelect: () => onSaveActorResource(node.id)
+            } satisfies ContextMenuOption
+          ]
+        : []),
       {
         id: `node-delete-${node.id}`,
         label: 'Delete',
-        disabled: !canEdit || Boolean(editingNode),
-        onSelect: () => handleDeleteNode(node.id)
+        disabled: !editor.canEdit || Boolean(editor.editingNode),
+        onSelect: () => editor.deleteNode(node.id)
       }
     ]
 
@@ -587,7 +275,7 @@ export const SceneHierarchyPane = ({
             className="scene-hierarchy-pane__row"
             style={rowStyle}
             onContextMenuCapture={() => {
-              setSelectedNodeId(node.id)
+              editor.selectNode(node.id)
               paneRef.current?.focus()
             }}
           >
@@ -598,8 +286,8 @@ export const SceneHierarchyPane = ({
                 aria-label={node.isCollapsed ? `Expand ${node.name}` : `Collapse ${node.name}`}
                 onClick={(event) => {
                   event.stopPropagation()
-                  setSelectedNodeId(node.id)
-                  handleToggleCollapsed(node.id)
+                  editor.selectNode(node.id)
+                  editor.toggleCollapsed(node.id)
                 }}
               >
                 {node.isCollapsed ? '>' : 'v'}
@@ -618,31 +306,21 @@ export const SceneHierarchyPane = ({
                 <input
                   ref={renameInputRef}
                   type="text"
-                  value={editingNode?.draftName ?? ''}
+                  value={editor.editingNode?.draftName ?? ''}
                   aria-label={`Name for ${node.name}`}
                   onChange={(event) => {
-                    const nextDraftName = event.target.value
-                    setEditingNode((currentEditingNode) => {
-                      if (!currentEditingNode || currentEditingNode.nodeId !== node.id) {
-                        return currentEditingNode
-                      }
-
-                      return {
-                        ...currentEditingNode,
-                        draftName: nextDraftName
-                      }
-                    })
+                    editor.setEditingNodeDraftName(event.target.value)
                   }}
-                  onBlur={commitRename}
+                  onBlur={editor.commitRename}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
                       event.preventDefault()
-                      commitRename()
+                      editor.commitRename()
                     }
 
                     if (event.key === 'Escape') {
                       event.preventDefault()
-                      setEditingNode(null)
+                      editor.cancelEditingNode()
                     }
                   }}
                   onClick={(event) => event.stopPropagation()}
@@ -663,12 +341,15 @@ export const SceneHierarchyPane = ({
                 role="treeitem"
                 aria-expanded={hasChildren ? !node.isCollapsed : undefined}
                 onClick={() => {
-                  setSelectedNodeId(node.id)
+                  editor.selectNode(node.id)
                   paneRef.current?.focus()
                 }}
               >
                 {getNodeIcon(node.type)}
                 <span className="scene-hierarchy-pane__label">{node.name}</span>
+                {isSceneActorNode(node) && node.followCamera && (
+                  <span className="scene-hierarchy-pane__badge">CAM</span>
+                )}
               </button>
             )}
           </div>
@@ -702,22 +383,62 @@ export const SceneHierarchyPane = ({
           paneRef.current?.focus()
         }}
       >
+        <div className="scene-hierarchy-pane__scene-chip" aria-hidden="true">
+          <div className="scene-hierarchy-pane__scene-chip-copy">
+            <RetroTilemapIcon className="scene-hierarchy-pane__scene-chip-icon" />
+            <span>
+              {editor.tilemapPath ? editor.tilemapPath.split('/').pop() : 'No tilemap loaded'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            className="scene-hierarchy-pane__scene-chip-action"
+            onClick={() => {
+              onRequestTilemapLoad()
+            }}
+            disabled={!editor.canEdit || Boolean(editor.editingNode)}
+          >
+            Load...
+          </button>
+        </div>
+
+        <div className="scene-hierarchy-pane__scene-chip" aria-hidden="true">
+          <div className="scene-hierarchy-pane__scene-chip-copy">
+            <RetroWindowIcon className="scene-hierarchy-pane__scene-chip-icon" />
+            <span>
+              {editor.windowPath ? editor.windowPath.split('/').pop() : 'No window loaded'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            className="scene-hierarchy-pane__scene-chip-action"
+            onClick={() => {
+              onRequestWindowLoad()
+            }}
+            disabled={!editor.canEdit || Boolean(editor.editingNode)}
+          >
+            Load...
+          </button>
+        </div>
+
         <div
           className="scene-hierarchy-pane__tree"
           role="tree"
           onPointerDown={(event) => {
             if (event.target === event.currentTarget) {
-              setSelectedNodeId(null)
+              editor.selectNode(null)
             }
           }}
           onContextMenuCapture={(event) => {
             if (event.target === event.currentTarget) {
-              setSelectedNodeId(null)
+              editor.selectNode(null)
               paneRef.current?.focus()
             }
           }}
         >
-          {nodes.map((node) => renderNode(node, 0))}
+          {editor.nodes.map((node) => renderNode(node, 0))}
         </div>
 
         <div className="scene-hierarchy-pane__footer">
@@ -726,9 +447,31 @@ export const SceneHierarchyPane = ({
             <span>{footerStatus}</span>
           </div>
 
-          <button type="button" onClick={() => void onSave()} disabled={!scene || isSaving}>
-            {isSaving ? 'Saving...' : 'Save'}
-          </button>
+          <div className="scene-hierarchy-pane__footer-actions">
+            <button
+              type="button"
+              onClick={() => void editor.undo()}
+              disabled={!editor.canEdit || !editor.canUndo || Boolean(editor.editingNode)}
+            >
+              Undo
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void editor.redo()}
+              disabled={!editor.canEdit || !editor.canRedo || Boolean(editor.editingNode)}
+            >
+              Redo
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void onSave()}
+              disabled={!editor.canEdit || isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
     </ContextMenuRegion>

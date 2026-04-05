@@ -47,6 +47,12 @@ interface AppWindowOptions {
   title?: string
 }
 
+interface ProjectAssetSavedEventPayload {
+  projectPath: string
+  assetPath: string
+  assetKind: ProjectAssetKind
+}
+
 const editorWindowsWaitingForCloseConfirmation = new Set<number>()
 const projectWindowPaths = new Map<number, string>()
 const projectWindowsWaitingForCleanup = new Set<number>()
@@ -67,7 +73,7 @@ const clearDeletedResourcesForOpenProjects = async (): Promise<void> => {
   await Promise.all(projectPaths.map((projectPath) => clearDeletedResourcesForProject(projectPath, 'application shutdown')))
 }
 
-const registerProjectWindow = (projectWindow: BrowserWindow, projectPath: string) => {
+const registerProjectWindow = (projectWindow: BrowserWindow, projectPath: string): void => {
   const windowId = projectWindow.webContents.id
   projectWindowPaths.set(windowId, projectPath)
 
@@ -124,7 +130,9 @@ const buildProjectActionErrorResponse = (
   }
 }
 
-const showProjectDialog = async (options: Electron.OpenDialogOptions) => {
+const showProjectDialog = async (
+  options: Electron.OpenDialogOptions
+): Promise<Electron.OpenDialogReturnValue> => {
   const browserWindow = BrowserWindow.getFocusedWindow()
 
   if (process.platform === 'linux' || !browserWindow) {
@@ -204,7 +212,10 @@ const createProjectEditorWindow = (
   return projectWindow
 }
 
-const scheduleWindowReplacement = (currentWindow: BrowserWindow | null, nextWindow: BrowserWindow) => {
+const scheduleWindowReplacement = (
+  currentWindow: BrowserWindow | null,
+  nextWindow: BrowserWindow
+): void => {
   nextWindow.once('ready-to-show', () => {
     nextWindow.show()
 
@@ -450,7 +461,19 @@ ipcMain.handle('project:assets:load', async (_, projectPath: string, assetPath: 
 })
 
 ipcMain.handle('project:assets:save', async (_, projectPath: string, assetPath: string, document) => {
-  return saveProjectAssetFile(projectPath, assetPath, document)
+  const payload = await saveProjectAssetFile(projectPath, assetPath, document)
+
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) {
+      window.webContents.send('project:asset-saved', {
+        projectPath,
+        assetPath,
+        assetKind: payload.assetKind
+      } satisfies ProjectAssetSavedEventPayload)
+    }
+  })
+
+  return payload
 })
 
 ipcMain.handle('editor:confirm-close', async (event) => {

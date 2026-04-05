@@ -43,6 +43,7 @@ Object.defineProperty(window, 'api', {
     scanProjectDirectory: vi.fn().mockResolvedValue({ trackedCount: 0, removedCount: 0 }),
     restoreDeletedProjectResource: vi.fn(),
     finalizeDeletedProjectResource: vi.fn().mockResolvedValue(true),
+    onProjectAssetSaved: vi.fn(() => () => undefined),
     createProjectFolder: vi.fn(),
     renameProjectFolder: vi.fn(),
     deleteProjectFolder: vi.fn(),

@@ -39,6 +39,16 @@ export const RetroActorIcon = ({ className }: ResourceIconProps): ReactElement =
   )
 }
 
+export const RetroCollisionIcon = ({ className }: ResourceIconProps): ReactElement => {
+  return (
+    <svg className={className} viewBox="0 0 32 32" role="img" aria-hidden="true">
+      <rect x="6" y="6" width="20" height="20" fill="#c4bebb" opacity="0.45" />
+      <path d="M6 6h20v20H6V6Zm17 3H9v14h14V9Z" fill="#0f380f" />
+      <path d="M9 13h14M13 9v14M19 9v14M9 19h14" stroke="#306230" strokeWidth="2" />
+    </svg>
+  )
+}
+
 export const RetroSceneIcon = ({ className }: ResourceIconProps): ReactElement => {
   return (
     <svg className={className} viewBox="0 0 32 32" role="img" aria-hidden="true">
@@ -110,6 +120,19 @@ export const RetroTilemapIcon = ({ className }: ResourceIconProps): ReactElement
       <rect x="7" y="7" width="6" height="6" fill="#8bac0f" />
       <rect x="13" y="13" width="6" height="6" fill="#306230" />
       <rect x="19" y="19" width="6" height="6" fill="#8bac0f" />
+    </svg>
+  )
+}
+
+export const RetroWindowIcon = ({ className }: ResourceIconProps): ReactElement => {
+  return (
+    <svg className={className} viewBox="0 0 32 32" role="img" aria-hidden="true">
+      <rect x="4" y="6" width="24" height="20" fill="#c4bebb" />
+      <path d="M4 6h24v20H4V6Zm21 3H7v14h18V9Z" fill="#0f380f" />
+      <rect x="7" y="9" width="18" height="5" fill="#8bac0f" />
+      <rect x="7" y="18" width="18" height="5" fill="#306230" />
+      <rect x="7" y="14" width="18" height="4" fill="#c4bebb" />
+      <path d="M7 14h18v1H7v-1Zm0 3h18v1H7v-1Z" fill="#0f380f" opacity="0.65" />
     </svg>
   )
 }

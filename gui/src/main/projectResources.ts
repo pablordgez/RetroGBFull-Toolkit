@@ -185,7 +185,14 @@ const isStoredResourceKind = (value: string): value is 'folder' | 'file' => {
 }
 
 const isTrackedAssetKind = (value: string): value is ProjectAssetKind => {
-  return value === 'sprite' || value === 'tileset' || value === 'tilemap' || value === 'scene'
+  return (
+    value === 'sprite' ||
+    value === 'tileset' ||
+    value === 'tilemap' ||
+    value === 'window' ||
+    value === 'scene' ||
+    value === 'actor'
+  )
 }
 
 const getDeletedResourceContainerPath = (projectPath: string, deletionId: string): string => {

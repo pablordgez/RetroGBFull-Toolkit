@@ -90,7 +90,8 @@
   border-bottom: 4px solid #0f380f;
 }
 
-.project-workspace__editor-layout {
+.project-workspace__editor-layout,
+.project-workspace__editor-secondary-layout {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
@@ -103,7 +104,16 @@
   overflow: hidden;
 }
 
-.project-workspace__editor-layout .resizable-pane-layout__handle {
+.project-workspace__scene-editor {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  outline: none;
+}
+
+.project-workspace__editor-layout .resizable-pane-layout__handle,
+.project-workspace__editor-secondary-layout .resizable-pane-layout__handle {
   box-sizing: border-box;
   background-color: #c4bebb;
   border-left: 4px solid #0f380f;
@@ -118,7 +128,8 @@
 }
 
 .project-workspace__editor-pane--sidebar,
-.project-workspace__editor-pane--main {
+.project-workspace__editor-pane--main,
+.project-workspace__editor-pane--inspector {
   background:
     linear-gradient(180deg, rgba(196, 190, 187, 0.72) 0%, rgba(196, 190, 187, 0.96) 100%),
     radial-gradient(circle at top, rgba(48, 98, 48, 0.08), transparent 44%);

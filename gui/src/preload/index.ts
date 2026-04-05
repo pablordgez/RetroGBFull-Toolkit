@@ -55,6 +55,12 @@ interface ProjectAssetFilePayload {
   document: ProjectAssetDocument
 }
 
+interface ProjectAssetSavedEventPayload {
+  projectPath: string
+  assetPath: string
+  assetKind: ProjectAssetKind
+}
+
 interface ProjectDirectoryScanResult {
   trackedCount: number
   removedCount: number
@@ -160,10 +166,20 @@ const api = {
     ) as Promise<ProjectResourceMutationResult>,
   deleteProjectFolder: (projectPath: string, folderPath: string) =>
     ipcRenderer.invoke('project:resources:delete-folder', projectPath, folderPath) as Promise<ProjectDeletedResourceResult>,
-  onEditorCloseRequested: (listener: () => void) => {
-    const wrappedListener = () => listener()
+  onEditorCloseRequested: (listener: () => void): (() => void) => {
+    const wrappedListener = (): void => listener()
     ipcRenderer.on('editor:close-requested', wrappedListener)
     return () => ipcRenderer.removeListener('editor:close-requested', wrappedListener)
+  },
+  onProjectAssetSaved: (
+    listener: (payload: ProjectAssetSavedEventPayload) => void
+  ): (() => void) => {
+    const wrappedListener = (
+      _event: Electron.IpcRendererEvent,
+      payload: ProjectAssetSavedEventPayload
+    ): void => listener(payload)
+    ipcRenderer.on('project:asset-saved', wrappedListener)
+    return () => ipcRenderer.removeListener('project:asset-saved', wrappedListener)
   },
   confirmEditorClose: () => ipcRenderer.invoke('editor:confirm-close') as Promise<boolean>
 }

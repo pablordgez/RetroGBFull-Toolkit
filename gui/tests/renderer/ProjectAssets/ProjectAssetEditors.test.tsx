@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SpriteEditor } from '../../../src/renderer/src/components/SpriteEditor/SpriteEditor'
 import { TilesetEditor } from '../../../src/renderer/src/components/Tileset/TilesetEditor'
 import { TilemapEditor } from '../../../src/renderer/src/components/TilemapEditor/TilemapEditor'
+import { WindowEditor } from '../../../src/renderer/src/components/TilemapEditor/WindowEditor'
 
 const renderEditor = (entry: string, element: React.ReactElement) => {
   return render(
@@ -444,6 +445,93 @@ describe('project asset editors', () => {
           tilesetPath: 'Small.rgbtileset.json',
           grid: [0, 1],
           selectedTileIndex: 0
+        })
+      )
+    })
+  })
+
+  it('loads and saves window assets and normalizes split settings', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        {
+          type: 'file',
+          name: 'Main',
+          fileName: 'Main.rgbtileset.json',
+          path: 'Main.rgbtileset.json',
+          extension: 'json',
+          resourceType: 'tileset'
+        }
+      ]
+    })
+    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(async (_projectPath, assetPath) => {
+      if (assetPath === 'UI/Main.rgbwindow.json') {
+        return {
+          assetKind: 'window',
+          resourcePath: assetPath,
+          document: {
+            kind: 'window',
+            version: 1,
+            width: 20,
+            height: 4,
+            grid: new Array(80).fill(0),
+            tilesetPath: 'Main.rgbtileset.json',
+            selectedTileIndex: 0,
+            tool: 'brush',
+            windowTopEnd: 2,
+            windowBottomStart: 0
+          }
+        }
+      }
+
+      return {
+        assetKind: 'tileset',
+        resourcePath: 'Main.rgbtileset.json',
+        document: {
+          kind: 'tileset',
+          version: 1,
+          tiles: [new Array(64).fill(0), new Array(64).fill(1)],
+          palette: ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'],
+          selectedColor: 3,
+          selectedTileIndex: 0
+        }
+      }
+    })
+    vi.mocked(window.api.saveProjectAssetFile).mockImplementation(async (_projectPath, _assetPath, document) => ({
+      assetKind: 'window',
+      resourcePath: 'UI/Main.rgbwindow.json',
+      document
+    }))
+
+    renderEditor(
+      '/window-editor?projectPath=%2Fprojects%2FAlpha&assetPath=UI%2FMain.rgbwindow.json',
+      <WindowEditor />
+    )
+
+    await waitFor(() => {
+      expect(window.api.loadProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'UI/Main.rgbwindow.json'
+      )
+    })
+
+    const bottomInput = screen.getByRole('spinbutton', { name: /bottom rows/i })
+    fireEvent.change(bottomInput, { target: { value: '1' } })
+    fireEvent.blur(bottomInput)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save*' }))
+
+    await waitFor(() => {
+      expect(window.api.saveProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'UI/Main.rgbwindow.json',
+        expect.objectContaining({
+          kind: 'window',
+          windowTopEnd: 2,
+          windowBottomStart: 3
         })
       )
     })
