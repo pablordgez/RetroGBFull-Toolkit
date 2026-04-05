@@ -79,6 +79,7 @@ export interface SceneDocumentEditor {
     nodeId: string,
     nextValues: Partial<Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath'>>
   ) => void
+  setActorResourcePath: (nodeId: string, resourcePath: string | null) => void
   setFollowedActor: (nodeId: string | null) => void
   updateCollision: (
     nodeId: string,
@@ -92,7 +93,8 @@ export interface SceneDocumentEditor {
   loadActor: (
     parentId: string | null,
     actorRoot: SceneAssetActorNode,
-    placement?: { x: number; y: number }
+    placement?: { x: number; y: number },
+    resourcePath?: string | null
   ) => void
   snapshotActor: (nodeId: string) => SceneAssetActorNode | null
 }
@@ -696,6 +698,46 @@ export const useSceneDocumentEditor = ({
     ]
   )
 
+  const setActorResourcePath = useCallback(
+    (nodeId: string, resourcePath: string | null) => {
+      if (!scene) {
+        return
+      }
+
+      const actor = findSceneNodeById(documentSnapshot.nodes, nodeId)
+
+      if (!actor || !isSceneActorNode(actor)) {
+        return
+      }
+
+      const nextResourcePath = resourcePath ?? undefined
+
+      if ((actor.resourcePath ?? undefined) === nextResourcePath) {
+        return
+      }
+
+      publishDocumentSnapshot({
+        tilemapPath: documentSnapshot.tilemapPath,
+        windowPath: documentSnapshot.windowPath,
+        nodes: updateSceneNodeById(documentSnapshot.nodes, nodeId, (node) =>
+          isSceneActorNode(node)
+            ? {
+                ...node,
+                resourcePath: nextResourcePath
+              }
+            : node
+        )
+      })
+    },
+    [
+      documentSnapshot.nodes,
+      documentSnapshot.tilemapPath,
+      documentSnapshot.windowPath,
+      publishDocumentSnapshot,
+      scene
+    ]
+  )
+
   const updateCollision = useCallback(
     (
       nodeId: string,
@@ -845,7 +887,8 @@ export const useSceneDocumentEditor = ({
     (
       parentId: string | null,
       actorRoot: SceneAssetActorNode,
-      placement?: { x: number; y: number }
+      placement?: { x: number; y: number },
+      resourcePath?: string | null
     ) => {
       if (!scene || editingNode) {
         return
@@ -867,6 +910,7 @@ export const useSceneDocumentEditor = ({
         getSceneChildNodes(documentSnapshot.nodes, parentId),
         actorRoot.name
       )
+      nextActorNode.resourcePath = resourcePath ?? undefined
 
       if (!canInsertSceneNodeAtParent(documentSnapshot.nodes, parentId, nextActorNode)) {
         throw new Error('That actor cannot be inserted at the selected location.')
@@ -933,6 +977,7 @@ export const useSceneDocumentEditor = ({
     canPasteTo,
     pasteNodes,
     updateActor,
+    setActorResourcePath,
     setFollowedActor,
     updateCollision,
     clampActorsToMap,

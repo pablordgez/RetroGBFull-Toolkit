@@ -292,6 +292,7 @@ describe('<ProjectWorkspace />', () => {
     expect(screen.getByRole('menuitem', { name: 'Tilemap' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Window' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Script' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Actor' })).not.toBeInTheDocument()
   })
 
   it('creates a folder and immediately opens inline rename mode', async () => {
@@ -1970,22 +1971,41 @@ describe('<ProjectWorkspace />', () => {
     })
   })
 
-  it('saves actor resources with collision children and strips followCamera', async () => {
-    vi.mocked(window.api.getProjectResources).mockResolvedValue({
-      projectName: 'Alpha',
-      projectPath: '/projects/Alpha',
-      currentPath: '',
-      parentPath: null,
-      items: [
-        {
-          type: 'file',
-          name: 'Room Scene',
-          fileName: 'Room Scene.rgbscene.json',
-          path: 'Scenes/Room Scene.rgbscene.json',
-          extension: 'json',
-          resourceType: 'scene'
+  it('saves actor resources into the current resource folder and strips followCamera', async () => {
+    vi.mocked(window.api.getProjectResources).mockImplementation(async (_projectPath, currentPath = '') => {
+      if (currentPath === 'Actors') {
+        return {
+          projectName: 'Alpha',
+          projectPath: '/projects/Alpha',
+          currentPath: 'Actors',
+          parentPath: '',
+          items: []
         }
-      ]
+      }
+
+      return {
+        projectName: 'Alpha',
+        projectPath: '/projects/Alpha',
+        currentPath: '',
+        parentPath: null,
+        items: [
+          {
+            type: 'folder',
+            id: 'actors-folder',
+            name: 'Actors',
+            path: 'Actors',
+            parentPath: null
+          },
+          {
+            type: 'file',
+            name: 'Room Scene',
+            fileName: 'Room Scene.rgbscene.json',
+            path: 'Scenes/Room Scene.rgbscene.json',
+            extension: 'json',
+            resourceType: 'scene'
+          }
+        ]
+      }
     })
     vi.mocked(window.api.loadProjectAssetFile).mockImplementation(
       async (_projectPath, assetPath) => {
@@ -2035,18 +2055,18 @@ describe('<ProjectWorkspace />', () => {
       view: {
         projectName: 'Alpha',
         projectPath: '/projects/Alpha',
-        currentPath: 'Scenes',
+        currentPath: 'Actors',
         parentPath: '',
         items: []
       },
       resourceType: 'actor',
-      resourcePath: 'Scenes/Hero.rgbactor.json',
+      resourcePath: 'Actors/Hero.rgbactor.json',
       resourceName: 'Hero',
-      parentPath: 'Scenes'
+      parentPath: 'Actors'
     })
     vi.mocked(window.api.saveProjectAssetFile).mockResolvedValue({
       assetKind: 'actor',
-      resourcePath: 'Scenes/Hero.rgbactor.json',
+      resourcePath: 'Actors/Hero.rgbactor.json',
       document: {
         kind: 'actor',
         version: 1,
@@ -2084,6 +2104,8 @@ describe('<ProjectWorkspace />', () => {
     const resourcePane = screen.getByTestId('resource-management-pane')
     fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
     await screen.findByText('Load a tilemap to visualize the scene bounds.')
+    fireEvent.doubleClick(within(resourcePane).getByText('Actors').closest('button')!)
+    await screen.findByText('/Actors')
 
     const heroButton = await within(
       screen.getByTestId('project-workspace-scene-sidebar')
@@ -2095,6 +2117,12 @@ describe('<ProjectWorkspace />', () => {
       expect(window.api.saveProjectAssetFile).toHaveBeenCalled()
     })
 
+    expect(window.api.createProjectResource).toHaveBeenCalledWith(
+      '/projects/Alpha',
+      'actor',
+      'Actors',
+      'Hero'
+    )
     expect(vi.mocked(window.api.saveProjectAssetFile).mock.calls[0][2]).toMatchObject({
       kind: 'actor',
       root: {
@@ -2108,5 +2136,133 @@ describe('<ProjectWorkspace />', () => {
         ]
       }
     })
+    expect(vi.mocked(window.api.saveProjectAssetFile).mock.calls[0][1]).toBe(
+      'Actors/Hero.rgbactor.json'
+    )
+    expect(
+      (vi.mocked(window.api.saveProjectAssetFile).mock.calls[0][2] as { root: Record<string, unknown> })
+        .root
+    ).toHaveProperty('resourcePath', undefined)
+  })
+
+  it('prompts to overwrite or save new when saving a linked actor resource', async () => {
+    vi.mocked(window.api.getProjectResources).mockImplementation(async (_projectPath, currentPath = '') => {
+      if (currentPath === 'Archive') {
+        return {
+          projectName: 'Alpha',
+          projectPath: '/projects/Alpha',
+          currentPath: 'Archive',
+          parentPath: '',
+          items: []
+        }
+      }
+
+      return {
+        projectName: 'Alpha',
+        projectPath: '/projects/Alpha',
+        currentPath: '',
+        parentPath: null,
+        items: [
+          {
+            type: 'folder',
+            id: 'archive-folder',
+            name: 'Archive',
+            path: 'Archive',
+            parentPath: null
+          },
+          {
+            type: 'file',
+            name: 'Room Scene',
+            fileName: 'Room Scene.rgbscene.json',
+            path: 'Scenes/Room Scene.rgbscene.json',
+            extension: 'json',
+            resourceType: 'scene'
+          }
+        ]
+      }
+    })
+    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(
+      async (_projectPath, assetPath) => {
+        if (assetPath === 'Scenes/Room Scene.rgbscene.json') {
+          return {
+            assetKind: 'scene' as const,
+            resourcePath: assetPath,
+            document: {
+              kind: 'scene' as const,
+              version: 1,
+              tilemapPath: null,
+              windowPath: null,
+              nodes: [
+                {
+                  id: 'hero-node',
+                  type: 'actor' as const,
+                  name: 'Hero',
+                  isCollapsed: false,
+                  spritePath: null,
+                  resourcePath: 'Actors/Hero.rgbactor.json',
+                  x: 0,
+                  y: 0,
+                  followCamera: false,
+                  children: []
+                }
+              ]
+            }
+          }
+        }
+
+        throw new Error(`Unexpected asset load: ${assetPath}`)
+      }
+    )
+    vi.mocked(window.api.saveProjectAssetFile).mockResolvedValue({
+      assetKind: 'actor',
+      resourcePath: 'Actors/Hero.rgbactor.json',
+      document: {
+        kind: 'actor',
+        version: 1,
+        root: {
+          id: 'hero-node',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          spritePath: null,
+          x: 0,
+          y: 0,
+          followCamera: false,
+          children: []
+        }
+      }
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    const resourcePane = screen.getByTestId('resource-management-pane')
+    fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
+    await screen.findByText('Load a tilemap to visualize the scene bounds.')
+    fireEvent.doubleClick(within(resourcePane).getByText('Archive').closest('button')!)
+    await screen.findByText('/Archive')
+
+    const heroButton = await within(
+      screen.getByTestId('project-workspace-scene-sidebar')
+    ).findByText('Hero')
+    fireEvent.contextMenu(heroButton.closest('.scene-hierarchy-pane__row')!)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Save As Resource' }))
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save New' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Overwrite' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Overwrite' }))
+
+    await waitFor(() => {
+      expect(window.api.saveProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Actors/Hero.rgbactor.json',
+        expect.any(Object)
+      )
+    })
+
+    expect(window.api.createProjectResource).not.toHaveBeenCalled()
   })
 })

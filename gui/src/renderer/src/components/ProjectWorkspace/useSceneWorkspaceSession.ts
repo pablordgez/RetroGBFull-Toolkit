@@ -263,6 +263,8 @@ export const useSceneWorkspaceSession = ({
 
         return {
           ...node,
+          resourcePath:
+            remapReferencedAssetPath(node.resourcePath ?? null, event) ?? undefined,
           spritePath: remapReferencedAssetPath(node.spritePath, event)
         }
       })

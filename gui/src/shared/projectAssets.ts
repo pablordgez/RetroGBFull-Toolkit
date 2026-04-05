@@ -14,6 +14,7 @@ export interface SceneAssetFolderNode extends BaseSceneAssetNode {
 export interface SceneAssetActorNode extends BaseSceneAssetNode {
   type: 'actor'
   spritePath: string | null
+  resourcePath?: string | null
   x: number
   y: number
   followCamera: boolean
@@ -425,9 +426,59 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
     isCollapsed: value.isCollapsed,
     children: normalizedChildren as SceneAssetNode[],
     spritePath: isOptionalString(value.spritePath) ? (value.spritePath ?? null) : null,
+    ...(typeof value.resourcePath === 'string' && value.resourcePath.length > 0
+      ? { resourcePath: value.resourcePath }
+      : {}),
     x: Number.isInteger(value.x) ? Number(value.x) : 0,
     y: Number.isInteger(value.y) ? Number(value.y) : 0,
     followCamera: typeof value.followCamera === 'boolean' ? value.followCamera : false
+  }
+}
+
+const serializeSceneAssetNode = (
+  node: SceneAssetNode,
+  includeResourcePath = false
+): Record<string, unknown> => {
+  if (node.type === 'folder') {
+    return {
+      id: node.id,
+      type: node.type,
+      name: node.name,
+      isCollapsed: node.isCollapsed,
+      children: node.children.map((childNode) => serializeSceneAssetNode(childNode, includeResourcePath))
+    }
+  }
+
+  if (node.type === 'collision') {
+    return {
+      id: node.id,
+      type: node.type,
+      name: node.name,
+      isCollapsed: node.isCollapsed,
+      x: node.x,
+      y: node.y,
+      width: node.width,
+      height: node.height,
+      isBlocking: node.isBlocking,
+      children: []
+    }
+  }
+
+  return {
+    id: node.id,
+    type: node.type,
+    name: node.name,
+    isCollapsed: node.isCollapsed,
+    spritePath: node.spritePath,
+    ...(includeResourcePath &&
+    typeof node.resourcePath === 'string' &&
+    node.resourcePath.length > 0
+      ? { resourcePath: node.resourcePath }
+      : {}),
+    x: node.x,
+    y: node.y,
+    followCamera: node.followCamera,
+    children: node.children.map((childNode) => serializeSceneAssetNode(childNode, includeResourcePath))
   }
 }
 
@@ -551,5 +602,31 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
 }
 
 export const serializeProjectAssetDocument = (assetDocument: ProjectAssetDocument): string => {
+  if (assetDocument.kind === 'scene') {
+    return `${JSON.stringify(
+      {
+        kind: assetDocument.kind,
+        version: assetDocument.version,
+        tilemapPath: assetDocument.tilemapPath,
+        windowPath: assetDocument.windowPath,
+        nodes: assetDocument.nodes.map((node) => serializeSceneAssetNode(node, true))
+      },
+      null,
+      2
+    )}\n`
+  }
+
+  if (assetDocument.kind === 'actor') {
+    return `${JSON.stringify(
+      {
+        kind: assetDocument.kind,
+        version: assetDocument.version,
+        root: serializeSceneAssetNode(assetDocument.root)
+      },
+      null,
+      2
+    )}\n`
+  }
+
   return `${JSON.stringify(assetDocument, null, 2)}\n`
 }

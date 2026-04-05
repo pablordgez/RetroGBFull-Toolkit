@@ -100,6 +100,48 @@ describe('projectAssets scene parsing', () => {
     })
   })
 
+  it('serializes actor resource paths only in scene documents', () => {
+    const sceneDocument = parseProjectAssetDocument({
+      kind: 'scene',
+      version: 1,
+      tilemapPath: null,
+      windowPath: null,
+      nodes: [
+        {
+          id: 'hero',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          spritePath: null,
+          resourcePath: 'Actors/Hero.rgbactor.json',
+          x: 0,
+          y: 0,
+          followCamera: false,
+          children: []
+        }
+      ]
+    }) as SceneAssetDocument
+    const actorDocument = parseProjectAssetDocument({
+      kind: 'actor',
+      version: 1,
+      root: {
+        id: 'hero',
+        type: 'actor',
+        name: 'Hero',
+        isCollapsed: false,
+        spritePath: null,
+        resourcePath: 'Actors/Hero.rgbactor.json',
+        x: 0,
+        y: 0,
+        followCamera: false,
+        children: []
+      }
+    }) as ActorAssetDocument
+
+    expect(serializeProjectAssetDocument(sceneDocument)).toContain('"resourcePath": "Actors/Hero.rgbactor.json"')
+    expect(serializeProjectAssetDocument(actorDocument)).not.toContain('"resourcePath"')
+  })
+
   it('normalizes multiple followed actors down to one in a scene document', () => {
     const document = parseProjectAssetDocument({
       kind: 'scene',

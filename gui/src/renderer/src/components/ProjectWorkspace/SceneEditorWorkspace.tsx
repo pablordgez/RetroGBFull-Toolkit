@@ -26,6 +26,7 @@ interface SceneEditorWorkspaceProps {
   projectPath: string
   scenePath: string | null
   scene: SceneAssetDocument | null
+  resourceManagerCurrentPath: string
   sceneLabel?: string | null
   isDirty: boolean
   isSaving: boolean
@@ -52,20 +53,22 @@ type SceneAssetPickerState =
       nodeId: string
     }
 
-const getSceneParentPath = (scenePath: string | null): string => {
-  if (!scenePath) {
-    return ''
+const stripActorResourcePaths = (
+  node: ActorAssetDocument['root']
+): ActorAssetDocument['root'] => {
+  return {
+    ...node,
+    resourcePath: undefined,
+    children: node.children.map((childNode) =>
+      childNode.type === 'actor' ? stripActorResourcePaths(childNode) : childNode
+    )
   }
-
-  const pathSegments = scenePath.split('/').filter((segment) => segment.length > 0)
-  pathSegments.pop()
-  return pathSegments.join('/')
 }
 
 export const SceneEditorWorkspace = ({
   projectPath,
-  scenePath,
   scene,
+  resourceManagerCurrentPath,
   sceneLabel,
   isDirty,
   isSaving,
@@ -90,6 +93,12 @@ export const SceneEditorWorkspace = ({
   const [isPickerLoading, setIsPickerLoading] = useState(false)
   const [pickerErrorMessage, setPickerErrorMessage] = useState<string | null>(null)
   const [isPickerBusy, setIsPickerBusy] = useState(false)
+  const [pendingActorSaveChoice, setPendingActorSaveChoice] = useState<{
+    nodeId: string
+    actorName: string
+    existingResourcePath: string
+  } | null>(null)
+  const [isActorSaveBusy, setIsActorSaveBusy] = useState(false)
 
   const focusWorkspace = useCallback(() => {
     workspaceRef.current?.focus()
@@ -197,7 +206,7 @@ export const SceneEditorWorkspace = ({
         }
 
         const actorDocument = payload.document as ActorAssetDocument
-        editor.loadActor(pickerState.parentId, actorDocument.root)
+        editor.loadActor(pickerState.parentId, actorDocument.root, undefined, option.path)
         closePicker()
         focusWorkspace()
       } catch (error) {
@@ -213,7 +222,7 @@ export const SceneEditorWorkspace = ({
   )
 
   const handleSaveActorResource = useCallback(
-    async (nodeId: string) => {
+    async (nodeId: string, saveMode: 'new' | 'overwrite' = 'new') => {
       if (!projectPath) {
         return
       }
@@ -224,26 +233,47 @@ export const SceneEditorWorkspace = ({
         return
       }
 
+      setIsActorSaveBusy(true)
+
       try {
-        const actorResourceRoot = clearFollowCameraInSceneNodeSubtree(
-          actorSnapshot
-        ) as ActorAssetDocument['root']
-
-        const result = await window.api.createProjectResource(
-          projectPath,
-          'actor',
-          getSceneParentPath(scenePath),
-          actorSnapshot.name
+        const actorResourceRoot = stripActorResourcePaths(
+          clearFollowCameraInSceneNodeSubtree(actorSnapshot) as ActorAssetDocument['root']
         )
+        const shouldOverwrite =
+          saveMode === 'overwrite' &&
+          typeof actorSnapshot.resourcePath === 'string' &&
+          actorSnapshot.resourcePath.length > 0
+        let savedResourcePath = shouldOverwrite ? actorSnapshot.resourcePath : null
 
-        await window.api.saveProjectAssetFile(projectPath, result.resourcePath, {
+        if (!savedResourcePath) {
+          const result = await window.api.createProjectResource(
+            projectPath,
+            'actor',
+            resourceManagerCurrentPath,
+            actorSnapshot.name
+          )
+
+          savedResourcePath = result.resourcePath
+        }
+
+        await window.api.saveProjectAssetFile(projectPath, savedResourcePath, {
           kind: 'actor',
           version: 1,
           root: actorResourceRoot
         })
 
-        onResourcesChanged()
-        onStatus('info', `Saved actor resource "${actorSnapshot.name}".`)
+        editor.setActorResourcePath(nodeId, savedResourcePath)
+
+        if (!shouldOverwrite) {
+          onResourcesChanged()
+        }
+
+        onStatus(
+          'info',
+          shouldOverwrite
+            ? `Overwrote actor resource "${actorSnapshot.name}".`
+            : `Saved actor resource "${actorSnapshot.name}".`
+        )
       } catch (error) {
         console.error('[scene-editor] save actor resource failed', error)
         onStatus(
@@ -252,9 +282,34 @@ export const SceneEditorWorkspace = ({
             ? error.message
             : 'Something went wrong while saving the actor resource.'
         )
+      } finally {
+        setIsActorSaveBusy(false)
+        setPendingActorSaveChoice(null)
       }
     },
-    [editor, onResourcesChanged, onStatus, projectPath, scenePath]
+    [editor, onResourcesChanged, onStatus, projectPath, resourceManagerCurrentPath]
+  )
+
+  const handleRequestActorResourceSave = useCallback(
+    (nodeId: string) => {
+      const actorSnapshot = editor.snapshotActor(nodeId)
+
+      if (!actorSnapshot) {
+        return
+      }
+
+      if (typeof actorSnapshot.resourcePath === 'string' && actorSnapshot.resourcePath.length > 0) {
+        setPendingActorSaveChoice({
+          nodeId,
+          actorName: actorSnapshot.name,
+          existingResourcePath: actorSnapshot.resourcePath
+        })
+        return
+      }
+
+      void handleSaveActorResource(nodeId)
+    },
+    [editor, handleSaveActorResource]
   )
 
   const pickerCopy = useMemo(() => {
@@ -374,7 +429,12 @@ export const SceneEditorWorkspace = ({
           throw new Error('The dropped asset is not an actor.')
         }
 
-        editor.loadActor(null, (actorPayload.document as ActorAssetDocument).root, dropPosition)
+        editor.loadActor(
+          null,
+          (actorPayload.document as ActorAssetDocument).root,
+          dropPosition,
+          payload.path
+        )
         focusWorkspace()
       } catch (error) {
         console.error('[scene-editor] drop project asset failed', error)
@@ -422,7 +482,7 @@ export const SceneEditorWorkspace = ({
             onRequestActorLoad={(parentId) => {
               openPicker({ mode: 'actor', parentId })
             }}
-            onSaveActorResource={handleSaveActorResource}
+            onSaveActorResource={handleRequestActorResourceSave}
           />
         }
         initialPaneSize={260}
@@ -537,6 +597,47 @@ export const SceneEditorWorkspace = ({
             void handleSelectAsset(option)
           }}
         />
+      )}
+
+      {pendingActorSaveChoice && (
+        <div className="editor-modal-backdrop">
+          <div className="editor-modal" role="dialog" aria-modal="true">
+            <h2>Save &quot;{pendingActorSaveChoice.actorName}&quot;?</h2>
+            <p className="editor-modal-copy">
+              This actor came from &quot;{pendingActorSaveChoice.existingResourcePath}&quot;. You
+              can overwrite that actor resource or save a new one in /
+              {resourceManagerCurrentPath || ''}.
+            </p>
+
+            <div className="editor-modal-actions">
+              <button
+                type="button"
+                onClick={() => setPendingActorSaveChoice(null)}
+                disabled={isActorSaveBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSaveActorResource(pendingActorSaveChoice.nodeId, 'new')
+                }}
+                disabled={isActorSaveBusy}
+              >
+                Save New
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSaveActorResource(pendingActorSaveChoice.nodeId, 'overwrite')
+                }}
+                disabled={isActorSaveBusy}
+              >
+                Overwrite
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

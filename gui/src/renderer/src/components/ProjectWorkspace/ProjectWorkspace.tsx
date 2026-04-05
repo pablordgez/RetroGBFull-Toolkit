@@ -63,6 +63,7 @@ export const ProjectWorkspace = (): ReactElement => {
   const projectPath = searchParams.get('projectPath') ?? ''
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
   const [refreshVersion, setRefreshVersion] = useState(0)
+  const [resourceManagerCurrentPath, setResourceManagerCurrentPath] = useState('')
   const [statusMessage, setStatusMessage] = useState<WorkspaceStatus | null>(null)
   const [isBusy, setIsBusy] = useState(false)
 
@@ -304,6 +305,7 @@ export const ProjectWorkspace = (): ReactElement => {
             <ResourceManagementPane
               className="project-workspace__resource-pane"
               onOpenScene={openScene}
+              onCurrentPathChange={setResourceManagerCurrentPath}
               onResourceMutation={handleTrackedResourceMutation}
               projectPath={projectPath}
               refreshVersion={refreshVersion}
@@ -319,6 +321,7 @@ export const ProjectWorkspace = (): ReactElement => {
             projectPath={projectPath}
             scenePath={activeScenePath}
             scene={activeSceneDocument}
+            resourceManagerCurrentPath={resourceManagerCurrentPath}
             sceneLabel={activeSceneLabel}
             isDirty={Boolean(isSceneDirty)}
             isSaving={isSceneSaving || isSceneLoading}

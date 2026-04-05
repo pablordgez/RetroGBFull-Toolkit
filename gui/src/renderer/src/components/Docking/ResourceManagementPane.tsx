@@ -23,6 +23,7 @@ interface ResourceManagementPaneProps {
   projectPath?: string
   refreshVersion?: number
   onOpenScene?: (scenePath: string) => void | Promise<void>
+  onCurrentPathChange?: (currentPath: string) => void
   onResourceMutation?: (event: ResourceMutationEvent) => void
 }
 
@@ -134,6 +135,7 @@ export const ResourceManagementPane = ({
   projectPath = '',
   refreshVersion = 0,
   onOpenScene,
+  onCurrentPathChange,
   onResourceMutation
 }: ResourceManagementPaneProps): ReactElement => {
   const paneRef = useRef<HTMLDivElement>(null)
@@ -220,6 +222,10 @@ export const ResourceManagementPane = ({
   }, [currentResourcePath, loadResources, projectPath, refreshVersion])
 
   useEffect(() => {
+    onCurrentPathChange?.(resourceView?.currentPath ?? '')
+  }, [onCurrentPathChange, resourceView?.currentPath])
+
+  useEffect(() => {
     if (!editingResource) {
       return
     }
@@ -265,6 +271,7 @@ export const ResourceManagementPane = ({
   ): void => {
     setResourceView(result.view)
     setStatusMessage(null)
+    paneRef.current?.focus()
   }
 
   const notifyResourceMutation = useCallback(
@@ -606,6 +613,7 @@ export const ResourceManagementPane = ({
 
     if (trimmedName === editingResource.originalName) {
       setEditingResource(null)
+      paneRef.current?.focus()
       return
     }
 
@@ -658,6 +666,7 @@ export const ResourceManagementPane = ({
       applyResourceMutation(result)
       setSelectedResourcePath(result.resourcePath)
       setEditingResource(null)
+      paneRef.current?.focus()
       notifyResourceMutation({
         action: 'rename',
         resourceType: editingResource.resourceType,
@@ -822,6 +831,7 @@ export const ResourceManagementPane = ({
       setSelectedResourcePath(null)
       setEditingResource(null)
       setPendingDeleteResource(null)
+      paneRef.current?.focus()
       notifyResourceMutation({
         action: 'delete',
         resourceType: pendingDeleteResource.resourceType,
@@ -899,12 +909,6 @@ export const ResourceManagementPane = ({
             onSelect: () => void handleCreateResource('folder')
           },
           {
-            id: 'new-actor',
-            label: 'Actor',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('actor')
-          },
-          {
             id: 'new-sprite',
             label: 'Sprite',
             disabled: !projectPath || isInteractionDisabled,
@@ -960,6 +964,10 @@ export const ResourceManagementPane = ({
         ref={paneRef}
         className={buildClassName(className)}
         data-testid="resource-management-pane"
+        tabIndex={0}
+        onMouseDown={() => {
+          paneRef.current?.focus()
+        }}
       >
         <div className="resource-management-pane__chrome">
           <div className="resource-management-pane__toolbar">
