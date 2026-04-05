@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildProjectAssetFileName,
+  createDefaultProjectAssetDocument,
   parseProjectAssetDocument,
   serializeProjectAssetDocument,
+  getProjectAssetDisplayName,
+  getProjectAssetKindFromFileName,
+  normalizeWindowSplitSettings,
   type ActorAssetDocument,
   type SceneAssetDocument
 } from '../../src/shared/projectAssets'
@@ -209,5 +214,178 @@ describe('projectAssets scene parsing', () => {
         ]
       })
     ).toThrow('The scene asset file is invalid.')
+  })
+
+  it('normalizes window split settings for full, top-only, and split windows', () => {
+    expect(normalizeWindowSplitSettings(0, 8, 18)).toEqual({
+      windowTopEnd: 0,
+      windowBottomStart: 0
+    })
+    expect(normalizeWindowSplitSettings(4, 0, 18)).toEqual({
+      windowTopEnd: 4,
+      windowBottomStart: 0
+    })
+    expect(normalizeWindowSplitSettings(4, 2, 18)).toEqual({
+      windowTopEnd: 4,
+      windowBottomStart: 5
+    })
+    expect(normalizeWindowSplitSettings(4, 15, 18)).toEqual({
+      windowTopEnd: 4,
+      windowBottomStart: 15
+    })
+  })
+
+  it('builds file names and resolves asset kinds and display names case-insensitively', () => {
+    expect(buildProjectAssetFileName('sprite', 'Hero')).toBe('Hero.rgbsprite.json')
+    expect(getProjectAssetKindFromFileName('HERO.RGBWINDOW.JSON')).toBe('window')
+    expect(getProjectAssetKindFromFileName('README.md')).toBeNull()
+    expect(getProjectAssetDisplayName('HUD.rgbwindow.json')).toBe('HUD')
+    expect(getProjectAssetDisplayName('plain.txt')).toBe('plain.txt')
+  })
+
+  it('creates default documents for each asset kind', () => {
+    expect(createDefaultProjectAssetDocument('sprite')).toMatchObject({
+      kind: 'sprite',
+      width: 8,
+      height: 8
+    })
+    expect(createDefaultProjectAssetDocument('tileset')).toMatchObject({
+      kind: 'tileset',
+      selectedTileIndex: 0
+    })
+    expect(createDefaultProjectAssetDocument('tilemap')).toMatchObject({
+      kind: 'tilemap',
+      width: 20,
+      height: 18
+    })
+    expect(createDefaultProjectAssetDocument('window')).toMatchObject({
+      kind: 'window',
+      windowTopEnd: 0,
+      windowBottomStart: 0
+    })
+    expect(createDefaultProjectAssetDocument('scene')).toMatchObject({
+      kind: 'scene',
+      nodes: []
+    })
+    expect(createDefaultProjectAssetDocument('actor')).toMatchObject({
+      kind: 'actor',
+      root: {
+        type: 'actor',
+        followCamera: false
+      }
+    })
+  })
+
+  it('parses tilemap and window assets and normalizes optional fields', () => {
+    expect(
+      parseProjectAssetDocument({
+        kind: 'tilemap',
+        version: 1,
+        width: 20,
+        height: 18,
+        grid: new Array(20 * 18).fill(0),
+        selectedTileIndex: 0,
+        tool: 'fill'
+      })
+    ).toMatchObject({
+      kind: 'tilemap',
+      tilesetPath: null,
+      tool: 'fill'
+    })
+
+    expect(
+      parseProjectAssetDocument({
+        kind: 'window',
+        version: 1,
+        width: 20,
+        height: 18,
+        grid: new Array(20 * 18).fill(0),
+        tilesetPath: undefined,
+        selectedTileIndex: 0,
+        tool: 'brush',
+        windowTopEnd: 3,
+        windowBottomStart: 1
+      })
+    ).toMatchObject({
+      kind: 'window',
+      tilesetPath: null,
+      windowTopEnd: 3,
+      windowBottomStart: 4
+    })
+  })
+
+  it('rejects malformed sprite, tileset, tilemap, window, actor, and unsupported assets', () => {
+    expect(() =>
+      parseProjectAssetDocument({
+        kind: 'sprite',
+        version: 1,
+        width: '8',
+        height: 8,
+        fps: 6,
+        is8x16Mode: false,
+        currentFrame: 0,
+        frames: [[0]],
+        palette: ['#000000'],
+        selectedColor: 0
+      })
+    ).toThrow('The sprite asset file is invalid.')
+
+    expect(() =>
+      parseProjectAssetDocument({
+        kind: 'tileset',
+        version: 1,
+        tiles: [[0], ['1']],
+        palette: ['#000000'],
+        selectedColor: 0,
+        selectedTileIndex: 0
+      })
+    ).toThrow('The tileset asset file is invalid.')
+
+    expect(() =>
+      parseProjectAssetDocument({
+        kind: 'tilemap',
+        version: 1,
+        width: 20,
+        height: 18,
+        grid: ['0'],
+        selectedTileIndex: 0,
+        tool: 'brush'
+      })
+    ).toThrow('The tilemap asset file is invalid.')
+
+    expect(() =>
+      parseProjectAssetDocument({
+        kind: 'window',
+        version: 1,
+        width: 20,
+        height: 18,
+        grid: new Array(20 * 18).fill(0),
+        selectedTileIndex: 0,
+        tool: 'line',
+        windowTopEnd: 0,
+        windowBottomStart: 0
+      })
+    ).toThrow('The window asset file is invalid.')
+
+    expect(() =>
+      parseProjectAssetDocument({
+        kind: 'actor',
+        version: 1,
+        root: {
+          id: 'folder-root',
+          type: 'folder',
+          name: 'Not an actor',
+          isCollapsed: false,
+          children: []
+        }
+      })
+    ).toThrow('The actor asset file is invalid.')
+
+    expect(() =>
+      parseProjectAssetDocument({
+        kind: 'music',
+        version: 1
+      })
+    ).toThrow('The asset type is not supported.')
   })
 })
