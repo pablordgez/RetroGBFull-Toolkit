@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, readFile, rename, stat, writeFile } from 'fs/promises'
+import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
 import { basename, dirname, join, relative, resolve } from 'path'
 import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
 import { normalizeCodeIdentifier, normalizeCodeIdentifierStem } from '../shared/codeIdentifiers'
@@ -69,6 +69,14 @@ export const DEFAULT_TRACKED_CODE_FOLDERS = [
 ]
 
 const RESERVED_CALLBACK_NAMES = new Set(['AINIT', 'AUPDATE', 'SINIT', 'SUPDATE'])
+const IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES = new Set(['deleted-resources'])
+const INTERNAL_GENERATION_DIRECTORY = '.retrogbfull'
+const RESOURCE_GENERATION_MANIFEST_PATH = `${INTERNAL_GENERATION_DIRECTORY}/resource-generation-manifest.json`
+
+interface ResourceGenerationManifest {
+  version: 1
+  resourceDirectories: string[]
+}
 
 const resolvePathWithinProject = (projectPath: string, resourcePath: string): string => {
   const absolutePath = resolve(projectPath, resourcePath)
@@ -85,17 +93,27 @@ const getBundledCorePath = (): string => {
   return resolve(__dirname, '../../../core')
 }
 
-const walkRelativePaths = async (basePath: string, currentPath = ''): Promise<string[]> => {
+const walkRelativePaths = async (
+  basePath: string,
+  currentPath = '',
+  ignoredRootDirectories = new Set<string>()
+): Promise<string[]> => {
   const absolutePath = currentPath ? join(basePath, currentPath) : basePath
   const entries = await readdir(absolutePath, { withFileTypes: true })
   const discoveredPaths: string[] = []
 
   for (const entry of entries) {
+    if (!currentPath && entry.isDirectory() && ignoredRootDirectories.has(entry.name)) {
+      continue
+    }
+
     const relativePath = currentPath ? `${currentPath}/${entry.name}` : entry.name
 
     if (entry.isDirectory()) {
       discoveredPaths.push(relativePath)
-      discoveredPaths.push(...(await walkRelativePaths(basePath, relativePath)))
+      discoveredPaths.push(
+        ...(await walkRelativePaths(basePath, relativePath, ignoredRootDirectories))
+      )
       continue
     }
 
@@ -562,6 +580,73 @@ export const readMaxCollisionCallbacks = async (projectPath: string): Promise<nu
 const MANAGED_DEFAULT_ACTOR_IDENTIFIER = 'GeneratedDefaultActor'
 const MANAGED_EMPTY_SCENE_IDENTIFIER = 'GeneratedEmptyScene'
 
+const normalizeManifestResourcePaths = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    .map((entry) => entry.replace(/\\/g, '/'))
+}
+
+const readResourceGenerationManifest = async (
+  projectPath: string
+): Promise<ResourceGenerationManifest> => {
+  const manifestAbsolutePath = resolvePathWithinProject(projectPath, RESOURCE_GENERATION_MANIFEST_PATH)
+
+  try {
+    const manifestContent = await readFile(manifestAbsolutePath, 'utf-8')
+    const parsed = JSON.parse(manifestContent) as Partial<ResourceGenerationManifest>
+
+    return {
+      version: 1,
+      resourceDirectories: normalizeManifestResourcePaths(parsed.resourceDirectories)
+    }
+  } catch {
+    return {
+      version: 1,
+      resourceDirectories: []
+    }
+  }
+}
+
+const writeResourceGenerationManifest = async (
+  projectPath: string,
+  resourceDirectories: string[]
+): Promise<void> => {
+  const manifestAbsolutePath = resolvePathWithinProject(projectPath, RESOURCE_GENERATION_MANIFEST_PATH)
+  const manifest: ResourceGenerationManifest = {
+    version: 1,
+    resourceDirectories: [...new Set(resourceDirectories.map((path) => path.replace(/\\/g, '/')))].sort()
+  }
+
+  await mkdir(dirname(manifestAbsolutePath), { recursive: true })
+  await writeFile(`${manifestAbsolutePath}`, `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8')
+}
+
+const syncManagedResourceDirectories = async (
+  projectPath: string,
+  nextResourceDirectories: string[]
+): Promise<void> => {
+  const manifest = await readResourceGenerationManifest(projectPath)
+  const nextDirectorySet = new Set(
+    nextResourceDirectories.map((resourceDirectory) => resourceDirectory.replace(/\\/g, '/'))
+  )
+  const staleDirectories = manifest.resourceDirectories
+    .filter((resourceDirectory) => !nextDirectorySet.has(resourceDirectory))
+    .sort((left, right) => right.length - left.length)
+
+  for (const resourceDirectory of staleDirectories) {
+    await rm(resolvePathWithinProject(projectPath, resourceDirectory), {
+      recursive: true,
+      force: true
+    })
+  }
+
+  await writeResourceGenerationManifest(projectPath, [...nextDirectorySet])
+}
+
 const isCanonicalProjectScriptPath = (resourcePath: string): boolean => {
   return (
     isProjectScriptSourcePath(resourcePath) && getProjectScriptKindFromPath(resourcePath) !== null
@@ -569,7 +654,7 @@ const isCanonicalProjectScriptPath = (resourcePath: string): boolean => {
 }
 
 const collectProjectResourcePaths = async (projectPath: string): Promise<string[]> => {
-  return walkRelativePaths(projectPath)
+  return walkRelativePaths(projectPath, '', IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES)
 }
 
 const loadProjectAssetRecords = async (projectPath: string): Promise<ProjectAssetRecordLike[]> => {
@@ -945,23 +1030,17 @@ const buildMapResourceFiles = (
   }
 }
 
-const buildAnimationRegistryHeader = (sprites: ProjectAssetRecordLike[]): string => {
+const buildAnimationRegistryFiles = (
+  sprites: ProjectAssetRecordLike[]
+): { headerContent: string; sourceContent: string } => {
   const includeLines = sprites.map(
     (sprite) => `#include "${sprite.identifier}/${sprite.identifier}.h"`
   )
-  const macroLines =
+  const enumLines =
     sprites.length > 0
-      ? sprites.map((sprite) => {
-          const document = sprite.document as SpriteAssetDocument
-          const metaspriteExpression =
-            document.width > 8 || document.height > 8
-              ? `${sprite.identifier}_metasprite_data`
-              : '(void*) 0'
-          return `    _ANIMATION(${sprite.identifier}, ${document.width}, ${document.height}, ${document.frames.length}, ${buildAnimationDuration(document.fps)}, ${metaspriteExpression}) \\`
-        })
-      : ['    _ANIMATION(empty_sprite, 8, 8, 1, 60, (void*) 0) \\']
-
-  return [
+      ? sprites.map((sprite) => `        ${sprite.identifier},`)
+      : ['        NUMBER_OF_ANIMATIONS = 1']
+  const headerContent = [
     '#ifndef ANIMATION_REGISTRY_H',
     '#define ANIMATION_REGISTRY_H',
     '#include "Assets/SpaceManager.h"',
@@ -969,29 +1048,84 @@ const buildAnimationRegistryHeader = (sprites: ProjectAssetRecordLike[]): string
     '',
     ...includeLines,
     ...(includeLines.length > 0 ? [''] : []),
-    '// name, width, height, frames, frame duration',
-    '#define ANIMATIONS \\',
-    ...macroLines,
-    '',
-    '#define _ANIMATION(name, width, height, frames, duration, metasprite) name,',
-    '    typedef enum {',
-    '        ANIMATIONS',
-    '        NUMBER_OF_ANIMATIONS',
+    'typedef enum {',
+    ...enumLines,
+    ...(sprites.length > 0 ? ['        NUMBER_OF_ANIMATIONS'] : []),
     '    } AnimationType;',
-    '#undef _ANIMATION',
     '',
-    'extern const Animation* animations[];',
-    'extern const AssetEntry animation_data[];',
+    'extern const Animation* animations[NUMBER_OF_ANIMATIONS];',
+    'extern const AssetEntry animation_data[NUMBER_OF_ANIMATIONS];',
     '',
     '#endif /* ANIMATION_REGISTRY_H */',
     ''
   ].join('\n')
+
+  if (sprites.length === 0) {
+    return {
+      headerContent,
+      sourceContent: [
+        '#include "AnimationRegistry.h"',
+        '',
+        'const Animation* animations[NUMBER_OF_ANIMATIONS] = {',
+        '    (void*) 0',
+        '};',
+        '',
+        'const AssetEntry animation_data[NUMBER_OF_ANIMATIONS] = {',
+        '    {0, (void*) 0}',
+        '};',
+        ''
+      ].join('\n')
+    }
+  }
+
+  const animationDefinitionLines = sprites.flatMap((sprite) => {
+    const document = sprite.document as SpriteAssetDocument
+    const metaspriteExpression =
+      document.width > 8 || document.height > 8
+        ? `${sprite.identifier}_metasprite_data`
+        : '(void*) 0'
+
+    return [
+      `const Animation _${sprite.identifier} = {`,
+      `    .animation_id = ${sprite.identifier},`,
+      `    .width = ${document.width},`,
+      `    .height = ${document.height},`,
+      `    .number_of_frames = ${document.frames.length},`,
+      `    .frame_duration = ${buildAnimationDuration(document.fps)},`,
+      `    .metasprite = ${metaspriteExpression}`,
+      '};',
+      ''
+    ]
+  })
+  const bankRefLines = sprites.map((sprite) => `BANKREF_EXTERN(${sprite.identifier}_bankref)`)
+
+  return {
+    headerContent,
+    sourceContent: [
+      '#include "AnimationRegistry.h"',
+      '',
+      ...animationDefinitionLines,
+      ...bankRefLines,
+      '',
+      'const Animation* animations[NUMBER_OF_ANIMATIONS] = {',
+      ...sprites.map((sprite) => `    [${sprite.identifier}] = &_${sprite.identifier},`),
+      '};',
+      '',
+      'const AssetEntry animation_data[NUMBER_OF_ANIMATIONS] = {',
+      ...sprites.map(
+        (sprite) =>
+          `    [${sprite.identifier}] = {BANK(${sprite.identifier}_bankref), ${sprite.identifier}_sprite_data},`
+      ),
+      '};',
+      ''
+    ].join('\n')
+  }
 }
 
-const buildMapRegistryHeader = (
+const buildMapRegistryFiles = (
   tilemaps: ProjectAssetRecordLike[],
   windows: ProjectAssetRecordLike[]
-): string => {
+): { headerContent: string; sourceContent: string } => {
   const maps = [
     ...tilemaps.map((resource) => ({
       ...resource,
@@ -1008,39 +1142,86 @@ const buildMapRegistryHeader = (
     })
   ]
   const includeLines = maps.map((map) => `#include "${map.identifier}/${map.identifier}.h"`)
-  const macroLines =
+  const enumLines =
     maps.length > 0
-      ? maps.map((map) => {
-          const document = map.document as TilemapAssetDocument | WindowAssetDocument
-          return `    _MAP(${map.identifier}, ${document.width}, ${document.height}, ${map.windowTopEnd}, ${map.windowBottomStart}) \\`
-        })
-      : ['    _MAP(empty_map, 1, 1, 0, 0) \\']
-
-  return [
+      ? maps.map((map) => `        ${map.identifier},`)
+      : ['        NUMBER_OF_MAPS = 1']
+  const headerContent = [
     '#ifndef MAP_DECLARATIONS_H',
     '#define MAP_DECLARATIONS_H',
     '',
     '#include "Map.h"',
     '#include "Assets/SpaceManager.h"',
     ...includeLines,
-    '',
-    '// name, width, height, window_top_end, window_bottom_start',
-    '#define MAPS \\',
-    ...macroLines,
-    '    ',
-    '#define _MAP(name, width, height, window_top_end, window_bottom_start) name,',
-    '    typedef enum {',
-    '        MAPS',
-    '        NUMBER_OF_MAPS',
+    ...(includeLines.length > 0 ? [''] : []),
+    'typedef enum {',
+    ...enumLines,
+    ...(maps.length > 0 ? ['        NUMBER_OF_MAPS'] : []),
     '    } MapType;',
-    '#undef _MAP',
     '',
-    'extern Map* maps[];',
-    'extern const AssetEntry map_data[];',
+    'extern Map* maps[NUMBER_OF_MAPS];',
+    'extern const AssetEntry map_data[NUMBER_OF_MAPS];',
     '',
     '#endif /* MAP_DECLARATIONS_H */',
     ''
   ].join('\n')
+
+  if (maps.length === 0) {
+    return {
+      headerContent,
+      sourceContent: [
+        '#include "MapRegistry.h"',
+        '',
+        'Map* maps[NUMBER_OF_MAPS] = {',
+        '    (void*) 0',
+        '};',
+        '',
+        'const AssetEntry map_data[NUMBER_OF_MAPS] = {',
+        '    {0, (void*) 0}',
+        '};',
+        ''
+      ].join('\n')
+    }
+  }
+
+  const mapDefinitionLines = maps.flatMap((map) => {
+    const document = map.document as TilemapAssetDocument | WindowAssetDocument
+    return [
+      `Map _${map.identifier} = {`,
+      `    .id = ${map.identifier},`,
+      `    .width = ${document.width},`,
+      `    .height = ${document.height},`,
+      `    .tileset = ${map.identifier}_tileset,`,
+      `    .num_tiles = ${map.identifier}_num_tiles,`,
+      '    .first_tile = 0,',
+      `    .window_top_end = ${map.windowTopEnd},`,
+      `    .window_bottom_start = ${map.windowBottomStart}`,
+      '};',
+      ''
+    ]
+  })
+  const bankRefLines = maps.map((map) => `BANKREF_EXTERN(${map.identifier}_bankref)`)
+
+  return {
+    headerContent,
+    sourceContent: [
+      '#include "MapRegistry.h"',
+      '',
+      ...mapDefinitionLines,
+      ...bankRefLines,
+      '',
+      'Map* maps[NUMBER_OF_MAPS] = {',
+      ...maps.map((map) => `    [${map.identifier}] = &_${map.identifier},`),
+      '};',
+      '',
+      'const AssetEntry map_data[NUMBER_OF_MAPS] = {',
+      ...maps.map(
+        (map) => `    [${map.identifier}] = {BANK(${map.identifier}_bankref), ${map.identifier}_map_data},`
+      ),
+      '};',
+      ''
+    ].join('\n')
+  }
 }
 
 const buildActorRegistryHeader = (actorScripts: ProjectScriptRecordResolved[]): string => {
@@ -1437,9 +1618,11 @@ export const generateProjectResourceFiles = async (
   const windowAssetsByPath = new Map(windowAssets.map((asset) => [asset.path, asset]))
   const sceneScriptsByPath = new Map(sceneScripts.map((script) => [script.path, script]))
   const writtenFiles: string[] = []
+  const managedResourceDirectories = new Set<string>()
 
   for (const sprite of spriteAssets) {
     const files = buildSpriteResourceFiles(sprite)
+    managedResourceDirectories.add(dirname(files.headerPath).replace(/\\/g, '/'))
     writtenFiles.push(
       await writeManagedTextFile(normalizedProjectPath, files.headerPath, files.headerContent)
     )
@@ -1450,6 +1633,7 @@ export const generateProjectResourceFiles = async (
 
   for (const tileset of tilesetAssets) {
     const files = buildTilesetResourceFiles(tileset)
+    managedResourceDirectories.add(dirname(files.headerPath).replace(/\\/g, '/'))
     writtenFiles.push(
       await writeManagedTextFile(normalizedProjectPath, files.headerPath, files.headerContent)
     )
@@ -1474,6 +1658,7 @@ export const generateProjectResourceFiles = async (
     }
 
     const files = buildMapResourceFiles(tilemap, tileset, 0, 0)
+    managedResourceDirectories.add(dirname(files.headerPath).replace(/\\/g, '/'))
     writtenFiles.push(
       await writeManagedTextFile(normalizedProjectPath, files.headerPath, files.headerContent)
     )
@@ -1505,6 +1690,7 @@ export const generateProjectResourceFiles = async (
       document.windowTopEnd,
       document.windowBottomStart
     )
+    managedResourceDirectories.add(dirname(files.headerPath).replace(/\\/g, '/'))
     writtenFiles.push(
       await writeManagedTextFile(normalizedProjectPath, files.headerPath, files.headerContent)
     )
@@ -1513,18 +1699,34 @@ export const generateProjectResourceFiles = async (
     )
   }
 
+  const animationRegistryFiles = buildAnimationRegistryFiles(spriteAssets)
   writtenFiles.push(
     await writeManagedTextFile(
       normalizedProjectPath,
       'src/Assets/Animations/AnimationRegistry.h',
-      buildAnimationRegistryHeader(spriteAssets)
+      animationRegistryFiles.headerContent
     )
   )
   writtenFiles.push(
     await writeManagedTextFile(
       normalizedProjectPath,
+      'src/Assets/Animations/AnimationRegistry.c',
+      animationRegistryFiles.sourceContent
+    )
+  )
+  const mapRegistryFiles = buildMapRegistryFiles(tilemapAssets, windowAssets)
+  writtenFiles.push(
+    await writeManagedTextFile(
+      normalizedProjectPath,
       'src/Assets/Map/MapRegistry.h',
-      buildMapRegistryHeader(tilemapAssets, windowAssets)
+      mapRegistryFiles.headerContent
+    )
+  )
+  writtenFiles.push(
+    await writeManagedTextFile(
+      normalizedProjectPath,
+      'src/Assets/Map/MapRegistry.c',
+      mapRegistryFiles.sourceContent
     )
   )
   writtenFiles.push(
@@ -1562,6 +1764,7 @@ export const generateProjectResourceFiles = async (
       )
     )
   )
+  await syncManagedResourceDirectories(normalizedProjectPath, [...managedResourceDirectories])
 
   return {
     writtenFiles: writtenFiles.sort(),
