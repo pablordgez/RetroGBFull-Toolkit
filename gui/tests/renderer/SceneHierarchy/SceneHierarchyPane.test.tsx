@@ -34,8 +34,6 @@ const createScene = (): SceneAssetDocument => ({
 
 const renderPane = () => {
   const onSave = vi.fn()
-  const onRequestTilemapLoad = vi.fn()
-  const onRequestWindowLoad = vi.fn()
   const onRequestActorLoad = vi.fn()
   const onSaveActorResource = vi.fn()
 
@@ -50,8 +48,6 @@ const renderPane = () => {
         isDirty={true}
         isSaving={false}
         onSave={onSave}
-        onRequestTilemapLoad={onRequestTilemapLoad}
-        onRequestWindowLoad={onRequestWindowLoad}
         onRequestActorLoad={onRequestActorLoad}
         onSaveActorResource={onSaveActorResource}
       />
@@ -62,20 +58,47 @@ const renderPane = () => {
 
   return {
     onSave,
-    onRequestTilemapLoad,
-    onRequestWindowLoad,
     onRequestActorLoad,
     onSaveActorResource
   }
 }
 
+const renderPaneWithoutScene = () => {
+  const Harness = () => {
+    const editor = useSceneDocumentEditor({
+      scene: null,
+      onSceneChange: () => undefined
+    })
+
+    return (
+      <SceneHierarchyPane
+        editor={editor}
+        sceneLabel="Room Scene"
+        isDirty={false}
+        isSaving={false}
+        onSave={() => undefined}
+        onRequestActorLoad={() => undefined}
+        onSaveActorResource={() => undefined}
+      />
+    )
+  }
+
+  render(<Harness />)
+}
+
 describe('SceneHierarchyPane', () => {
+  it('hides the scene root tree item when no scene is loaded', () => {
+    renderPaneWithoutScene()
+
+    const sidebar = screen.getByTestId('project-workspace-scene-sidebar')
+    expect(within(sidebar).getByRole('tree')).toHaveTextContent('Open a scene to edit its hierarchy.')
+    expect(screen.queryByRole('treeitem', { name: /Room Scene/i })).not.toBeInTheDocument()
+  })
+
   it('renames actor nodes, exposes actor-only menu actions, and triggers save', async () => {
     const { onSave, onSaveActorResource } = renderPane()
 
     expect(screen.getByText('Unsaved changes.')).toBeInTheDocument()
-    expect(screen.getByText('Room.rgbtilemap.json')).toBeInTheDocument()
-    expect(screen.getByText('HUD.rgbwindow.json')).toBeInTheDocument()
     expect(screen.getByText('CAM')).toBeInTheDocument()
 
     const heroRow = screen.getByText('Hero').closest('.scene-hierarchy-pane__row')
@@ -99,14 +122,8 @@ describe('SceneHierarchyPane', () => {
     expect(onSave).toHaveBeenCalledTimes(1)
   })
 
-  it('handles load actions, keyboard clipboard shortcuts, and root context menu actions', async () => {
-    const { onRequestTilemapLoad, onRequestWindowLoad, onRequestActorLoad } = renderPane()
-
-    fireEvent.click(screen.getAllByText('Load...')[0].closest('button')!)
-    fireEvent.click(screen.getAllByText('Load...')[1].closest('button')!)
-
-    expect(onRequestTilemapLoad).toHaveBeenCalledTimes(1)
-    expect(onRequestWindowLoad).toHaveBeenCalledTimes(1)
+  it('handles keyboard clipboard shortcuts and root context menu actions', async () => {
+    const { onRequestActorLoad } = renderPane()
 
     const sidebar = screen.getByTestId('project-workspace-scene-sidebar')
     const heroButton = within(sidebar).getByRole('treeitem', { name: /Hero/i })

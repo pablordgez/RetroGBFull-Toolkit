@@ -32,7 +32,9 @@ const GENERIC_WORKSPACE_ERRORS = {
   recentList: 'Something went wrong while loading recent projects.',
   close: 'Something went wrong while closing the project. Please try again.',
   fileExplorer: 'Something went wrong while opening the project folder.',
-  scan: 'Something went wrong while scanning the project directory.'
+  scan: 'Something went wrong while scanning the project directory.',
+  copyCore: 'Something went wrong while copying the engine core.',
+  generateResources: 'Something went wrong while generating resource files.'
 } as const
 
 const formatScanStatusMessage = (result: ProjectDirectoryScanResult): string => {
@@ -192,6 +194,53 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [projectPath])
 
+  const handleCopyEngineCore = useCallback(async () => {
+    if (!projectPath) {
+      return
+    }
+
+    setIsBusy(true)
+
+    try {
+      const result = await window.api.copyProjectEngineCore(projectPath)
+      showStatus(
+        'info',
+        `Copied ${result.copiedPaths.length} core item${result.copiedPaths.length === 1 ? '' : 's'} and skipped ${result.skippedPaths.length}.`
+      )
+      setRefreshVersion((currentVersion) => currentVersion + 1)
+    } catch (error) {
+      console.error('[project-workspace] copyProjectEngineCore failed', error)
+      showStatus('error', error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.copyCore)
+    } finally {
+      setIsBusy(false)
+    }
+  }, [projectPath])
+
+  const handleGenerateResourceFiles = useCallback(async () => {
+    if (!projectPath) {
+      return
+    }
+
+    setIsBusy(true)
+
+    try {
+      const result = await window.api.generateProjectResourceFiles(projectPath)
+      showStatus(
+        'info',
+        `Generated code for ${result.spriteCount} sprites, ${result.tilesetCount} tilesets, ${result.tilemapCount} tilemaps, ${result.windowCount} windows, and ${result.sceneCount} scenes.`
+      )
+      setRefreshVersion((currentVersion) => currentVersion + 1)
+    } catch (error) {
+      console.error('[project-workspace] generateProjectResourceFiles failed', error)
+      showStatus(
+        'error',
+        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.generateResources
+      )
+    } finally {
+      setIsBusy(false)
+    }
+  }, [projectPath])
+
   useEffect(() => {
     if (!activeScenePath || !activeSceneDocument) {
       return
@@ -263,10 +312,30 @@ export const ProjectWorkspace = (): ReactElement => {
             onSelect: () => void handleScanProjectDirectory()
           }
         ]
+      },
+      {
+        id: 'code-menu',
+        label: 'Code',
+        items: [
+          {
+            id: 'copy-engine-core',
+            label: 'Copy Engine Core',
+            disabled: isBusy || !projectPath,
+            onSelect: () => void handleCopyEngineCore()
+          },
+          {
+            id: 'generate-resource-files',
+            label: 'Generate Resource Files',
+            disabled: isBusy || !projectPath,
+            onSelect: () => void handleGenerateResourceFiles()
+          }
+        ]
       }
     ]
   }, [
     handleCloseProject,
+    handleCopyEngineCore,
+    handleGenerateResourceFiles,
     handleOpenProject,
     handleOpenProjectInExplorer,
     handleScanProjectDirectory,

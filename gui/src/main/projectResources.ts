@@ -8,6 +8,14 @@ import {
   validateProjectDirectory
 } from './projectLauncher'
 import {
+  createProjectScriptFiles,
+  moveProjectScriptFilesToDeletedContainer,
+  renameProjectScriptFiles,
+  restoreProjectScriptFilesFromDeletedContainer,
+  scriptFilesExist,
+  transferProjectScriptFiles
+} from './projectCode'
+import {
   ProjectAssetKind,
   buildProjectAssetFileName,
   createDefaultProjectAssetDocument,
@@ -16,6 +24,17 @@ import {
   parseProjectAssetDocument,
   serializeProjectAssetDocument
 } from '../shared/projectAssets'
+import { normalizeCodeIdentifier } from '../shared/codeIdentifiers'
+import {
+  ProjectScriptKind,
+  PROJECT_SCRIPT_DIRECTORY_BY_KIND,
+  PROJECT_SCRIPT_LABELS,
+  buildProjectScriptFileName,
+  buildProjectScriptHeaderFileName,
+  getProjectScriptDisplayName,
+  getProjectScriptKindFromPath,
+  isProjectScriptSourcePath
+} from '../shared/projectScripts'
 
 export interface ProjectFolderRecord {
   type: 'folder'
@@ -38,7 +57,19 @@ export interface ProjectAssetRecord {
   updatedAt: string
 }
 
-export type ProjectStoredResourceRecord = ProjectFolderRecord | ProjectAssetRecord
+export interface ProjectScriptRecord {
+  type: 'file'
+  id: string
+  name: string
+  path: string
+  parentPath: string | null
+  resourceType: 'script'
+  scriptKind: ProjectScriptKind
+  createdAt: string
+  updatedAt: string
+}
+
+export type ProjectStoredResourceRecord = ProjectFolderRecord | ProjectAssetRecord | ProjectScriptRecord
 
 export interface ProjectFolderMutationResult {
   view: ProjectResourceView
@@ -46,7 +77,7 @@ export interface ProjectFolderMutationResult {
 }
 
 export type ProjectResourceKind = 'folder' | ProjectAssetKind | 'script'
-type CreatableProjectResourceKind = 'folder' | ProjectAssetKind
+type CreatableProjectResourceKind = 'folder' | ProjectAssetKind | 'script'
 
 export interface ProjectResourceMutationResult {
   view: ProjectResourceView
@@ -54,6 +85,7 @@ export interface ProjectResourceMutationResult {
   resourcePath: string
   resourceName: string
   parentPath: string
+  scriptKind?: ProjectScriptKind | null
 }
 
 export interface ProjectDeletedResourceResult extends ProjectResourceMutationResult {
@@ -85,6 +117,7 @@ export type ProjectResourceItem =
       parentPath: string | null
       extension: string | null
       resourceType: ProjectAssetKind | null
+      scriptKind?: ProjectScriptKind | null
     }
 
 export interface ProjectTrackedResource {
@@ -93,6 +126,7 @@ export interface ProjectTrackedResource {
   path: string
   parentPath: string | null
   resourceType?: ProjectAssetKind
+  scriptKind?: ProjectScriptKind | null
 }
 
 export interface ProjectDirectoryScanResult {
@@ -124,6 +158,7 @@ interface StoredDeletedResourceMetadata {
   resourcePath: string
   resourceName: string
   parentPath: string
+  scriptKind?: ProjectScriptKind | null
   resources: ProjectStoredResourceRecord[]
 }
 
@@ -139,6 +174,7 @@ const INTERNAL_HISTORY_DIRECTORY = '.retrogbfull-history'
 const DELETED_RESOURCES_DIRECTORY = 'deleted-resources'
 const DELETED_RESOURCE_METADATA_FILE = 'metadata.json'
 const DELETED_RESOURCE_CONTENT_NAME = 'resource'
+const MANAGED_ENGINE_ROOT_ENTRIES = new Set(['src', 'res', 'Makefile'])
 
 const normalizeResourcePath = (resourcePath: string): string => {
   return resourcePath
@@ -156,6 +192,10 @@ const normalizeParentPath = (resourcePath: string | null | undefined): string | 
 
 const isInternalProjectEntry = (entryName: string): boolean => {
   return entryName === INTERNAL_HISTORY_DIRECTORY
+}
+
+const isManagedEngineRootEntry = (currentPath: string, entryName: string): boolean => {
+  return currentPath.length === 0 && MANAGED_ENGINE_ROOT_ENTRIES.has(entryName)
 }
 
 const getResourceParentPath = (resourcePath: string): string | null => {
@@ -193,6 +233,10 @@ const isTrackedAssetKind = (value: string): value is ProjectAssetKind => {
     value === 'scene' ||
     value === 'actor'
   )
+}
+
+const isTrackedScriptKind = (value: string): value is ProjectScriptKind => {
+  return value === 'actor' || value === 'scene' || value === 'general'
 }
 
 const getDeletedResourceContainerPath = (projectPath: string, deletionId: string): string => {
@@ -249,9 +293,15 @@ const buildResourceFileName = (
   resourceType: CreatableProjectResourceKind,
   resourceName: string
 ): string => {
-  return resourceType === 'folder'
-    ? resourceName
-    : buildProjectAssetFileName(resourceType, resourceName)
+  if (resourceType === 'folder') {
+    return resourceName
+  }
+
+  if (resourceType === 'script') {
+    return buildProjectScriptFileName(normalizeCodeIdentifier(resourceName))
+  }
+
+  return buildProjectAssetFileName(resourceType, resourceName)
 }
 
 const buildStoredFolderRecord = (
@@ -300,18 +350,54 @@ const buildStoredAssetRecord = (
   }
 }
 
+const buildStoredScriptRecord = (
+  scriptPath: string,
+  scriptKind: ProjectScriptKind,
+  options?: {
+    id?: string
+    createdAt?: string
+    updatedAt?: string
+  }
+): ProjectScriptRecord => {
+  const normalizedPath = normalizeResourcePath(scriptPath)
+  const now = new Date().toISOString()
+
+  return {
+    type: 'file',
+    id: options?.id ?? randomUUID(),
+    name: getProjectScriptDisplayName(basename(normalizedPath)),
+    path: normalizedPath,
+    parentPath: getResourceParentPath(normalizedPath),
+    resourceType: 'script',
+    scriptKind,
+    createdAt: options?.createdAt ?? now,
+    updatedAt: options?.updatedAt ?? now
+  }
+}
+
 const buildStoredResourceRecord = (
   resourceType: CreatableProjectResourceKind,
   resourcePath: string,
+  scriptKind?: ProjectScriptKind,
   options?: {
     id?: string
     createdAt?: string
     updatedAt?: string
   }
 ): ProjectStoredResourceRecord => {
-  return resourceType === 'folder'
-    ? buildStoredFolderRecord(resourcePath, options)
-    : buildStoredAssetRecord(resourcePath, resourceType, options)
+  if (resourceType === 'folder') {
+    return buildStoredFolderRecord(resourcePath, options)
+  }
+
+  if (resourceType === 'script') {
+    if (!scriptKind) {
+      throw new Error('A script kind is required when creating script resource records.')
+    }
+
+    return buildStoredScriptRecord(resourcePath, scriptKind, options)
+  }
+
+  return buildStoredAssetRecord(resourcePath, resourceType, options)
 }
 
 const parseLegacyFolders = (value: unknown): ProjectFolderRecord[] => {
@@ -392,14 +478,46 @@ const parseStoredResourceRecord = (value: unknown): ProjectStoredResourceRecord 
   }
 
   const explicitResourceType =
-    typeof value.resourceType === 'string' && isTrackedAssetKind(value.resourceType)
+    typeof value.resourceType === 'string' &&
+    (isTrackedAssetKind(value.resourceType) || value.resourceType === 'script')
       ? value.resourceType
       : null
   const derivedResourceType = getProjectAssetKindFromFileName(basename(normalizedPath))
-  const resourceType = explicitResourceType ?? derivedResourceType
+  const derivedScriptKind = isProjectScriptSourcePath(normalizedPath)
+    ? getProjectScriptKindFromPath(normalizedPath)
+    : null
+  const resourceType = explicitResourceType ?? derivedResourceType ?? (derivedScriptKind ? 'script' : null)
 
   if (!resourceType) {
     return null
+  }
+
+  if (resourceType === 'script') {
+    const scriptKind =
+      typeof value.scriptKind === 'string' && isTrackedScriptKind(value.scriptKind)
+        ? value.scriptKind
+        : derivedScriptKind
+
+    if (!scriptKind) {
+      return null
+    }
+
+    return {
+      type: 'file',
+      id,
+      name:
+        typeof value.name === 'string' && value.name.length > 0
+          ? value.name
+          : getProjectScriptDisplayName(basename(normalizedPath)),
+      path: normalizedPath,
+      parentPath:
+        normalizeParentPath(value.parentPath as string | null | undefined) ??
+        getResourceParentPath(normalizedPath),
+      resourceType: 'script',
+      scriptKind,
+      createdAt,
+      updatedAt
+    }
   }
 
   return {
@@ -462,15 +580,26 @@ const parseDeletedResourceMetadata = (value: unknown): StoredDeletedResourceMeta
     resourcePath,
     resourceName,
     parentPath,
+    scriptKind:
+      typeof value.scriptKind === 'string' && isTrackedScriptKind(value.scriptKind)
+        ? value.scriptKind
+        : null,
     resources:
       parsedResources.length > 0
         ? parsedResources
         : [
             buildStoredResourceRecord(
-              resourceType === 'folder' || !isTrackedAssetKind(resourceType)
+              resourceType === 'folder'
                 ? 'folder'
-                : resourceType,
-              resourcePath
+                : isTrackedAssetKind(resourceType)
+                  ? resourceType
+                  : resourceType === 'script'
+                    ? 'script'
+                    : 'folder',
+              resourcePath,
+              typeof value.scriptKind === 'string' && isTrackedScriptKind(value.scriptKind)
+                ? value.scriptKind
+                : undefined
             )
           ]
   }
@@ -533,6 +662,7 @@ const writeProjectFile = async (
               path: resource.path,
               parentPath: resource.parentPath,
               resourceType: resource.resourceType,
+              ...(resource.resourceType === 'script' ? { scriptKind: resource.scriptKind } : {}),
               createdAt: resource.createdAt,
               updatedAt: resource.updatedAt
             }
@@ -554,7 +684,11 @@ const scanLegacyProjectResources = async (
 
   for (const entry of entries) {
     if (currentPath.length === 0) {
-      if (entry.name === `${basename(projectPath)}.json` || isInternalProjectEntry(entry.name)) {
+      if (
+        entry.name === `${basename(projectPath)}.json` ||
+        isInternalProjectEntry(entry.name) ||
+        isManagedEngineRootEntry(currentPath, entry.name)
+      ) {
         continue
       }
     }
@@ -580,6 +714,15 @@ const scanLegacyProjectResources = async (
 
     if (resourceType) {
       resources.push(buildStoredAssetRecord(resourcePath, resourceType))
+      continue
+    }
+
+    if (isProjectScriptSourcePath(resourcePath)) {
+      const scriptKind = getProjectScriptKindFromPath(resourcePath)
+
+      if (scriptKind) {
+        resources.push(buildStoredScriptRecord(resourcePath, scriptKind))
+      }
     }
   }
 
@@ -665,7 +808,11 @@ const discoverUntrackedProjectResources = async (
 
   for (const entry of entries) {
     if (currentPath.length === 0) {
-      if (entry.name === `${basename(projectPath)}.json` || isInternalProjectEntry(entry.name)) {
+      if (
+        entry.name === `${basename(projectPath)}.json` ||
+        isInternalProjectEntry(entry.name) ||
+        isManagedEngineRootEntry(currentPath, entry.name)
+      ) {
         continue
       }
     }
@@ -686,23 +833,42 @@ const discoverUntrackedProjectResources = async (
 
     const resourceType = getProjectAssetKindFromFileName(entry.name)
 
-    if (!resourceType || trackedPaths.has(resourcePath)) {
+    if (resourceType && !trackedPaths.has(resourcePath)) {
+      try {
+        const rawContent = await readFile(resolveResourceDirectory(projectPath, resourcePath), 'utf-8')
+        const document = parseProjectAssetDocument(JSON.parse(rawContent))
+
+        if (document.kind !== resourceType) {
+          continue
+        }
+
+        trackedPaths.add(resourcePath)
+        discoveredResources.push(buildStoredAssetRecord(resourcePath, resourceType))
+      } catch {
+        continue
+      }
+    }
+
+    if (!isProjectScriptSourcePath(resourcePath) || trackedPaths.has(resourcePath)) {
+      continue
+    }
+
+    const scriptKind = getProjectScriptKindFromPath(resourcePath)
+
+    if (!scriptKind) {
       continue
     }
 
     try {
-      const rawContent = await readFile(
-        resolveResourceDirectory(projectPath, resourcePath),
-        'utf-8'
+      await stat(resolveResourceDirectory(projectPath, resourcePath))
+      await stat(
+        resolveResourceDirectory(
+          projectPath,
+          joinResourcePath(getResourceParentPath(resourcePath), buildProjectScriptHeaderFileName(getProjectScriptDisplayName(entry.name)))
+        )
       )
-      const document = parseProjectAssetDocument(JSON.parse(rawContent))
-
-      if (document.kind !== resourceType) {
-        continue
-      }
-
       trackedPaths.add(resourcePath)
-      discoveredResources.push(buildStoredAssetRecord(resourcePath, resourceType))
+      discoveredResources.push(buildStoredScriptRecord(resourcePath, scriptKind))
     } catch {
       continue
     }
@@ -721,7 +887,7 @@ const buildFolderItem = (resource: ProjectFolderRecord): ProjectResourceItem => 
   }
 }
 
-const buildFileItem = (resource: ProjectAssetRecord): ProjectResourceItem => {
+const buildFileItem = (resource: ProjectAssetRecord | ProjectScriptRecord): ProjectResourceItem => {
   const fileName = basename(resource.path)
 
   return {
@@ -732,7 +898,8 @@ const buildFileItem = (resource: ProjectAssetRecord): ProjectResourceItem => {
     path: resource.path,
     parentPath: resource.parentPath,
     extension: extname(fileName).slice(1) || null,
-    resourceType: resource.resourceType
+    resourceType: resource.resourceType === 'script' ? null : resource.resourceType,
+    ...(resource.resourceType === 'script' ? { scriptKind: resource.scriptKind } : {})
   }
 }
 
@@ -817,6 +984,17 @@ const reconcileTrackedProjectResources = async (
   for (const resource of state.resources) {
     if (hasMissingAncestorPath(resource.path, missingRootPaths)) {
       removedCount += 1
+      continue
+    }
+
+    if (resource.type === 'file' && resource.resourceType === 'script') {
+      if (await scriptFilesExist(state.projectPath, resource.path)) {
+        existingResources.push(resource)
+      } else {
+        missingRootPaths.add(resource.path)
+        removedCount += 1
+      }
+
       continue
     }
 
@@ -909,12 +1087,58 @@ const getTrackedResourceSubtree = (
   return resources.filter((resource) => isSameOrDescendantPath(resource.path, normalizedPath))
 }
 
+const assertUniqueTrackedFileName = (
+  resources: ProjectStoredResourceRecord[],
+  resourceName: string,
+  excludedPaths: string[] = []
+): void => {
+  const normalizedName = resourceName.trim().toLowerCase()
+  const excludedPathSet = new Set(excludedPaths.map((path) => normalizeResourcePath(path)))
+  const conflictingResource = resources.find((resource) => {
+    if (resource.type !== 'file' || excludedPathSet.has(resource.path)) {
+      return false
+    }
+
+    return resource.name.trim().toLowerCase() === normalizedName
+  })
+
+  if (conflictingResource) {
+    throw new ProjectLauncherError(
+      `A resource named "${resourceName}" already exists elsewhere in the project.`
+    )
+  }
+}
+
+const ensureScriptParentFolders = async (
+  state: ProjectResourceState,
+  scriptPath: string
+): Promise<ProjectStoredResourceRecord[]> => {
+  const segments = normalizeResourcePath(scriptPath).split('/')
+  segments.pop()
+  const nextResources = [...state.resources]
+  let currentPath = ''
+
+  for (const segment of segments) {
+    currentPath = currentPath ? `${currentPath}/${segment}` : segment
+
+    if (findTrackedResourceRecord(nextResources, currentPath)) {
+      continue
+    }
+
+    await mkdir(resolveResourceDirectory(state.projectPath, currentPath), { recursive: true })
+    nextResources.push(buildStoredFolderRecord(currentPath))
+  }
+
+  return nextResources
+}
+
 const relocateTrackedResource = (
   resource: ProjectStoredResourceRecord,
   sourceRootPath: string,
   targetRootPath: string,
   options?: {
     resetIdentity?: boolean
+    scriptKind?: ProjectScriptKind
   }
 ): ProjectStoredResourceRecord => {
   const now = new Date().toISOString()
@@ -926,6 +1150,9 @@ const relocateTrackedResource = (
   return buildStoredResourceRecord(
     resource.type === 'folder' ? 'folder' : resource.resourceType,
     nextPath,
+    resource.type === 'file' && resource.resourceType === 'script'
+      ? (options?.scriptKind ?? resource.scriptKind)
+      : undefined,
     {
       id: options?.resetIdentity ? randomUUID() : resource.id,
       createdAt: options?.resetIdentity ? now : resource.createdAt,
@@ -946,6 +1173,27 @@ const assertFolderName = (folderName: string): string => {
   return trimmedFolderName
 }
 
+const normalizeResourceNameForComparison = (
+  resourceType: Exclude<CreatableProjectResourceKind, 'folder'>,
+  resourceName: string
+): string => {
+  const trimmedResourceName = resourceName.trim()
+
+  return resourceType === 'script'
+    ? normalizeCodeIdentifier(trimmedResourceName).toLowerCase()
+    : trimmedResourceName.toLowerCase()
+}
+
+const buildIndexedResourceName = (
+  resourceType: Exclude<CreatableProjectResourceKind, 'folder'>,
+  baseName: string,
+  suffix: number
+): string => {
+  return resourceType === 'script'
+    ? normalizeCodeIdentifier(`${baseName}_${suffix}`)
+    : `${baseName} ${suffix}`
+}
+
 const buildUniqueResourceName = (
   resources: ProjectStoredResourceRecord[],
   parentPath: string,
@@ -960,30 +1208,59 @@ const buildUniqueResourceName = (
   const baseName =
     resourceType === 'folder'
       ? 'New Folder'
-      : `New ${resourceType[0].toUpperCase()}${resourceType.slice(1)}`
+      : resourceType === 'script'
+        ? 'New_Script'
+        : `New ${resourceType[0].toUpperCase()}${resourceType.slice(1)}`
   const buildTargetName = (candidateName: string): string =>
     buildResourceFileName(resourceType, candidateName)
+  const hasGlobalFileNameConflict = (candidateName: string): boolean => {
+    const normalizedCandidateName =
+      resourceType === 'folder'
+        ? candidateName.trim().toLowerCase()
+        : normalizeResourceNameForComparison(resourceType, candidateName)
 
-  if (!siblingNames.has(buildTargetName(baseName))) {
+    return resources.some(
+      (resource) =>
+        resource.type === 'file' &&
+        normalizeResourceNameForComparison(resource.resourceType, resource.name) ===
+          normalizedCandidateName
+    )
+  }
+
+  if (
+    !siblingNames.has(buildTargetName(baseName)) &&
+    (resourceType === 'folder' || !hasGlobalFileNameConflict(baseName))
+  ) {
     return baseName
   }
 
   let suffix = 2
+  let nextResourceName =
+    resourceType === 'folder' ? `${baseName} ${suffix}` : buildIndexedResourceName(resourceType, baseName, suffix)
 
-  while (siblingNames.has(buildTargetName(`${baseName} ${suffix}`))) {
+  while (
+    siblingNames.has(buildTargetName(nextResourceName)) ||
+    (resourceType !== 'folder' && hasGlobalFileNameConflict(nextResourceName))
+  ) {
     suffix += 1
+    nextResourceName =
+      resourceType === 'folder'
+        ? `${baseName} ${suffix}`
+        : buildIndexedResourceName(resourceType, baseName, suffix)
   }
 
-  return `${baseName} ${suffix}`
+  return nextResourceName
 }
 
 const buildUniqueTransferredResourceTarget = (
   resources: ProjectStoredResourceRecord[],
   parentPath: string,
   resourceType: CreatableProjectResourceKind,
-  sourcePath: string
+  sourcePath: string,
+  excludedPaths: string[] = []
 ): { resourceName: string; resourcePath: string } => {
   const normalizedParentPath = normalizeParentPath(parentPath)
+  const excludedPathSet = new Set(excludedPaths.map((path) => normalizeResourcePath(path)))
   const siblingNames = new Set(
     resources
       .filter((resource) => resource.parentPath === normalizedParentPath)
@@ -991,9 +1268,30 @@ const buildUniqueTransferredResourceTarget = (
   )
   const sourceEntryName = basename(sourcePath)
   const baseResourceName =
-    resourceType === 'folder' ? sourceEntryName : getProjectAssetDisplayName(sourceEntryName)
+    resourceType === 'folder'
+      ? sourceEntryName
+      : resourceType === 'script'
+        ? normalizeCodeIdentifier(getProjectScriptDisplayName(sourceEntryName))
+        : getProjectAssetDisplayName(sourceEntryName)
+  const hasGlobalNameConflict = (candidateName: string): boolean => {
+    const normalizedCandidateName =
+      resourceType === 'folder'
+        ? candidateName.trim().toLowerCase()
+        : normalizeResourceNameForComparison(resourceType, candidateName)
 
-  if (!siblingNames.has(sourceEntryName)) {
+    return resources.some(
+      (resource) =>
+        resource.type === 'file' &&
+        !excludedPathSet.has(resource.path) &&
+        normalizeResourceNameForComparison(resource.resourceType, resource.name) ===
+          normalizedCandidateName
+    )
+  }
+
+  if (
+    !siblingNames.has(sourceEntryName) &&
+    (resourceType === 'folder' || !hasGlobalNameConflict(baseResourceName))
+  ) {
     return {
       resourceName: baseResourceName,
       resourcePath: joinResourcePath(normalizedParentPath, sourceEntryName)
@@ -1001,12 +1299,18 @@ const buildUniqueTransferredResourceTarget = (
   }
 
   let suffix = 2
-  let nextResourceName = `${baseResourceName} ${suffix}`
+  let nextResourceName =
+    resourceType === 'folder'
+      ? `${baseResourceName} ${suffix}`
+      : buildIndexedResourceName(resourceType, baseResourceName, suffix)
   let nextEntryName = buildResourceFileName(resourceType, nextResourceName)
 
-  while (siblingNames.has(nextEntryName)) {
+  while (siblingNames.has(nextEntryName) || (resourceType !== 'folder' && hasGlobalNameConflict(nextResourceName))) {
     suffix += 1
-    nextResourceName = `${baseResourceName} ${suffix}`
+    nextResourceName =
+      resourceType === 'folder'
+        ? `${baseResourceName} ${suffix}`
+        : buildIndexedResourceName(resourceType, baseResourceName, suffix)
     nextEntryName = buildResourceFileName(resourceType, nextResourceName)
   }
 
@@ -1019,9 +1323,7 @@ const buildUniqueTransferredResourceTarget = (
 function assertSupportedResourceKind(
   resourceType: ProjectResourceKind
 ): asserts resourceType is CreatableProjectResourceKind {
-  if (resourceType === 'script') {
-    throw new ProjectLauncherError(`Creating ${resourceType} resources is not supported yet.`)
-  }
+  void resourceType
 }
 
 export const getProjectResourceErrorMessage = (
@@ -1085,7 +1387,9 @@ export const getTrackedProjectResource = async (
         name: resource.name,
         path: resource.path,
         parentPath: resource.parentPath,
-        resourceType: resource.resourceType
+        ...(resource.resourceType === 'script'
+          ? { scriptKind: resource.scriptKind }
+          : { resourceType: resource.resourceType })
       }
 }
 
@@ -1140,6 +1444,21 @@ export const listProjectResources = async (
   return buildProjectResourceView(state, state.resources, normalizedCurrentPath)
 }
 
+export const listProjectScriptResources = async (
+  projectPath: string,
+  scriptKind?: ProjectScriptKind
+): Promise<ProjectScriptRecord[]> => {
+  const state = await readProjectResourceState(projectPath)
+
+  return state.resources.filter((resource): resource is ProjectScriptRecord => {
+    return (
+      resource.type === 'file' &&
+      resource.resourceType === 'script' &&
+      (!scriptKind || resource.scriptKind === scriptKind)
+    )
+  })
+}
+
 export const createProjectFolder = async (
   projectPath: string,
   parentPath = ''
@@ -1152,6 +1471,38 @@ export const createProjectFolder = async (
   }
 }
 
+export const createProjectScriptResource = async (
+  projectPath: string,
+  scriptKind: ProjectScriptKind,
+  resourceName?: string
+): Promise<ProjectResourceMutationResult> => {
+  const state = await readProjectResourceState(projectPath)
+  const parentPath = PROJECT_SCRIPT_DIRECTORY_BY_KIND[scriptKind]
+  const nextResourcesWithFolders = await ensureScriptParentFolders(
+    state,
+    `${parentPath}/${buildProjectScriptFileName(resourceName ?? `New ${PROJECT_SCRIPT_LABELS[scriptKind]}`)}`
+  )
+  const safeResourceName = resourceName
+    ? normalizeCodeIdentifier(assertFolderName(resourceName))
+    : normalizeCodeIdentifier(buildUniqueResourceName(nextResourcesWithFolders, parentPath, 'script'))
+  assertUniqueTrackedFileName(nextResourcesWithFolders, safeResourceName)
+
+  const { resourcePath } = await createProjectScriptFiles(projectPath, scriptKind, safeResourceName)
+  const nextResources = await writeProjectResources(state, [
+    ...nextResourcesWithFolders,
+    buildStoredResourceRecord('script', resourcePath, scriptKind)
+  ])
+
+  return {
+    view: buildProjectResourceView(state, nextResources, parentPath),
+    resourceType: 'script',
+    resourcePath,
+    resourceName: safeResourceName,
+    parentPath,
+    scriptKind
+  }
+}
+
 export const createProjectResource = async (
   projectPath: string,
   resourceType: ProjectResourceKind,
@@ -1159,6 +1510,12 @@ export const createProjectResource = async (
   resourceName?: string
 ): Promise<ProjectResourceMutationResult> => {
   assertSupportedResourceKind(resourceType)
+
+  if (resourceType === 'script') {
+    throw new ProjectLauncherError(
+      'Use the dedicated script creation flow so the script type can be selected.'
+    )
+  }
 
   const state = await readProjectResourceState(projectPath)
   const normalizedParentPath = normalizeResourcePath(parentPath)
@@ -1168,6 +1525,9 @@ export const createProjectResource = async (
   const safeResourceName = resourceName
     ? assertFolderName(resourceName)
     : buildUniqueResourceName(state.resources, normalizedParentPath, resourceType)
+  if (resourceType !== 'folder') {
+    assertUniqueTrackedFileName(state.resources, safeResourceName)
+  }
   const targetResourceFileName = buildResourceFileName(resourceType, safeResourceName)
   const targetResourcePath = joinResourcePath(
     normalizeParentPath(normalizedParentPath),
@@ -1235,24 +1595,40 @@ export const renameProjectResource = async (
   assertTrackedResourceType(trackedResource, resourceType)
 
   const safeResourceName = assertFolderName(nextName)
+  const normalizedResourceName =
+    resourceType === 'script' ? normalizeCodeIdentifier(safeResourceName) : safeResourceName
   const parentPath = trackedResource.parentPath ?? ''
+  if (resourceType !== 'folder') {
+    assertUniqueTrackedFileName(state.resources, normalizedResourceName, [normalizedResourcePath])
+  }
   const nextResourcePath = joinResourcePath(
     trackedResource.parentPath,
-    buildResourceFileName(resourceType, safeResourceName)
+    buildResourceFileName(resourceType, normalizedResourceName)
   )
 
   if (nextResourcePath !== normalizedResourcePath) {
-    await rename(
-      resolveResourceDirectory(state.projectPath, normalizedResourcePath),
-      resolveResourceDirectory(state.projectPath, nextResourcePath)
-    )
+    if (resourceType === 'script') {
+      await renameProjectScriptFiles(state.projectPath, normalizedResourcePath, nextResourcePath)
+    } else {
+      await rename(
+        resolveResourceDirectory(state.projectPath, normalizedResourcePath),
+        resolveResourceDirectory(state.projectPath, nextResourcePath)
+      )
+    }
   }
 
   const nextResources = await writeProjectResources(
     state,
     state.resources.map((resource) =>
       isSameOrDescendantPath(resource.path, normalizedResourcePath)
-        ? relocateTrackedResource(resource, normalizedResourcePath, nextResourcePath)
+        ? relocateTrackedResource(
+            resource,
+            normalizedResourcePath,
+            nextResourcePath,
+            trackedResource.type === 'file' && trackedResource.resourceType === 'script'
+              ? { scriptKind: trackedResource.scriptKind }
+              : undefined
+          )
         : resource
     )
   )
@@ -1261,8 +1637,11 @@ export const renameProjectResource = async (
     view: buildProjectResourceView(state, nextResources, parentPath),
     resourceType,
     resourcePath: nextResourcePath,
-    resourceName: safeResourceName,
-    parentPath
+    resourceName: normalizedResourceName,
+    parentPath,
+    ...(trackedResource.type === 'file' && trackedResource.resourceType === 'script'
+      ? { scriptKind: trackedResource.scriptKind }
+      : {})
   }
 }
 
@@ -1304,14 +1683,31 @@ export const deleteProjectResource = async (
     resourcePath: normalizedResourcePath,
     resourceName: trackedResource.name,
     parentPath: trackedResource.parentPath ?? '',
+    scriptKind:
+      trackedResource.type === 'file' && trackedResource.resourceType === 'script'
+        ? trackedResource.scriptKind
+        : null,
     resources: removedResources
   }
 
   await writeDeletedResourceMetadata(state.projectPath, metadata)
-  await rename(
-    resolveResourceDirectory(state.projectPath, normalizedResourcePath),
-    getDeletedResourceContentPath(state.projectPath, nextDeletionId)
-  )
+  if (resourceType === 'script') {
+    await moveProjectScriptFilesToDeletedContainer(
+      state.projectPath,
+      normalizedResourcePath,
+      normalizeResourcePath(
+        relative(
+          state.projectPath,
+          getDeletedResourceContentPath(state.projectPath, nextDeletionId)
+        ).replace(/\\/g, '/')
+      )
+    )
+  } else {
+    await rename(
+      resolveResourceDirectory(state.projectPath, normalizedResourcePath),
+      getDeletedResourceContentPath(state.projectPath, nextDeletionId)
+    )
+  }
 
   const nextResources = await writeProjectResources(
     state,
@@ -1326,6 +1722,7 @@ export const deleteProjectResource = async (
     resourcePath: metadata.resourcePath,
     resourceName: metadata.resourceName,
     parentPath: metadata.parentPath,
+    ...(metadata.scriptKind ? { scriptKind: metadata.scriptKind } : {}),
     deletionId: nextDeletionId
   }
 }
@@ -1338,12 +1735,29 @@ export const restoreDeletedProjectResource = async (
   const metadata = await readDeletedResourceMetadata(state.projectPath, deletionId)
 
   assertSupportedResourceKind(metadata.resourceType)
+  if (metadata.resourceType !== 'folder') {
+    assertUniqueTrackedFileName(state.resources, metadata.resourceName)
+  }
+
   await mkdir(resolveResourceDirectory(state.projectPath, metadata.parentPath), { recursive: true })
 
-  await rename(
-    getDeletedResourceContentPath(state.projectPath, deletionId),
-    resolveResourceDirectory(state.projectPath, metadata.resourcePath)
-  )
+  if (metadata.resourceType === 'script') {
+    await restoreProjectScriptFilesFromDeletedContainer(
+      state.projectPath,
+      metadata.resourcePath,
+      normalizeResourcePath(
+        relative(
+          state.projectPath,
+          getDeletedResourceContentPath(state.projectPath, deletionId)
+        ).replace(/\\/g, '/')
+      )
+    )
+  } else {
+    await rename(
+      getDeletedResourceContentPath(state.projectPath, deletionId),
+      resolveResourceDirectory(state.projectPath, metadata.resourcePath)
+    )
+  }
 
   const nextResources = await writeProjectResources(state, [
     ...state.resources,
@@ -1355,7 +1769,8 @@ export const restoreDeletedProjectResource = async (
     resourceType: metadata.resourceType,
     resourcePath: metadata.resourcePath,
     resourceName: metadata.resourceName,
-    parentPath: metadata.parentPath
+    parentPath: metadata.parentPath,
+    ...(metadata.scriptKind ? { scriptKind: metadata.scriptKind } : {})
   }
 }
 
@@ -1400,26 +1815,42 @@ export const transferProjectResource = async (
   }
 
   const sourceAbsolutePath = resolveResourceDirectory(state.projectPath, normalizedResourcePath)
-  const sourceStats = await stat(sourceAbsolutePath)
+  const sourceStats =
+    resourceType === 'script' ? null : await stat(sourceAbsolutePath)
 
-  if (resourceType === 'folder' && !sourceStats.isDirectory()) {
+  if (resourceType === 'folder' && sourceStats && !sourceStats.isDirectory()) {
     throw new ProjectLauncherError('The selected folder could not be found.')
   }
 
-  if (resourceType !== 'folder' && !sourceStats.isFile()) {
+  if (resourceType !== 'folder' && resourceType !== 'script' && sourceStats && !sourceStats.isFile()) {
     throw new ProjectLauncherError('The selected asset could not be found.')
+  }
+
+  if (resourceType === 'script' && !(await scriptFilesExist(state.projectPath, normalizedResourcePath))) {
+    throw new ProjectLauncherError('The selected script could not be found.')
   }
 
   const target = buildUniqueTransferredResourceTarget(
     state.resources,
     normalizedDestinationParentPath,
     resourceType,
-    normalizedResourcePath
+    normalizedResourcePath,
+    mode === 'move' ? [normalizedResourcePath] : []
   )
+  if (resourceType !== 'folder') {
+    assertUniqueTrackedFileName(state.resources, target.resourceName, [normalizedResourcePath])
+  }
   const targetAbsolutePath = resolveResourceDirectory(state.projectPath, target.resourcePath)
 
-  if (mode === 'copy') {
-    if (sourceStats.isDirectory()) {
+  if (resourceType === 'script') {
+    await transferProjectScriptFiles(
+      state.projectPath,
+      normalizedResourcePath,
+      target.resourcePath,
+      mode
+    )
+  } else if (mode === 'copy') {
+    if (sourceStats?.isDirectory()) {
       await cp(sourceAbsolutePath, targetAbsolutePath, { recursive: true, errorOnExist: true })
     } else {
       await cp(sourceAbsolutePath, targetAbsolutePath, { errorOnExist: true })
@@ -1452,7 +1883,10 @@ export const transferProjectResource = async (
     resourceType,
     resourcePath: target.resourcePath,
     resourceName: target.resourceName,
-    parentPath: normalizedDestinationParentPath
+    parentPath: normalizedDestinationParentPath,
+    ...(trackedResource.type === 'file' && trackedResource.resourceType === 'script'
+      ? { scriptKind: trackedResource.scriptKind }
+      : {})
   }
 }
 

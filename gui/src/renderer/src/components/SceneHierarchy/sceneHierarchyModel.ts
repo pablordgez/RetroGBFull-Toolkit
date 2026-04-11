@@ -14,6 +14,7 @@ export interface SceneHierarchyClipboardState {
 }
 
 export interface SceneHierarchyHistoryState {
+  scriptPath: string | null
   tilemapPath: string | null
   windowPath: string | null
   nodes: SceneAssetNode[]
@@ -34,6 +35,7 @@ export interface SceneNodeRecord {
 }
 
 export interface SceneEditorDocumentSnapshot {
+  scriptPath: string | null
   tilemapPath: string | null
   windowPath: string | null
   nodes: SceneAssetNode[]
@@ -78,6 +80,7 @@ export const cloneSceneDocumentSnapshot = (
   document: SceneAssetDocument | SceneEditorDocumentSnapshot
 ): SceneEditorDocumentSnapshot => {
   return {
+    scriptPath: document.scriptPath,
     tilemapPath: document.tilemapPath,
     windowPath: document.windowPath,
     nodes: document.nodes.map(cloneSceneNodeSnapshot)
@@ -457,6 +460,7 @@ export const buildDefaultSceneNode = (
       width: DEFAULT_SCENE_COLLISION_SIZE,
       height: DEFAULT_SCENE_COLLISION_SIZE,
       isBlocking: true,
+      callbacks: [],
       children: []
     }
   }

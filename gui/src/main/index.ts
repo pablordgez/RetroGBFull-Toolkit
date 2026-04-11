@@ -1,5 +1,16 @@
-import { app, shell, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent } from 'electron'
-import { join } from 'path'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  IpcMainInvokeEvent,
+  net,
+  protocol,
+  session
+} from 'electron'
+import { basename, join, normalize, resolve } from 'path'
+import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import {
@@ -17,7 +28,9 @@ import {
   deleteProjectResource,
   finalizeDeletedProjectResource,
   getProjectResourceErrorMessage,
+  listProjectScriptResources,
   listProjectResources,
+  createProjectScriptResource,
   renameProjectFolder,
   renameProjectResource,
   scanProjectDirectory,
@@ -26,6 +39,17 @@ import {
 } from './projectResources'
 import { ensureProjectAssetFileAvailable, loadProjectAssetFile, saveProjectAssetFile } from './projectAssetFiles'
 import { PROJECT_ASSET_LABELS, ProjectAssetKind } from '../shared/projectAssets'
+import {
+  copyBundledEngineCore,
+  generateProjectResourceFiles,
+  listProjectScriptCallbackCandidates,
+  loadProjectScriptResource,
+  readMaxCollisionCallbacks,
+  saveProjectScriptResource
+} from './projectCode'
+import { getProjectCodeWorkspaceSnapshot } from './projectCodeLanguageService'
+import { getProjectCodeSymbolIndex } from './projectCodeIntelligence'
+import { PROJECT_SCRIPT_LABELS, ProjectScriptKind, getProjectScriptDisplayName } from '../shared/projectScripts'
 
 interface ProjectActionResponse {
   ok: boolean
@@ -53,12 +77,85 @@ interface ProjectAssetSavedEventPayload {
   assetKind: ProjectAssetKind
 }
 
+const ELECTRON_APP_SCHEME = 'app'
+const CROSS_ORIGIN_RESPONSE_HEADERS = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp'
+}
+const CROSS_ORIGIN_WEB_REQUEST_HEADERS = {
+  'Cross-Origin-Opener-Policy': ['same-origin'],
+  'Cross-Origin-Embedder-Policy': ['require-corp']
+}
+
 const editorWindowsWaitingForCloseConfirmation = new Set<number>()
 const projectWindowPaths = new Map<number, string>()
 const projectWindowsWaitingForCleanup = new Set<number>()
 const projectWindowsReadyToClose = new Set<number>()
 let isQuittingAfterCleanup = false
 let hasHandledBeforeQuitCleanup = false
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: ELECTRON_APP_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
+  }
+])
+
+const getPackagedRendererRoot = (): string => {
+  return resolve(__dirname, '../renderer')
+}
+
+const buildRendererWindowUrl = (hash = ''): string => {
+  const normalizedHash = hash.startsWith('/') ? hash : `/${hash}`
+  return `${ELECTRON_APP_SCHEME}://renderer/index.html#${normalizedHash}`
+}
+
+const registerRendererProtocol = (): void => {
+  protocol.handle(ELECTRON_APP_SCHEME, async (request) => {
+    const requestUrl = new URL(request.url)
+    const rendererRoot = getPackagedRendererRoot()
+    const relativePath =
+      requestUrl.hostname === 'renderer' && requestUrl.pathname !== '/'
+        ? requestUrl.pathname
+        : '/index.html'
+    const normalizedPath = normalize(decodeURIComponent(relativePath)).replace(/^([\\/])+/, '')
+    const absolutePath = resolve(rendererRoot, normalizedPath)
+
+    if (!absolutePath.startsWith(rendererRoot)) {
+      return new Response('Not found', {
+        status: 404,
+        headers: CROSS_ORIGIN_RESPONSE_HEADERS
+      })
+    }
+
+    const fileResponse = await net.fetch(pathToFileURL(absolutePath).toString())
+
+    return new Response(fileResponse.body, {
+      status: fileResponse.status,
+      statusText: fileResponse.statusText,
+      headers: {
+        ...Object.fromEntries(fileResponse.headers.entries()),
+        ...CROSS_ORIGIN_RESPONSE_HEADERS
+      }
+    })
+  })
+}
+
+const enableCrossOriginIsolationHeaders = (): void => {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        ...CROSS_ORIGIN_WEB_REQUEST_HEADERS
+      }
+    })
+  })
+}
 
 const clearDeletedResourcesForProject = async (projectPath: string, reason: string): Promise<void> => {
   try {
@@ -159,7 +256,7 @@ const createAppWindow = (hash: string, options?: AppWindowOptions): BrowserWindo
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     appWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#${hash}`)
   } else {
-    appWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash })
+    appWindow.loadURL(buildRendererWindowUrl(hash))
   }
 
   if (options?.showWhenReady !== false) {
@@ -292,7 +389,7 @@ function createWindow(): void {
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadURL(buildRendererWindowUrl('/'))
   }
 }
 
@@ -310,6 +407,11 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  enableCrossOriginIsolationHeaders()
+
+  if (!is.dev) {
+    registerRendererProtocol()
+  }
 
   createWindow()
 
@@ -456,6 +558,27 @@ ipcMain.handle('project:assets:open-editor', async (_, assetType: ProjectAssetKi
   return true
 })
 
+ipcMain.handle(
+  'project:scripts:open-editor',
+  async (_, projectPath: string, resourcePath: string, scriptKind: ProjectScriptKind) => {
+    const scriptName = getProjectScriptDisplayName(basename(resourcePath))
+    const searchParams = new URLSearchParams({
+      projectPath,
+      resourcePath,
+      scriptKind
+    })
+
+    createChildWindow(`/script-editor?${searchParams.toString()}`, {
+      width: 1440,
+      height: 900,
+      title: `${PROJECT_SCRIPT_LABELS[scriptKind]} - ${scriptName}`,
+      interceptClose: true
+    })
+
+    return true
+  }
+)
+
 ipcMain.handle('project:assets:load', async (_, projectPath: string, assetPath: string) => {
   return loadProjectAssetFile(projectPath, assetPath)
 })
@@ -474,6 +597,84 @@ ipcMain.handle('project:assets:save', async (_, projectPath: string, assetPath: 
   })
 
   return payload
+})
+
+ipcMain.handle(
+  'project:scripts:create',
+  async (_, projectPath: string, scriptKind: ProjectScriptKind, resourceName?: string) => {
+    try {
+      return await createProjectScriptResource(projectPath, scriptKind, resourceName)
+    } catch (error) {
+      throw new Error(getProjectResourceErrorMessage(error, 'create'))
+    }
+  }
+)
+
+ipcMain.handle(
+  'project:scripts:load',
+  async (_, projectPath: string, resourcePath: string, scriptKind: ProjectScriptKind) => {
+    return loadProjectScriptResource(projectPath, resourcePath, scriptKind)
+  }
+)
+
+ipcMain.handle(
+  'project:scripts:save',
+  async (
+    _,
+    projectPath: string,
+    resourcePath: string,
+    scriptKind: ProjectScriptKind,
+    editableSourceContent: string,
+    headerContent: string
+  ) => {
+    return saveProjectScriptResource(
+      projectPath,
+      resourcePath,
+      scriptKind,
+      editableSourceContent,
+      headerContent
+    )
+  }
+)
+
+ipcMain.handle(
+  'project:scripts:list',
+  async (_, projectPath: string, scriptKind?: ProjectScriptKind) => {
+    const scripts = await listProjectScriptResources(projectPath, scriptKind)
+    return scripts.map((script) => ({
+      path: script.path,
+      name: script.name,
+      scriptKind: script.scriptKind
+    }))
+  }
+)
+
+ipcMain.handle(
+  'project:scripts:list-callback-candidates',
+  async (_, projectPath: string, scriptKind?: ProjectScriptKind) => {
+    const scripts = await listProjectScriptResources(projectPath, scriptKind)
+    return listProjectScriptCallbackCandidates(projectPath, scripts)
+  }
+)
+
+ipcMain.handle('project:code:copy-engine-core', async (_, projectPath: string) => {
+  return copyBundledEngineCore(projectPath)
+})
+
+ipcMain.handle('project:code:read-max-collision-callbacks', async (_, projectPath: string) => {
+  return readMaxCollisionCallbacks(projectPath)
+})
+
+ipcMain.handle('project:code:generate-resource-files', async (_, projectPath: string) => {
+  return generateProjectResourceFiles(projectPath)
+})
+
+ipcMain.handle('project:code:symbol-index', async (_, projectPath: string) => {
+  return getProjectCodeSymbolIndex(projectPath)
+})
+
+ipcMain.handle('project:code:workspace-snapshot', async (_, projectPath: string) => {
+  return getProjectCodeWorkspaceSnapshot(projectPath)
 })
 
 ipcMain.handle('editor:confirm-close', async (event) => {

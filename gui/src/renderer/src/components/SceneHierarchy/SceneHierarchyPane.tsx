@@ -4,8 +4,7 @@ import {
   RetroActorIcon,
   RetroCollisionIcon,
   RetroFolderIcon,
-  RetroTilemapIcon,
-  RetroWindowIcon
+  RetroSceneIcon
 } from '../Docking/ResourceIcons'
 import { getCommandShortcutLabelPrefix, isEditableElementTarget } from '../utils/keyboardShortcuts'
 import type { SceneAssetNode } from '../../../../shared/projectAssets'
@@ -21,8 +20,6 @@ interface SceneHierarchyPaneProps {
   isSaving: boolean
   statusMessage?: string | null
   onSave: () => void
-  onRequestTilemapLoad: () => void
-  onRequestWindowLoad: () => void
   onRequestActorLoad: (parentId: string | null) => void
   onSaveActorResource: (nodeId: string) => void
 }
@@ -50,8 +47,6 @@ export const SceneHierarchyPane = ({
   isSaving,
   statusMessage,
   onSave,
-  onRequestTilemapLoad,
-  onRequestWindowLoad,
   onRequestActorLoad,
   onSaveActorResource
 }: SceneHierarchyPaneProps): ReactElement => {
@@ -146,12 +141,6 @@ export const SceneHierarchyPane = ({
         label: 'Load...',
         children: [
           {
-            id: 'scene-load-tilemap',
-            label: 'Tilemap',
-            disabled: !editor.canEdit || Boolean(editor.editingNode),
-            onSelect: onRequestTilemapLoad
-          },
-          {
             id: 'scene-load-actor',
             label: 'Actor',
             disabled: !editor.canEdit || Boolean(editor.editingNode),
@@ -167,7 +156,7 @@ export const SceneHierarchyPane = ({
         onSelect: () => editor.pasteNodes(null)
       }
     ]
-  }, [editor, onRequestActorLoad, onRequestTilemapLoad, shortcutLabels.paste])
+  }, [editor, onRequestActorLoad, shortcutLabels.paste])
 
   const footerStatus = editor.canEdit
     ? (statusMessage ?? (isDirty ? 'Unsaved changes.' : 'No unsaved changes.'))
@@ -383,62 +372,56 @@ export const SceneHierarchyPane = ({
           paneRef.current?.focus()
         }}
       >
-        <div className="scene-hierarchy-pane__scene-chip" aria-hidden="true">
-          <div className="scene-hierarchy-pane__scene-chip-copy">
-            <RetroTilemapIcon className="scene-hierarchy-pane__scene-chip-icon" />
-            <span>
-              {editor.tilemapPath ? editor.tilemapPath.split('/').pop() : 'No tilemap loaded'}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            className="scene-hierarchy-pane__scene-chip-action"
-            onClick={() => {
-              onRequestTilemapLoad()
-            }}
-            disabled={!editor.canEdit || Boolean(editor.editingNode)}
-          >
-            Load...
-          </button>
-        </div>
-
-        <div className="scene-hierarchy-pane__scene-chip" aria-hidden="true">
-          <div className="scene-hierarchy-pane__scene-chip-copy">
-            <RetroWindowIcon className="scene-hierarchy-pane__scene-chip-icon" />
-            <span>
-              {editor.windowPath ? editor.windowPath.split('/').pop() : 'No window loaded'}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            className="scene-hierarchy-pane__scene-chip-action"
-            onClick={() => {
-              onRequestWindowLoad()
-            }}
-            disabled={!editor.canEdit || Boolean(editor.editingNode)}
-          >
-            Load...
-          </button>
-        </div>
-
         <div
           className="scene-hierarchy-pane__tree"
           role="tree"
           onPointerDown={(event) => {
-            if (event.target === event.currentTarget) {
+            if (editor.canEdit && event.target === event.currentTarget) {
               editor.selectNode(null)
             }
           }}
           onContextMenuCapture={(event) => {
-            if (event.target === event.currentTarget) {
+            if (editor.canEdit && event.target === event.currentTarget) {
               editor.selectNode(null)
               paneRef.current?.focus()
             }
           }}
         >
-          {editor.nodes.map((node) => renderNode(node, 0))}
+          {editor.canEdit ? (
+            <>
+              <div className="scene-hierarchy-pane__row">
+                <span className="scene-hierarchy-pane__toggle-placeholder" aria-hidden="true" />
+                <button
+                  type="button"
+                  className={buildClassName(
+                    'scene-hierarchy-pane__node',
+                    editor.selectedNodeId === null ? 'scene-hierarchy-pane__node--selected' : ''
+                  )}
+                  role="treeitem"
+                  aria-expanded={true}
+                  onClick={() => {
+                    editor.selectNode(null)
+                    paneRef.current?.focus()
+                  }}
+                  onContextMenuCapture={() => {
+                    editor.selectNode(null)
+                    paneRef.current?.focus()
+                  }}
+                >
+                  <RetroSceneIcon className="scene-hierarchy-pane__icon" />
+                  <span className="scene-hierarchy-pane__label">{sceneLabel ?? 'Scene'}</span>
+                </button>
+              </div>
+
+              <div className="scene-hierarchy-pane__children" role="group">
+                {editor.nodes.map((node) => renderNode(node, 1))}
+              </div>
+            </>
+          ) : (
+            <div className="scene-hierarchy-pane__empty">
+              Open a scene to edit its hierarchy.
+            </div>
+          )}
         </div>
 
         <div className="scene-hierarchy-pane__footer">

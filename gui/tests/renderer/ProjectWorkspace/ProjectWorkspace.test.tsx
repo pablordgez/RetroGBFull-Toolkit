@@ -685,6 +685,152 @@ describe('<ProjectWorkspace />', () => {
     expect(screen.queryByText('Sprites HD')).not.toBeInTheDocument()
   })
 
+  it('sanitizes rename conflict errors and automatically reverts to the previous name', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        { type: 'folder', id: 'folder-1', name: 'Sprites', path: 'Sprites', parentPath: null }
+      ]
+    })
+    vi.mocked(window.api.renameProjectResource)
+      .mockRejectedValueOnce(
+        new Error(
+          `Error invoking remote method 'project:resources:rename': Error: A resource named "Actors" already exists elsewhere in the project.`
+        )
+      )
+      .mockResolvedValueOnce({
+        resourceType: 'folder',
+        resourcePath: 'Sprites',
+        resourceName: 'Sprites',
+        parentPath: '',
+        view: {
+          projectName: 'Alpha',
+          projectPath: '/projects/Alpha',
+          currentPath: '',
+          parentPath: null,
+          items: [
+            { type: 'folder', id: 'folder-1', name: 'Sprites', path: 'Sprites', parentPath: null }
+          ]
+        }
+      })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    const folderLabel = await screen.findByText('Sprites')
+    fireEvent.contextMenu(folderLabel, { clientX: 120, clientY: 160 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
+
+    const renameInput = await screen.findByLabelText('Folder name for Sprites')
+    fireEvent.change(renameInput, { target: { value: 'Actors' } })
+    fireEvent.keyDown(renameInput, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(window.api.renameProjectResource).toHaveBeenNthCalledWith(
+        1,
+        '/projects/Alpha',
+        'folder',
+        'Sprites',
+        'Actors'
+      )
+      expect(window.api.renameProjectResource).toHaveBeenNthCalledWith(
+        2,
+        '/projects/Alpha',
+        'folder',
+        'Sprites',
+        'Sprites'
+      )
+    })
+    expect(
+      await screen.findByText('That name is already in use. Reverted to "Sprites".')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Error invoking remote method/i)).not.toBeInTheDocument()
+  })
+
+  it('uses an incremented fallback name when reverting the previous name still conflicts', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        { type: 'folder', id: 'folder-1', name: 'Sprites', path: 'Sprites', parentPath: null }
+      ]
+    })
+    vi.mocked(window.api.renameProjectResource)
+      .mockRejectedValueOnce(
+        new Error('A resource named "Actors" already exists elsewhere in the project.')
+      )
+      .mockRejectedValueOnce(
+        new Error('A resource named "Sprites" already exists elsewhere in the project.')
+      )
+      .mockResolvedValueOnce({
+        resourceType: 'folder',
+        resourcePath: 'Sprites 2',
+        resourceName: 'Sprites 2',
+        parentPath: '',
+        view: {
+          projectName: 'Alpha',
+          projectPath: '/projects/Alpha',
+          currentPath: '',
+          parentPath: null,
+          items: [
+            {
+              type: 'folder',
+              id: 'folder-1',
+              name: 'Sprites 2',
+              path: 'Sprites 2',
+              parentPath: null
+            }
+          ]
+        }
+      })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    const folderLabel = await screen.findByText('Sprites')
+    fireEvent.contextMenu(folderLabel, { clientX: 120, clientY: 160 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
+
+    const renameInput = await screen.findByLabelText('Folder name for Sprites')
+    fireEvent.change(renameInput, { target: { value: 'Actors' } })
+    fireEvent.blur(renameInput)
+
+    await waitFor(() => {
+      expect(window.api.renameProjectResource).toHaveBeenNthCalledWith(
+        1,
+        '/projects/Alpha',
+        'folder',
+        'Sprites',
+        'Actors'
+      )
+      expect(window.api.renameProjectResource).toHaveBeenNthCalledWith(
+        2,
+        '/projects/Alpha',
+        'folder',
+        'Sprites',
+        'Sprites'
+      )
+      expect(window.api.renameProjectResource).toHaveBeenNthCalledWith(
+        3,
+        '/projects/Alpha',
+        'folder',
+        'Sprites',
+        'Sprites 2'
+      )
+    })
+    expect(
+      await screen.findByText('That name is already in use. Renamed to "Sprites 2" instead.')
+    ).toBeInTheDocument()
+    expect(await screen.findByText('Sprites 2')).toBeInTheDocument()
+  })
+
   it('shows copy, cut, and paste entries with shortcuts in the asset context menu', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
@@ -1217,16 +1363,16 @@ describe('<ProjectWorkspace />', () => {
       )
     })
     expect(
-      within(screen.getByTestId('project-workspace-scene-sidebar')).getByText(
-        'Overworld.rgbtilemap.json'
-      )
+      within(screen.getByTestId('project-workspace-scene-inspector')).getByText('Overworld')
     ).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
 
     await waitFor(() => {
       expect(
-        within(screen.getByTestId('project-workspace-scene-sidebar')).getByText('No tilemap loaded')
+        within(screen.getByTestId('project-workspace-scene-inspector')).getByText(
+          'No tilemap selected'
+        )
       ).toBeInTheDocument()
     })
 
@@ -1234,9 +1380,7 @@ describe('<ProjectWorkspace />', () => {
 
     await waitFor(() => {
       expect(
-        within(screen.getByTestId('project-workspace-scene-sidebar')).getByText(
-          'Overworld.rgbtilemap.json'
-        )
+        within(screen.getByTestId('project-workspace-scene-inspector')).getByText('Overworld')
       ).toBeInTheDocument()
     })
   })
@@ -1338,14 +1482,16 @@ describe('<ProjectWorkspace />', () => {
       )
     })
     expect(
-      within(screen.getByTestId('project-workspace-scene-sidebar')).getByText('HUD.rgbwindow.json')
+      within(screen.getByTestId('project-workspace-scene-inspector')).getByText('HUD')
     ).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
 
     await waitFor(() => {
       expect(
-        within(screen.getByTestId('project-workspace-scene-sidebar')).getByText('No window loaded')
+        within(screen.getByTestId('project-workspace-scene-inspector')).getByText(
+          'No window selected'
+        )
       ).toBeInTheDocument()
     })
 
@@ -1353,9 +1499,7 @@ describe('<ProjectWorkspace />', () => {
 
     await waitFor(() => {
       expect(
-        within(screen.getByTestId('project-workspace-scene-sidebar')).getByText(
-          'HUD.rgbwindow.json'
-        )
+        within(screen.getByTestId('project-workspace-scene-inspector')).getByText('HUD')
       ).toBeInTheDocument()
     })
   })
@@ -1475,9 +1619,7 @@ describe('<ProjectWorkspace />', () => {
 
     await waitFor(() => {
       expect(
-        within(screen.getByTestId('project-workspace-scene-sidebar')).getByText(
-          'Overworld.rgbtilemap.json'
-        )
+        within(screen.getByTestId('project-workspace-scene-inspector')).getByText('Overworld')
       ).toBeInTheDocument()
     })
 
@@ -1494,8 +1636,16 @@ describe('<ProjectWorkspace />', () => {
 
     await waitFor(() => {
       expect(
-        within(screen.getByTestId('project-workspace-scene-sidebar')).getByText(
-          'HUD.rgbwindow.json'
+        within(screen.getByTestId('project-workspace-scene-inspector')).getByText('HUD')
+      ).toBeInTheDocument()
+    })
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('project-workspace-scene-inspector')).getByText(
+          'No window selected'
         )
       ).toBeInTheDocument()
     })
@@ -1504,15 +1654,9 @@ describe('<ProjectWorkspace />', () => {
 
     await waitFor(() => {
       expect(
-        within(screen.getByTestId('project-workspace-scene-sidebar')).getByText('No window loaded')
-      ).toBeInTheDocument()
-    })
-
-    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
-
-    await waitFor(() => {
-      expect(
-        within(screen.getByTestId('project-workspace-scene-sidebar')).getByText('No tilemap loaded')
+        within(screen.getByTestId('project-workspace-scene-inspector')).getByText(
+          'No tilemap selected'
+        )
       ).toBeInTheDocument()
     })
   })

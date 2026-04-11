@@ -1,10 +1,8 @@
-import type { ProjectAssetKind } from '../../../../shared/projectAssets'
-
-export type TrackableProjectResourceKind = 'folder' | ProjectAssetKind
+import type { ProjectTrackableResourceKind } from '../../../../shared/projectResourceModels'
 
 export interface ResourceMutationEvent {
   action: 'create' | 'rename' | 'delete' | 'move' | 'copy' | 'restore'
-  resourceType: TrackableProjectResourceKind
+  resourceType: ProjectTrackableResourceKind
   resourcePath: string
   previousResourcePath?: string
 }

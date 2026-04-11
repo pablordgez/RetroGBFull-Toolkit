@@ -11,6 +11,7 @@ import {
 import {
   createProjectFolder,
   createProjectResource,
+  createProjectScriptResource,
   deleteProjectResource,
   deleteProjectFolder,
   finalizeDeletedProjectResource,
@@ -27,6 +28,7 @@ import {
   createDefaultProjectAssetDocument,
   serializeProjectAssetDocument
 } from '../../src/shared/projectAssets'
+import { loadProjectScriptResource } from '../../src/main/projectCode'
 
 const tempDirectories: string[] = []
 
@@ -82,7 +84,9 @@ describe('project resource helpers', () => {
 
     expect(createdFolder.folderPath).toBe('New Folder')
     expect(renamedFolder.folderPath).toBe('Audio')
-    expect(renamedFolder.view.items.some((item) => item.type === 'folder' && item.name === 'Audio')).toBe(true)
+    expect(
+      renamedFolder.view.items.some((item) => item.type === 'folder' && item.name === 'Audio')
+    ).toBe(true)
     expect(deletedFolder.view.items).toEqual([])
     expect(projectFileContents.resources.items).toEqual([])
   })
@@ -92,9 +96,21 @@ describe('project resource helpers', () => {
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
 
     const createdFolder = await createProjectResource(project.path, 'folder', '', 'Scripts')
-    const renamedFolder = await renameProjectResource(project.path, 'folder', createdFolder.resourcePath, 'Logic')
-    const deletedFolder = await deleteProjectResource(project.path, 'folder', renamedFolder.resourcePath)
-    const restoredFolder = await restoreDeletedProjectResource(project.path, deletedFolder.deletionId)
+    const renamedFolder = await renameProjectResource(
+      project.path,
+      'folder',
+      createdFolder.resourcePath,
+      'Logic'
+    )
+    const deletedFolder = await deleteProjectResource(
+      project.path,
+      'folder',
+      renamedFolder.resourcePath
+    )
+    const restoredFolder = await restoreDeletedProjectResource(
+      project.path,
+      deletedFolder.deletionId
+    )
     await finalizeDeletedProjectResource(project.path, deletedFolder.deletionId)
     const finalView = await listProjectResources(project.path)
 
@@ -111,13 +127,23 @@ describe('project resource helpers', () => {
     const assetKinds: ProjectAssetKind[] = ['sprite', 'tileset', 'tilemap', 'window']
 
     for (const assetKind of assetKinds) {
-      const createdAsset = await createProjectResource(project.path, assetKind, '', `Demo ${assetKind}`)
-      const createdFilePath = join(project.path, `Demo ${assetKind}${PROJECT_ASSET_EXTENSIONS[assetKind]}`)
+      const createdAsset = await createProjectResource(
+        project.path,
+        assetKind,
+        '',
+        `Demo ${assetKind}`
+      )
+      const createdFilePath = join(
+        project.path,
+        `Demo ${assetKind}${PROJECT_ASSET_EXTENSIONS[assetKind]}`
+      )
       const createdFile = await readFile(createdFilePath, 'utf-8')
 
       expect(createdAsset.resourceType).toBe(assetKind)
       expect(createdAsset.resourceName).toBe(`Demo ${assetKind}`)
-      expect(createdAsset.resourcePath).toBe(`Demo ${assetKind}${PROJECT_ASSET_EXTENSIONS[assetKind]}`)
+      expect(createdAsset.resourcePath).toBe(
+        `Demo ${assetKind}${PROJECT_ASSET_EXTENSIONS[assetKind]}`
+      )
       expect(createdFile).toContain(`"kind": "${assetKind}"`)
     }
 
@@ -157,6 +183,65 @@ describe('project resource helpers', () => {
     expect(reloadedSprite.document).toEqual(updatedSprite)
   })
 
+  it('auto-increments default asset names across folders when a global name is already used', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    await createProjectResource(project.path, 'folder', '', 'Sprites')
+    const rootSprite = await createProjectResource(project.path, 'sprite', '')
+    const nestedSprite = await createProjectResource(project.path, 'sprite', 'Sprites')
+
+    expect(rootSprite.resourceName).toBe('New Sprite')
+    expect(rootSprite.resourcePath).toBe(`New Sprite${PROJECT_ASSET_EXTENSIONS.sprite}`)
+    expect(nestedSprite.resourceName).toBe('New Sprite 2')
+    expect(nestedSprite.resourcePath).toBe(`Sprites/New Sprite 2${PROJECT_ASSET_EXTENSIONS.sprite}`)
+  })
+
+  it('auto-increments default script names across script kinds when a global script name is already used', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    const actorScript = await createProjectScriptResource(project.path, 'actor')
+    const generalScript = await createProjectScriptResource(project.path, 'general')
+    const sceneScript = await createProjectScriptResource(project.path, 'scene')
+
+    expect(actorScript.resourceName).toBe('New_Script')
+    expect(actorScript.resourcePath).toBe('src/CustomActors/New_Script.c')
+    expect(generalScript.resourceName).toBe('New_Script_2')
+    expect(generalScript.resourcePath).toBe('src/Scripts/New_Script_2.c')
+    expect(sceneScript.resourceName).toBe('New_Script_3')
+    expect(sceneScript.resourcePath).toBe('src/CustomScenes/New_Script_3.c')
+  })
+
+  it('keeps new general script source content empty after the managed preamble', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    const createdScript = await createProjectScriptResource(project.path, 'general', 'Shared')
+    const createdSource = await readFile(join(project.path, createdScript.resourcePath), 'utf-8')
+
+    expect(createdSource).toBe(
+      '#pragma bank 255\n#include "Shared.h"\n#include "Generated/ScriptEnvironment.h"\n\n'
+    )
+  })
+
+  it('loads preamble-only general scripts with an empty editable source body', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    const createdScript = await createProjectScriptResource(project.path, 'general', 'Shared')
+    const loadedScript = await loadProjectScriptResource(
+      project.path,
+      createdScript.resourcePath,
+      'general'
+    )
+
+    expect(loadedScript.editableSourceContent).toBe('')
+    expect(loadedScript.managedSourcePrefix).toBe(
+      '#pragma bank 255\n#include "Shared.h"\n#include "Generated/ScriptEnvironment.h"\n\n'
+    )
+  })
+
   it('copies assets with unique names and moves them into other folders', async () => {
     const workspaceDirectory = await createTempWorkspace()
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
@@ -187,8 +272,8 @@ describe('project resource helpers', () => {
       'move'
     )
 
-    expect(copiedAsset.resourcePath).toBe(`Sprites/Hero${PROJECT_ASSET_EXTENSIONS.sprite}`)
-    expect(duplicateAsset.resourcePath).toBe(`Sprites/Hero 2${PROJECT_ASSET_EXTENSIONS.sprite}`)
+    expect(copiedAsset.resourcePath).toBe(`Sprites/Hero 2${PROJECT_ASSET_EXTENSIONS.sprite}`)
+    expect(duplicateAsset.resourcePath).toBe(`Sprites/Hero 3${PROJECT_ASSET_EXTENSIONS.sprite}`)
     expect(movedAsset.resourcePath).toBe(`Archive/Hero${PROJECT_ASSET_EXTENSIONS.sprite}`)
 
     const rootView = await listProjectResources(project.path)
@@ -196,7 +281,7 @@ describe('project resource helpers', () => {
     const archiveView = await listProjectResources(project.path, 'Archive')
 
     expect(rootView.items.map((item) => item.name)).toEqual(['Archive', 'Sprites'])
-    expect(spritesView.items.map((item) => item.name)).toEqual(['Hero', 'Hero 2'])
+    expect(spritesView.items.map((item) => item.name)).toEqual(['Hero 2', 'Hero 3'])
     expect(archiveView.items.map((item) => item.name)).toEqual(['Hero'])
   })
 
@@ -327,7 +412,11 @@ describe('project resource helpers', () => {
       serializeProjectAssetDocument(createDefaultProjectAssetDocument('sprite')),
       'utf-8'
     )
-    await writeFile(join(project.path, 'Sprites', 'broken.rgbsprite.json'), '{ not valid json', 'utf-8')
+    await writeFile(
+      join(project.path, 'Sprites', 'broken.rgbsprite.json'),
+      '{ not valid json',
+      'utf-8'
+    )
 
     const scanResult = await scanProjectDirectory(project.path)
     const rootView = await listProjectResources(project.path)

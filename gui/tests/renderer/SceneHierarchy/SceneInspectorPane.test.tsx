@@ -1,7 +1,8 @@
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { SceneAssetDocument } from '../../../src/shared/projectAssets'
+import type { ProjectScriptCallbackCandidate } from '../../../src/shared/projectCodeWorkspace'
 import { SceneInspectorPane } from '../../../src/renderer/src/components/SceneHierarchy/SceneInspectorPane'
 import { useSceneDocumentEditor } from '../../../src/renderer/src/components/SceneHierarchy/useSceneDocumentEditor'
 
@@ -31,6 +32,7 @@ const createScene = (): SceneAssetDocument => ({
           width: 64,
           height: 32,
           isBlocking: true,
+          callbacks: [],
           children: []
         }
       ]
@@ -45,8 +47,30 @@ const createScene = (): SceneAssetDocument => ({
   ]
 })
 
+const collisionCallbackCandidates: ProjectScriptCallbackCandidate[] = [
+  {
+    scriptPath: 'src/Scripts/Shared.c',
+    scriptKind: 'general',
+    scriptName: 'Shared',
+    functionName: 'OnSharedCollision'
+  },
+  {
+    scriptPath: 'src/CustomActors/Hero.c',
+    scriptKind: 'actor',
+    scriptName: 'Hero',
+    functionName: 'OnHeroCollision'
+  },
+  {
+    scriptPath: 'src/CustomScenes/Room.c',
+    scriptKind: 'scene',
+    scriptName: 'Room',
+    functionName: 'OnRoomCollision'
+  }
+]
+
 const renderInspector = () => {
   const onRequestSpriteSelection = vi.fn()
+  const onRequestActorScriptSelection = vi.fn()
 
   const Harness = () => {
     const [scene, setScene] = React.useState(createScene())
@@ -66,7 +90,13 @@ const renderInspector = () => {
         <SceneInspectorPane
           editor={editor}
           tilemapSize={{ width: 20, height: 18 }}
+          collisionCallbackCandidates={collisionCallbackCandidates}
+          maxCollisionCallbacks={4}
+          onRequestActorScriptSelection={onRequestActorScriptSelection}
           onRequestSpriteSelection={onRequestSpriteSelection}
+          onSetCollisionCallbacks={(nodeId, callbacks) => {
+            editor.setCollisionCallbacks(nodeId, callbacks)
+          }}
         />
       </>
     )
@@ -75,19 +105,14 @@ const renderInspector = () => {
   render(<Harness />)
 
   return {
-    onRequestSpriteSelection
+    onRequestSpriteSelection,
+    onRequestActorScriptSelection
   }
 }
 
 describe('SceneInspectorPane', () => {
   it('shows folder metadata when a folder is selected', () => {
     renderInspector()
-
-    expect(
-      screen.getByText(
-        'Select an actor or collision in the hierarchy or scene view to edit its properties.'
-      )
-    ).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Folder' }))
 
@@ -97,7 +122,7 @@ describe('SceneInspectorPane', () => {
   })
 
   it('updates actor state, resets invalid drafts, and requests sprite selection', () => {
-    const { onRequestSpriteSelection } = renderInspector()
+    const { onRequestSpriteSelection, onRequestActorScriptSelection } = renderInspector()
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Hero' }))
 
@@ -106,6 +131,8 @@ describe('SceneInspectorPane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Sprite' }))
     expect(onRequestSpriteSelection).toHaveBeenCalledWith('hero-node')
+    fireEvent.click(screen.getByRole('button', { name: 'Select Actor Script' }))
+    expect(onRequestActorScriptSelection).toHaveBeenCalledWith('hero-node')
 
     const followCameraCheckbox = screen.getByLabelText('Follow camera')
     fireEvent.click(followCameraCheckbox)
@@ -139,5 +166,34 @@ describe('SceneInspectorPane', () => {
     fireEvent.change(xInput, { target: { value: '2' } })
     fireEvent.keyDown(xInput, { key: 'Enter' })
     expect(xInput).toHaveValue('2')
+  })
+
+  it('opens a callback dialog grouped by script and adds callbacks from actor or scene scripts', () => {
+    renderInspector()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Collision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Callback' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /Hero/i })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /Hero/i }))
+    fireEvent.click(within(dialog).getByRole('button', { name: /OnHeroCollision/i }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('OnHeroCollision')).toBeInTheDocument()
+    expect(screen.getByText('Hero.c')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Callback' }))
+    const secondDialog = screen.getByRole('dialog')
+    fireEvent.click(within(secondDialog).getByRole('button', { name: /Room/i }))
+    fireEvent.click(within(secondDialog).getByRole('button', { name: /OnRoomCollision/i }))
+
+    expect(screen.getByText('OnRoomCollision')).toBeInTheDocument()
+    expect(screen.getByText('Room.c')).toBeInTheDocument()
   })
 })
