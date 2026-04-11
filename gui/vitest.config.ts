@@ -30,7 +30,6 @@ export default defineConfig(mergeConfig(sharedConfig, {
         'src/renderer/src/components/ProjectAssets/EditorClosePrompt.tsx',
         'src/renderer/src/components/ScriptEditor/configureMonaco.ts',
         'src/renderer/src/components/ScriptEditor/scriptEditorRuntime.ts',
-        'src/renderer/src/components/ScriptEditor/clangd/**',
         'src/renderer/src/components/hooks/history/Command.ts',
         'src/renderer/src/components/hooks/viewport/useViewport.ts',
         // Will be tested later with integration tests

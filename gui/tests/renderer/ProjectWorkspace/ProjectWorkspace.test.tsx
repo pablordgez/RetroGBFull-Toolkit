@@ -54,6 +54,19 @@ const createMockDataTransfer = () => {
   }
 }
 
+const openResourceFromPane = async (name: string) => {
+  const resourcePane = screen.getByTestId('resource-management-pane')
+  const resourceLabel = await within(resourcePane).findByText(name)
+  const resourceButton = resourceLabel.closest('button')
+
+  if (!resourceButton) {
+    throw new Error(`Expected resource "${name}" to be rendered as a button.`)
+  }
+
+  fireEvent.doubleClick(resourceButton)
+  return resourcePane
+}
+
 describe('<ProjectWorkspace />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -1334,8 +1347,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const resourcePane = screen.getByTestId('resource-management-pane')
-    fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
+    const resourcePane = await openResourceFromPane('Room Scene')
 
     await screen.findByText('Load a tilemap to visualize the scene bounds.')
 
@@ -1453,8 +1465,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const resourcePane = screen.getByTestId('resource-management-pane')
-    fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
+    const resourcePane = await openResourceFromPane('Room Scene')
 
     await screen.findByText('Load a tilemap to visualize the scene bounds.')
 
@@ -1597,8 +1608,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const resourcePane = screen.getByTestId('resource-management-pane')
-    fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
+    const resourcePane = await openResourceFromPane('Room Scene')
 
     await screen.findByText('Load a tilemap to visualize the scene bounds.')
 
@@ -1745,8 +1755,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const resourcePane = screen.getByTestId('resource-management-pane')
-    fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
+    const resourcePane = await openResourceFromPane('Room Scene')
 
     await screen.findByText('Load a tilemap to visualize the scene bounds.')
 
@@ -1846,8 +1855,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const resourcePane = screen.getByTestId('resource-management-pane')
-    fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
+    const resourcePane = await openResourceFromPane('Room Scene')
 
     await screen.findByText('Hero')
     fireEvent.click(within(screen.getByTestId('project-workspace-scene-sidebar')).getByText('Hero'))
@@ -1913,8 +1921,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const resourcePane = screen.getByTestId('resource-management-pane')
-    fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
+    const resourcePane = await openResourceFromPane('Room Scene')
 
     await waitFor(() => {
       expect(document.querySelector('.scene-viewport__actor')).not.toBeNull()
@@ -2041,8 +2048,7 @@ describe('<ProjectWorkspace />', () => {
       { strictMode: true }
     )
 
-    const resourcePane = screen.getByTestId('resource-management-pane')
-    fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
+    const resourcePane = await openResourceFromPane('Room Scene')
 
     await waitFor(() => {
       expect(document.querySelector('.scene-viewport__actor')).not.toBeNull()
@@ -2245,8 +2251,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const resourcePane = screen.getByTestId('resource-management-pane')
-    fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
+    const resourcePane = await openResourceFromPane('Room Scene')
     await screen.findByText('Load a tilemap to visualize the scene bounds.')
     fireEvent.doubleClick(within(resourcePane).getByText('Actors').closest('button')!)
     await screen.findByText('/Actors')
@@ -2381,8 +2386,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const resourcePane = screen.getByTestId('resource-management-pane')
-    fireEvent.doubleClick(within(resourcePane).getByText('Room Scene').closest('button')!)
+    const resourcePane = await openResourceFromPane('Room Scene')
     await screen.findByText('Load a tilemap to visualize the scene bounds.')
     fireEvent.doubleClick(within(resourcePane).getByText('Archive').closest('button')!)
     await screen.findByText('/Archive')
