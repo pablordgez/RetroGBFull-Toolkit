@@ -4,7 +4,15 @@ import { useHistory } from '../hooks/history/useHistory'
 import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts'
 import { canDragProjectAsset, writeProjectAssetDragPayload } from '../ProjectAssets/projectAssetDrag'
 import { getCommandShortcutLabelPrefix, isEditableElementTarget } from '../utils/keyboardShortcuts'
-import { ProjectAssetKind, PROJECT_ASSET_LABELS } from '../../../../shared/projectAssets'
+import { PROJECT_ASSET_LABELS } from '../../../../shared/projectAssets'
+import { PROJECT_SCRIPT_LABELS, type ProjectScriptKind } from '../../../../shared/projectScripts'
+import type {
+  ProjectDeletedResourceResult,
+  ProjectResourceItem,
+  ProjectResourceKind,
+  ProjectResourceMutationResult,
+  ProjectResourceView
+} from '../../../../shared/projectResourceModels'
 import { type ResourceMutationEvent } from './projectResourceEvents'
 import {
   RetroActorIcon,
@@ -27,50 +35,18 @@ interface ResourceManagementPaneProps {
   onResourceMutation?: (event: ResourceMutationEvent) => void
 }
 
-interface ProjectResourceItem {
-  type: 'folder' | 'file'
-  name: string
-  fileName?: string
-  path: string
-  parentPath?: string | null
-  id?: string
-  extension?: string | null
-  resourceType?: ProjectAssetKind | null
-}
-
-interface ProjectResourceView {
-  projectName: string
-  projectPath: string
-  currentPath: string
-  parentPath: string | null
-  items: ProjectResourceItem[]
-}
-
-type ProjectResourceKind = 'folder' | ProjectAssetKind | 'script'
-
-interface ProjectResourceMutationResult {
-  view: ProjectResourceView
-  resourceType: ProjectResourceKind
-  resourcePath: string
-  resourceName: string
-  parentPath: string
-}
-
-interface ProjectDeletedResourceResult extends ProjectResourceMutationResult {
-  deletionId: string
-}
-
 interface EditingResourceState {
   path: string
   draftName: string
   originalName: string
-  resourceType: Exclude<ProjectResourceKind, 'script'>
+  resourceType: ProjectResourceKind
 }
 
 interface PendingDeleteResourceState {
   path: string
   name: string
-  resourceType: Exclude<ProjectResourceKind, 'script'>
+  resourceType: ProjectResourceKind
+  scriptKind?: ProjectScriptKind | null
 }
 
 type ResourceClipboardOperation = 'copy' | 'cut'
@@ -79,7 +55,7 @@ interface ResourceClipboardState {
   operation: ResourceClipboardOperation
   resourcePath: string
   resourceName: string
-  resourceType: Exclude<ProjectResourceKind, 'script'>
+  resourceType: ProjectResourceKind
   parentPath: string
 }
 
@@ -94,17 +70,60 @@ const formatLocationLabel = (currentPath: string): string => {
 }
 
 const formatFileBadge = (resource: ProjectResourceItem): string => {
-  return resource.extension ? resource.extension.toUpperCase() : 'FILE'
+  return resource.type === 'file' && resource.extension ? resource.extension.toUpperCase() : 'FILE'
 }
 
-const getResourceTypeLabel = (resourceType: Exclude<ProjectResourceKind, 'script'>): string => {
-  return resourceType === 'folder' ? 'Folder' : PROJECT_ASSET_LABELS[resourceType]
+const getResourceTypeLabel = (
+  resourceType: ProjectResourceKind,
+  scriptKind?: ProjectScriptKind | null
+): string => {
+  if (resourceType === 'folder') {
+    return 'Folder'
+  }
+
+  if (resourceType === 'script') {
+    return scriptKind ? PROJECT_SCRIPT_LABELS[scriptKind] : 'Script'
+  }
+
+  return PROJECT_ASSET_LABELS[resourceType]
 }
 
 const getParentResourcePath = (resourcePath: string): string => {
   const segments = resourcePath.split('/').filter((segment) => segment.length > 0)
   segments.pop()
   return segments.join('/')
+}
+
+const getFriendlyErrorMessage = (error: unknown, fallbackMessage: string): string => {
+  if (!(error instanceof Error)) {
+    return fallbackMessage
+  }
+
+  const electronInvokeErrorMatch = error.message.match(
+    /^Error invoking remote method '[^']+':(?: Error:)?\s*(.+)$/s
+  )
+
+  if (electronInvokeErrorMatch?.[1]) {
+    return electronInvokeErrorMatch[1].trim()
+  }
+
+  return error.message
+}
+
+const isResourceNameConflictMessage = (message: string): boolean => {
+  return message.toLowerCase().includes('already exists')
+}
+
+const getTrackedResourceKind = (resource: ProjectResourceItem): ProjectResourceKind | null => {
+  if (resource.type === 'folder') {
+    return 'folder'
+  }
+
+  if (resource.scriptKind) {
+    return 'script'
+  }
+
+  return resource.resourceType ?? null
 }
 
 const getResourceIcon = (resource: ProjectResourceItem): ReactElement => {
@@ -183,10 +202,10 @@ export const ResourceManagementPane = ({
         setStatusMessage(null)
         return { ok: true, errorMessage: null as string | null }
       } catch (error) {
-        const errorMessage =
-          error instanceof Error
-            ? error.message
-            : 'Something went wrong while loading project resources. Please try again.'
+        const errorMessage = getFriendlyErrorMessage(
+          error,
+          'Something went wrong while loading project resources. Please try again.'
+        )
 
         console.error('[resource-management-pane] getProjectResources failed', error)
         showErrorStatus(errorMessage)
@@ -284,7 +303,7 @@ export const ResourceManagementPane = ({
   const beginResourceEditing = (
     resourcePath: string,
     resourceName: string,
-    resourceType: Exclude<ProjectResourceKind, 'script'>
+    resourceType: ProjectResourceKind
   ): void => {
     setSelectedResourcePath(resourcePath)
     setEditingResource({
@@ -367,8 +386,7 @@ export const ResourceManagementPane = ({
 
   const placeClipboardResource = useCallback(
     (resource: ProjectResourceItem, operation: ResourceClipboardOperation) => {
-      const resourceType: Exclude<ProjectResourceKind, 'script'> | null =
-        resource.type === 'folder' ? 'folder' : (resource.resourceType ?? null)
+      const resourceType = getTrackedResourceKind(resource)
 
       if (!resourceType || isInteractionDisabled) {
         return
@@ -432,7 +450,7 @@ export const ResourceManagementPane = ({
             applyResourceMutation(deletedResult)
             notifyResourceMutation({
               action: 'delete',
-              resourceType: result.resourceType as Exclude<ProjectResourceKind, 'script'>,
+              resourceType: result.resourceType,
               resourcePath: deletedResult.resourcePath
             })
           },
@@ -445,7 +463,7 @@ export const ResourceManagementPane = ({
               applyResourceMutation(restoredResult)
               notifyResourceMutation({
                 action: 'restore',
-                resourceType: restoredResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+                resourceType: restoredResult.resourceType,
                 resourcePath: restoredResult.resourcePath
               })
               return
@@ -461,7 +479,7 @@ export const ResourceManagementPane = ({
             applyResourceMutation(redoneResult)
             notifyResourceMutation({
               action: 'copy',
-              resourceType: redoneResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+              resourceType: redoneResult.resourceType,
               resourcePath: redoneResult.resourcePath,
               previousResourcePath: clipboardResource.resourcePath
             })
@@ -521,16 +539,17 @@ export const ResourceManagementPane = ({
       setSelectedResourcePath(result.resourcePath)
       notifyResourceMutation({
         action: clipboardResource.operation === 'copy' ? 'copy' : 'move',
-        resourceType: result.resourceType as Exclude<ProjectResourceKind, 'script'>,
+        resourceType: result.resourceType,
         resourcePath: result.resourcePath,
         previousResourcePath: clipboardResource.resourcePath
       })
     } catch (error) {
       console.error('[resource-management-pane] transferProjectResource failed', error)
       showErrorStatus(
-        error instanceof Error
-          ? error.message
-          : 'Something went wrong while pasting the resource. Please try again.'
+        getFriendlyErrorMessage(
+          error,
+          'Something went wrong while pasting the resource. Please try again.'
+        )
       )
     } finally {
       setIsBusy(false)
@@ -623,9 +642,10 @@ export const ResourceManagementPane = ({
     try {
       const previousPath = editingResource.path
       const previousName = editingResource.originalName
+      const resourceType = editingResource.resourceType
       const result = await window.api.renameProjectResource(
         projectPath,
-        editingResource.resourceType,
+        resourceType,
         previousPath,
         trimmedName
       )
@@ -634,14 +654,14 @@ export const ResourceManagementPane = ({
         undo: async () => {
           const revertedResult = await window.api.renameProjectResource(
             projectPath,
-            editingResource.resourceType,
+            resourceType,
             result.resourcePath,
             previousName
           )
           applyResourceMutation(revertedResult)
           notifyResourceMutation({
             action: 'rename',
-            resourceType: editingResource.resourceType,
+            resourceType,
             resourcePath: revertedResult.resourcePath,
             previousResourcePath: result.resourcePath
           })
@@ -649,14 +669,14 @@ export const ResourceManagementPane = ({
         redo: async () => {
           const redoneResult = await window.api.renameProjectResource(
             projectPath,
-            editingResource.resourceType,
+            resourceType,
             previousPath,
             trimmedName
           )
           applyResourceMutation(redoneResult)
           notifyResourceMutation({
             action: 'rename',
-            resourceType: editingResource.resourceType,
+            resourceType,
             resourcePath: redoneResult.resourcePath,
             previousResourcePath: previousPath
           })
@@ -669,17 +689,75 @@ export const ResourceManagementPane = ({
       paneRef.current?.focus()
       notifyResourceMutation({
         action: 'rename',
-        resourceType: editingResource.resourceType,
+        resourceType,
         resourcePath: result.resourcePath,
         previousResourcePath: previousPath
       })
     } catch (error) {
-      console.error('[resource-management-pane] renameProjectResource failed', error)
-      showErrorStatus(
-        error instanceof Error
-          ? error.message
-          : 'Something went wrong while renaming the resource. Please try again.'
+      const errorMessage = getFriendlyErrorMessage(
+        error,
+        'Something went wrong while renaming the resource. Please try again.'
       )
+      console.error('[resource-management-pane] renameProjectResource failed', error)
+
+      if (isResourceNameConflictMessage(errorMessage)) {
+        const previousPath = editingResource.path
+        const previousName = editingResource.originalName
+        const resourceType = editingResource.resourceType
+
+        let fallbackSuffix = 1
+
+        while (fallbackSuffix < 500) {
+          const fallbackName =
+            fallbackSuffix === 1 ? previousName : `${previousName} ${fallbackSuffix}`
+
+          try {
+            const fallbackResult = await window.api.renameProjectResource(
+              projectPath,
+              resourceType,
+              previousPath,
+              fallbackName
+            )
+
+            applyResourceMutation(fallbackResult)
+            setSelectedResourcePath(fallbackResult.resourcePath)
+            setEditingResource(null)
+            paneRef.current?.focus()
+
+            if (fallbackResult.resourcePath !== previousPath) {
+              notifyResourceMutation({
+                action: 'rename',
+                resourceType,
+                resourcePath: fallbackResult.resourcePath,
+                previousResourcePath: previousPath
+              })
+              showInfoStatus(
+                `That name is already in use. Renamed to "${fallbackResult.resourceName}" instead.`
+              )
+            } else {
+              showErrorStatus(
+                `That name is already in use. Reverted to "${fallbackResult.resourceName}".`
+              )
+            }
+
+            return
+          } catch (fallbackError) {
+            const fallbackErrorMessage = getFriendlyErrorMessage(
+              fallbackError,
+              'Something went wrong while renaming the resource. Please try again.'
+            )
+
+            if (!isResourceNameConflictMessage(fallbackErrorMessage)) {
+              showErrorStatus(fallbackErrorMessage)
+              return
+            }
+          }
+
+          fallbackSuffix += 1
+        }
+      }
+
+      showErrorStatus(errorMessage)
     } finally {
       isCommittingRenameRef.current = false
       setIsBusy(false)
@@ -714,7 +792,7 @@ export const ResourceManagementPane = ({
             applyResourceMutation(deletedResult)
             notifyResourceMutation({
               action: 'delete',
-              resourceType: result.resourceType as Exclude<ProjectResourceKind, 'script'>,
+              resourceType: result.resourceType,
               resourcePath: deletedResult.resourcePath
             })
           },
@@ -727,7 +805,7 @@ export const ResourceManagementPane = ({
               applyResourceMutation(restoredResult)
               notifyResourceMutation({
                 action: 'restore',
-                resourceType: restoredResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+                resourceType: restoredResult.resourceType,
                 resourcePath: restoredResult.resourcePath
               })
               return
@@ -742,7 +820,7 @@ export const ResourceManagementPane = ({
             applyResourceMutation(recreatedResult)
             notifyResourceMutation({
               action: 'create',
-              resourceType: recreatedResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+              resourceType: recreatedResult.resourceType,
               resourcePath: recreatedResult.resourcePath
             })
           },
@@ -759,26 +837,114 @@ export const ResourceManagementPane = ({
         setSelectedResourcePath(result.resourcePath)
         notifyResourceMutation({
           action: 'create',
-          resourceType: result.resourceType as Exclude<ProjectResourceKind, 'script'>,
+          resourceType: result.resourceType,
           resourcePath: result.resourcePath
         })
         beginResourceEditing(
           result.resourcePath,
           result.resourceName,
-          result.resourceType as Exclude<ProjectResourceKind, 'script'>
+          result.resourceType
         )
       } catch (error) {
         console.error('[resource-management-pane] createProjectResource failed', error)
         showErrorStatus(
-          error instanceof Error
-            ? error.message
-            : 'Something went wrong while creating the resource. Please try again.'
+          getFriendlyErrorMessage(
+            error,
+            'Something went wrong while creating the resource. Please try again.'
+          )
         )
       } finally {
         setIsBusy(false)
       }
     },
     [notifyResourceMutation, projectPath, record, resourceView?.currentPath]
+  )
+
+  const handleCreateScriptResource = useCallback(
+    async (scriptKind: ProjectScriptKind) => {
+      if (!projectPath) {
+        return
+      }
+
+      setIsBusy(true)
+
+      try {
+        const result = await window.api.createProjectScriptResource(projectPath, scriptKind)
+        let deletionId: string | null = null
+
+        record({
+          undo: async () => {
+            const deletedResult = await window.api.deleteProjectResource(
+              projectPath,
+              'script',
+              result.resourcePath,
+              deletionId ?? undefined
+            )
+            deletionId = deletedResult.deletionId
+            applyResourceMutation(deletedResult)
+            notifyResourceMutation({
+              action: 'delete',
+              resourceType: deletedResult.resourceType,
+              resourcePath: deletedResult.resourcePath
+            })
+          },
+          redo: async () => {
+            if (deletionId) {
+              const restoredResult = await window.api.restoreDeletedProjectResource(
+                projectPath,
+                deletionId
+              )
+              applyResourceMutation(restoredResult)
+              notifyResourceMutation({
+                action: 'restore',
+                resourceType: restoredResult.resourceType,
+                resourcePath: restoredResult.resourcePath
+              })
+              return
+            }
+
+            const recreatedResult = await window.api.createProjectScriptResource(
+              projectPath,
+              scriptKind,
+              result.resourceName
+            )
+            applyResourceMutation(recreatedResult)
+            notifyResourceMutation({
+              action: 'create',
+              resourceType: recreatedResult.resourceType,
+              resourcePath: recreatedResult.resourcePath
+            })
+          },
+          dispose: async () => {
+            if (!deletionId) {
+              return
+            }
+
+            await window.api.finalizeDeletedProjectResource(projectPath, deletionId)
+          }
+        })
+
+        applyResourceMutation(result)
+        setSelectedResourcePath(result.resourcePath)
+        notifyResourceMutation({
+          action: 'create',
+          resourceType: result.resourceType,
+          resourcePath: result.resourcePath
+        })
+        beginResourceEditing(result.resourcePath, result.resourceName, result.resourceType)
+      } catch (error) {
+        console.error('[resource-management-pane] createProjectScriptResource failed', error)
+        showErrorStatus(
+          getFriendlyErrorMessage(
+            error,
+            'Something went wrong while creating the script. Please try again.'
+          )
+        )
+      } finally {
+        setIsBusy(false)
+      }
+    },
+    [beginResourceEditing, notifyResourceMutation, projectPath, record]
   )
 
   const handleDeleteResource = useCallback(async () => {
@@ -804,7 +970,7 @@ export const ResourceManagementPane = ({
           applyResourceMutation(restoredResult)
           notifyResourceMutation({
             action: 'restore',
-            resourceType: restoredResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+            resourceType: restoredResult.resourceType,
             resourcePath: restoredResult.resourcePath
           })
         },
@@ -818,7 +984,7 @@ export const ResourceManagementPane = ({
           applyResourceMutation(redoneResult)
           notifyResourceMutation({
             action: 'delete',
-            resourceType: deletedResult.resourceType as Exclude<ProjectResourceKind, 'script'>,
+            resourceType: deletedResult.resourceType,
             resourcePath: redoneResult.resourcePath
           })
         },
@@ -840,9 +1006,10 @@ export const ResourceManagementPane = ({
     } catch (error) {
       console.error('[resource-management-pane] deleteProjectResource failed', error)
       showErrorStatus(
-        error instanceof Error
-          ? error.message
-          : 'Something went wrong while deleting the resource. Please try again.'
+        getFriendlyErrorMessage(
+          error,
+          'Something went wrong while deleting the resource. Please try again.'
+        )
       )
     } finally {
       setIsBusy(false)
@@ -880,6 +1047,11 @@ export const ResourceManagementPane = ({
           return
         }
 
+        if (resource.scriptKind) {
+          await window.api.openProjectScriptEditor(projectPath, resource.path, resource.scriptKind)
+          return
+        }
+
         if (resource.resourceType) {
           await window.api.openProjectAssetEditor(resource.resourceType, projectPath, resource.path)
         }
@@ -887,9 +1059,10 @@ export const ResourceManagementPane = ({
         console.error('[resource-management-pane] open resource failed', error)
         await loadResources(currentResourcePath)
         showErrorStatus(
-          error instanceof Error
-            ? error.message
-            : 'Something went wrong while opening the resource. Please try again.'
+          getFriendlyErrorMessage(
+            error,
+            'Something went wrong while opening the resource. Please try again.'
+          )
         )
       }
     },
@@ -938,7 +1111,31 @@ export const ResourceManagementPane = ({
             disabled: !projectPath || isInteractionDisabled,
             onSelect: () => void handleCreateResource('scene')
           },
-          { id: 'new-script', label: 'Script', disabled: true }
+          {
+            id: 'new-script',
+            label: 'Script',
+            disabled: !projectPath || isInteractionDisabled,
+            children: [
+              {
+                id: 'new-script-actor',
+                label: PROJECT_SCRIPT_LABELS.actor,
+                disabled: !projectPath || isInteractionDisabled,
+                onSelect: () => void handleCreateScriptResource('actor')
+              },
+              {
+                id: 'new-script-scene',
+                label: PROJECT_SCRIPT_LABELS.scene,
+                disabled: !projectPath || isInteractionDisabled,
+                onSelect: () => void handleCreateScriptResource('scene')
+              },
+              {
+                id: 'new-script-general',
+                label: PROJECT_SCRIPT_LABELS.general,
+                disabled: !projectPath || isInteractionDisabled,
+                onSelect: () => void handleCreateScriptResource('general')
+              }
+            ]
+          }
         ]
       },
       {
@@ -952,6 +1149,7 @@ export const ResourceManagementPane = ({
   }, [
     canPasteClipboardResource,
     handleCreateResource,
+    handleCreateScriptResource,
     handlePasteClipboardResource,
     isInteractionDisabled,
     projectPath,
@@ -1003,8 +1201,7 @@ export const ResourceManagementPane = ({
 
           <div className="resource-management-pane__grid" role="list">
             {resourceView?.items.map((resource) => {
-              const resourceType: Exclude<ProjectResourceKind, 'script'> | null =
-                resource.type === 'folder' ? 'folder' : (resource.resourceType ?? null)
+              const resourceType = getTrackedResourceKind(resource)
               const isEditing = editingResource?.path === resource.path
               const isSelected = selectedResourcePath === resource.path
               const isPendingCut =
@@ -1050,7 +1247,8 @@ export const ResourceManagementPane = ({
                       setPendingDeleteResource({
                         path: resource.path,
                         name: resource.name,
-                        resourceType
+                        resourceType,
+                        scriptKind: resource.type === 'file' ? resource.scriptKind ?? null : null
                       })
                     }
                   }
@@ -1078,7 +1276,7 @@ export const ResourceManagementPane = ({
                         <input
                           ref={renameInputRef}
                           type="text"
-                          aria-label={`${getResourceTypeLabel(resourceType)} name for ${resource.name}`}
+                          aria-label={`${getResourceTypeLabel(resourceType, resource.type === 'file' ? resource.scriptKind : null)} name for ${resource.name}`}
                           value={editingResource?.draftName ?? ''}
                           onChange={(event) => {
                             const nextName = event.target.value
@@ -1176,7 +1374,10 @@ export const ResourceManagementPane = ({
               <h2>Delete &quot;{pendingDeleteResource.name}&quot;?</h2>
               <p className="resource-management-pane__modal-copy">
                 This action cannot be reversed and will remove everything inside that{' '}
-                {getResourceTypeLabel(pendingDeleteResource.resourceType).toLowerCase()}.
+                {getResourceTypeLabel(
+                  pendingDeleteResource.resourceType,
+                  pendingDeleteResource.scriptKind
+                ).toLowerCase()}.
               </p>
 
               <div className="resource-management-pane__modal-actions">

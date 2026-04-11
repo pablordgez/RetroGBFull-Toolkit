@@ -1,5 +1,6 @@
 import { mkdir, readFile, stat, writeFile } from 'fs/promises';
 import { basename, dirname, join, resolve } from 'path';
+import { copyBundledEngineCore } from './projectCode';
 
 export interface RecentProject {
     name: string;
@@ -209,6 +210,7 @@ export const createProjectStructure = async (parentDirectory: string, projectNam
 
     await mkdir(targetDirectory, { recursive: false });
     await writeFile(projectFilePath, buildProjectFileContents(trimmedName), 'utf-8');
+    await copyBundledEngineCore(targetDirectory);
 
     return {
         name: trimmedName,

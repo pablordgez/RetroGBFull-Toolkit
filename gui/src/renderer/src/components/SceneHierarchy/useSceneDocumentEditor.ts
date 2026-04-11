@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { useHistory } from '../hooks/history/useHistory'
 import type {
   SceneAssetActorNode,
+  SceneAssetCollisionCallback,
   SceneAssetCollisionNode,
   SceneAssetDocument,
   SceneAssetNode
@@ -53,6 +54,7 @@ export interface SceneDocumentEditor {
   canUndo: boolean
   canRedo: boolean
   nodes: SceneAssetNode[]
+  scriptPath: string | null
   tilemapPath: string | null
   windowPath: string | null
   selectedNodeId: string | null
@@ -77,8 +79,9 @@ export interface SceneDocumentEditor {
   pasteNodes: (targetParentId: string | null) => void
   updateActor: (
     nodeId: string,
-    nextValues: Partial<Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath'>>
+    nextValues: Partial<Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath' | 'scriptPath'>>
   ) => void
+  setSceneScriptPath: (nextScriptPath: string | null) => void
   setActorResourcePath: (nodeId: string, resourcePath: string | null) => void
   setFollowedActor: (nodeId: string | null) => void
   updateCollision: (
@@ -87,6 +90,7 @@ export interface SceneDocumentEditor {
       Pick<SceneAssetCollisionNode, 'x' | 'y' | 'width' | 'height' | 'isBlocking'>
     >
   ) => void
+  setCollisionCallbacks: (nodeId: string, callbacks: SceneAssetCollisionCallback[]) => void
   clampActorsToMap: (mapSize: SceneMapSize | null) => void
   setTilemapPath: (nextTilemapPath: string | null, nextTilemapSize?: SceneMapSize) => void
   setWindowPath: (nextWindowPath: string | null) => void
@@ -105,6 +109,7 @@ export const useSceneDocumentEditor = ({
 }: UseSceneDocumentEditorOptions): SceneDocumentEditor => {
   const initialSceneSnapshot = cloneSceneDocumentSnapshot(
     scene ?? {
+      scriptPath: null,
       tilemapPath: null,
       windowPath: null,
       nodes: []
@@ -130,6 +135,7 @@ export const useSceneDocumentEditor = ({
 
       onSceneChange({
         ...scene,
+        scriptPath: clonedSnapshot.scriptPath,
         tilemapPath: clonedSnapshot.tilemapPath,
         windowPath: clonedSnapshot.windowPath,
         nodes: clonedSnapshot.nodes
@@ -141,6 +147,7 @@ export const useSceneDocumentEditor = ({
   const applyHistoryState = useCallback(
     (nextState: SceneHierarchyHistoryState) => {
       publishDocumentSnapshot({
+        scriptPath: nextState.scriptPath,
         tilemapPath: nextState.tilemapPath,
         windowPath: nextState.windowPath,
         nodes: nextState.nodes
@@ -155,6 +162,10 @@ export const useSceneDocumentEditor = ({
   const captureHistoryState = useCallback(
     (nextValues?: Partial<SceneHierarchyHistoryState>): SceneHierarchyHistoryState => {
       return {
+        scriptPath:
+          nextValues && 'scriptPath' in nextValues
+            ? (nextValues.scriptPath ?? null)
+            : documentSnapshot.scriptPath,
         tilemapPath:
           nextValues && 'tilemapPath' in nextValues
             ? (nextValues.tilemapPath ?? null)
@@ -175,6 +186,7 @@ export const useSceneDocumentEditor = ({
     [
       clipboard,
       documentSnapshot.nodes,
+      documentSnapshot.scriptPath,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
       selectedNodeId
@@ -418,6 +430,7 @@ export const useSceneDocumentEditor = ({
       }
 
       publishDocumentSnapshot({
+        scriptPath: documentSnapshot.scriptPath,
         tilemapPath: documentSnapshot.tilemapPath,
         windowPath: documentSnapshot.windowPath,
         nodes: updateSceneNodeById(documentSnapshot.nodes, nodeId, (node) => ({
@@ -428,6 +441,7 @@ export const useSceneDocumentEditor = ({
     },
     [
       documentSnapshot.nodes,
+      documentSnapshot.scriptPath,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
       publishDocumentSnapshot,
@@ -582,7 +596,10 @@ export const useSceneDocumentEditor = ({
   ])
 
   const updateActor = useCallback(
-    (nodeId: string, nextValues: Partial<Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath'>>) => {
+    (
+      nodeId: string,
+      nextValues: Partial<Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath' | 'scriptPath'>>
+    ) => {
       if (!scene || editingNode) {
         return
       }
@@ -601,7 +618,8 @@ export const useSceneDocumentEditor = ({
       if (
         nextActor.x === actor.x &&
         nextActor.y === actor.y &&
-        nextActor.spritePath === actor.spritePath
+        nextActor.spritePath === actor.spritePath &&
+        nextActor.scriptPath === actor.scriptPath
       ) {
         return
       }
@@ -622,6 +640,7 @@ export const useSceneDocumentEditor = ({
         return {
           ...(translatedNode as SceneAssetActorNode),
           spritePath: nextActor.spritePath,
+          scriptPath: nextActor.scriptPath,
           followCamera: nextActor.followCamera
         }
       })
@@ -635,6 +654,28 @@ export const useSceneDocumentEditor = ({
       applyHistoryState,
       captureHistoryState,
       documentSnapshot.nodes,
+      editingNode,
+      recordHistoryTransition,
+      scene
+    ]
+  )
+
+  const setSceneScriptPath = useCallback(
+    (nextScriptPath: string | null) => {
+      if (!scene || editingNode || nextScriptPath === documentSnapshot.scriptPath) {
+        return
+      }
+
+      const previousState = captureHistoryState()
+      const nextState = captureHistoryState({ scriptPath: nextScriptPath })
+
+      applyHistoryState(nextState)
+      recordHistoryTransition(previousState, nextState)
+    },
+    [
+      applyHistoryState,
+      captureHistoryState,
+      documentSnapshot.scriptPath,
       editingNode,
       recordHistoryTransition,
       scene
@@ -717,6 +758,7 @@ export const useSceneDocumentEditor = ({
       }
 
       publishDocumentSnapshot({
+        scriptPath: documentSnapshot.scriptPath,
         tilemapPath: documentSnapshot.tilemapPath,
         windowPath: documentSnapshot.windowPath,
         nodes: updateSceneNodeById(documentSnapshot.nodes, nodeId, (node) =>
@@ -731,6 +773,7 @@ export const useSceneDocumentEditor = ({
     },
     [
       documentSnapshot.nodes,
+      documentSnapshot.scriptPath,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
       publishDocumentSnapshot,
@@ -801,6 +844,58 @@ export const useSceneDocumentEditor = ({
     ]
   )
 
+  const setCollisionCallbacks = useCallback(
+    (nodeId: string, callbacks: SceneAssetCollisionCallback[]) => {
+      if (!scene || editingNode) {
+        return
+      }
+
+      const collision = findSceneNodeById(documentSnapshot.nodes, nodeId)
+
+      if (!collision || !isSceneCollisionNode(collision)) {
+        return
+      }
+
+      const nextCallbacks = callbacks.map((callback) => ({ ...callback }))
+      const didChange =
+        nextCallbacks.length !== collision.callbacks.length ||
+        nextCallbacks.some((callback, index) => {
+          const currentCallback = collision.callbacks[index]
+          return (
+            !currentCallback ||
+            currentCallback.scriptPath !== callback.scriptPath ||
+            currentCallback.functionName !== callback.functionName
+          )
+        })
+
+      if (!didChange) {
+        return
+      }
+
+      const nextNodes = updateSceneNodeById(documentSnapshot.nodes, nodeId, (node) =>
+        isSceneCollisionNode(node)
+          ? {
+              ...node,
+              callbacks: nextCallbacks
+            }
+          : node
+      )
+      const previousState = captureHistoryState()
+      const nextState = captureHistoryState({ nodes: nextNodes, selectedNodeId: nodeId })
+
+      applyHistoryState(nextState)
+      recordHistoryTransition(previousState, nextState)
+    },
+    [
+      applyHistoryState,
+      captureHistoryState,
+      documentSnapshot.nodes,
+      editingNode,
+      recordHistoryTransition,
+      scene
+    ]
+  )
+
   const clampActorsToMap = useCallback(
     (mapSize: SceneMapSize | null) => {
       if (!scene || !mapSize) {
@@ -815,6 +910,7 @@ export const useSceneDocumentEditor = ({
       }
 
       publishDocumentSnapshot({
+        scriptPath: documentSnapshot.scriptPath,
         tilemapPath: documentSnapshot.tilemapPath,
         windowPath: documentSnapshot.windowPath,
         nodes: clampedNodes
@@ -823,6 +919,7 @@ export const useSceneDocumentEditor = ({
     [
       clampNodesToMap,
       documentSnapshot.nodes,
+      documentSnapshot.scriptPath,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
       publishDocumentSnapshot,
@@ -954,6 +1051,7 @@ export const useSceneDocumentEditor = ({
     canUndo,
     canRedo,
     nodes: documentSnapshot.nodes,
+    scriptPath: documentSnapshot.scriptPath,
     tilemapPath: documentSnapshot.tilemapPath,
     windowPath: documentSnapshot.windowPath,
     selectedNodeId,
@@ -977,9 +1075,11 @@ export const useSceneDocumentEditor = ({
     canPasteTo,
     pasteNodes,
     updateActor,
+    setSceneScriptPath,
     setActorResourcePath,
     setFollowedActor,
     updateCollision,
+    setCollisionCallbacks,
     clampActorsToMap,
     setTilemapPath,
     setWindowPath,

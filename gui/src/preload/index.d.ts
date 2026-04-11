@@ -1,5 +1,24 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
+import type {
+  CopyEngineCoreResult,
+  GenerateProjectResourceFilesResult,
+  ProjectCodeSymbolIndex,
+  ProjectCodeWorkspaceSnapshot,
+  ProjectScriptCallbackCandidate,
+  ProjectScriptResourcePayload,
+  ProjectScriptSavePayload
+} from '../shared/projectCodeWorkspace'
+import type {
+  ProjectDeletedResourceResult,
+  ProjectDirectoryScanResult,
+  ProjectResourceKind,
+  ProjectResourceMutationResult,
+  ProjectScriptResourceListItem,
+  ProjectResourceTransferMode,
+  ProjectResourceView
+} from '../shared/projectResourceModels'
+import type { ProjectScriptKind } from '../shared/projectScripts'
 
 interface RecentProject {
   name: string
@@ -14,40 +33,6 @@ interface ProjectActionResponse {
   project?: RecentProject
 }
 
-interface ProjectResourceItem {
-  type: 'folder' | 'file'
-  name: string
-  fileName?: string
-  path: string
-  parentPath?: string | null
-  id?: string
-  extension?: string | null
-  resourceType?: ProjectAssetKind | null
-}
-
-interface ProjectResourceView {
-  projectName: string
-  projectPath: string
-  currentPath: string
-  parentPath: string | null
-  items: ProjectResourceItem[]
-}
-
-type ProjectResourceKind = 'folder' | ProjectAssetKind | 'script'
-type ProjectResourceTransferMode = 'copy' | 'move'
-
-interface ProjectResourceMutationResult {
-  view: ProjectResourceView
-  resourceType: ProjectResourceKind
-  resourcePath: string
-  resourceName: string
-  parentPath: string
-}
-
-interface ProjectDeletedResourceResult extends ProjectResourceMutationResult {
-  deletionId: string
-}
-
 interface ProjectAssetFilePayload {
   assetKind: ProjectAssetKind
   resourcePath: string
@@ -60,16 +45,16 @@ interface ProjectAssetSavedEventPayload {
   assetKind: ProjectAssetKind
 }
 
-interface ProjectDirectoryScanResult {
-  trackedCount: number
-  removedCount: number
-}
-
 declare global {
   interface Window {
     electron: ElectronAPI
     api: {
       openSpriteEditorWindow: () => void
+      openProjectScriptEditor: (
+        projectPath: string,
+        resourcePath: string,
+        scriptKind: ProjectScriptKind
+      ) => Promise<boolean>
       openProjectAssetEditor: (
         assetType: ProjectAssetKind,
         projectPath: string,
@@ -88,6 +73,31 @@ declare global {
         assetPath: string,
         document: ProjectAssetDocument
       ) => Promise<ProjectAssetFilePayload>
+      createProjectScriptResource: (
+        projectPath: string,
+        scriptKind: ProjectScriptKind,
+        resourceName?: string
+      ) => Promise<ProjectResourceMutationResult>
+      loadProjectScriptResource: (
+        projectPath: string,
+        resourcePath: string,
+        scriptKind: ProjectScriptKind
+      ) => Promise<ProjectScriptResourcePayload>
+      saveProjectScriptResource: (
+        projectPath: string,
+        resourcePath: string,
+        scriptKind: ProjectScriptKind,
+        editableSourceContent: string,
+        headerContent: string
+      ) => Promise<ProjectScriptSavePayload>
+      listProjectScriptResources: (
+        projectPath: string,
+        scriptKind?: ProjectScriptKind
+      ) => Promise<ProjectScriptResourceListItem[]>
+      listProjectScriptCallbackCandidates: (
+        projectPath: string,
+        scriptKind?: ProjectScriptKind
+      ) => Promise<ProjectScriptCallbackCandidate[]>
       getProjectResources: (projectPath: string, currentPath?: string) => Promise<ProjectResourceView>
       createProjectResource: (
         projectPath: string,
@@ -115,6 +125,11 @@ declare global {
         mode?: ProjectResourceTransferMode
       ) => Promise<ProjectResourceMutationResult>
       scanProjectDirectory: (projectPath: string) => Promise<ProjectDirectoryScanResult>
+      copyProjectEngineCore: (projectPath: string) => Promise<CopyEngineCoreResult>
+      readMaxCollisionCallbacks: (projectPath: string) => Promise<number>
+      generateProjectResourceFiles: (projectPath: string) => Promise<GenerateProjectResourceFilesResult>
+      getProjectCodeSymbolIndex: (projectPath: string) => Promise<ProjectCodeSymbolIndex>
+      getProjectCodeWorkspaceSnapshot: (projectPath: string) => Promise<ProjectCodeWorkspaceSnapshot>
       restoreDeletedProjectResource: (
         projectPath: string,
         deletionId: string

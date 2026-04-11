@@ -5,7 +5,11 @@ import {
   serializeProjectAssetDocument
 } from '../../../../shared/projectAssets'
 import type { ResourceMutationEvent } from '../Docking/projectResourceEvents'
-import { isSceneActorNode, mapSceneNodes } from '../SceneHierarchy/sceneHierarchyModel'
+import {
+  isSceneActorNode,
+  isSceneCollisionNode,
+  mapSceneNodes
+} from '../SceneHierarchy/sceneHierarchyModel'
 
 interface UseSceneWorkspaceSessionOptions {
   projectPath: string
@@ -256,20 +260,39 @@ export const useSceneWorkspaceSession = ({
 
       const nextTilemapPath = remapReferencedAssetPath(activeSceneDocument.tilemapPath, event)
       const nextWindowPath = remapReferencedAssetPath(activeSceneDocument.windowPath, event)
+      const nextScriptPath = remapReferencedAssetPath(activeSceneDocument.scriptPath, event)
       const nextNodes = mapSceneNodes(activeSceneDocument.nodes, (node) => {
-        if (!isSceneActorNode(node)) {
-          return node
+        if (isSceneActorNode(node)) {
+          return {
+            ...node,
+            resourcePath: remapReferencedAssetPath(node.resourcePath ?? null, event) ?? undefined,
+            spritePath: remapReferencedAssetPath(node.spritePath, event),
+            scriptPath: remapReferencedAssetPath(node.scriptPath ?? null, event)
+          }
         }
 
-        return {
-          ...node,
-          resourcePath:
-            remapReferencedAssetPath(node.resourcePath ?? null, event) ?? undefined,
-          spritePath: remapReferencedAssetPath(node.spritePath, event)
+        if (isSceneCollisionNode(node)) {
+          return {
+            ...node,
+            callbacks: node.callbacks.flatMap((callback) => {
+              const nextCallbackScriptPath = remapReferencedAssetPath(callback.scriptPath, event)
+              return nextCallbackScriptPath
+                ? [
+                    {
+                      ...callback,
+                      scriptPath: nextCallbackScriptPath
+                    }
+                  ]
+                : []
+            })
+          }
         }
+
+        return node
       })
 
       const sceneReferencesChanged =
+        nextScriptPath !== activeSceneDocument.scriptPath ||
         nextTilemapPath !== activeSceneDocument.tilemapPath ||
         nextWindowPath !== activeSceneDocument.windowPath ||
         nextNodes.some((node, index) => node !== activeSceneDocument.nodes[index])
@@ -280,6 +303,7 @@ export const useSceneWorkspaceSession = ({
 
       setActiveSceneDocument({
         ...activeSceneDocument,
+        scriptPath: nextScriptPath,
         tilemapPath: nextTilemapPath,
         windowPath: nextWindowPath,
         nodes: nextNodes

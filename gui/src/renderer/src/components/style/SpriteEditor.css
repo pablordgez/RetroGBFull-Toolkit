@@ -167,6 +167,25 @@ button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #8bac0f; 
     line-height: 1.4;
 }
 
+.editor-modal-search {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.editor-modal-search span {
+    font-size: 0.86em;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.editor-modal-search input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
 .editor-modal-actions {
     display: flex;
     justify-content: flex-end;

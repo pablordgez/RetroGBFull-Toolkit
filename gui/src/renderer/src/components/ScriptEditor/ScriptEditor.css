@@ -1,0 +1,142 @@
+.script-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #d7e0c1;
+  color: #0f380f;
+}
+
+.script-editor__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 2px solid #0f380f;
+  background: #c4bebb;
+}
+
+.script-editor__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.script-editor__summary strong,
+.script-editor__summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.script-editor__summary span {
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.script-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.script-editor__status {
+  padding: 10px 16px;
+  border-bottom: 2px solid #0f380f;
+  font-size: 0.95rem;
+}
+
+.script-editor__status--info {
+  background: #9bbc0f;
+}
+
+.script-editor__status--error {
+  background: #c47a7a;
+  color: #fff7d6;
+}
+
+.script-editor__empty {
+  padding: 24px;
+}
+
+.script-editor__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.script-editor__sidebar {
+  width: 240px;
+  border-right: 2px solid #0f380f;
+  background: #c4bebb;
+  overflow: auto;
+}
+
+.script-editor__tabs {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 8px;
+}
+
+.script-editor__tab {
+  width: 100%;
+  text-align: left;
+}
+
+.script-editor__tab--active {
+  background: #8bac0f;
+  color: #0f380f;
+  font-weight: 700;
+}
+
+.script-editor__preamble {
+  margin: 0 12px 12px;
+  border: 2px solid #0f380f;
+  background: #d7e0c1;
+}
+
+.script-editor__preamble summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  font-weight: 700;
+}
+
+.script-editor__preamble-copy {
+  margin: 0;
+  padding: 0 10px 8px;
+  font-size: 0.9rem;
+}
+
+.script-editor__preamble pre {
+  margin: 0;
+  padding: 0 10px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+}
+
+.script-editor__editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.script-editor__editor .monaco-editor,
+.script-editor__editor .overflow-guard {
+  border-radius: 0;
+}
+
+@media (max-width: 900px) {
+  .script-editor__body {
+    flex-direction: column;
+  }
+
+  .script-editor__sidebar {
+    width: auto;
+    border-right: 0;
+    border-bottom: 2px solid #0f380f;
+  }
+}

@@ -1,6 +1,25 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
+import type {
+  CopyEngineCoreResult,
+  GenerateProjectResourceFilesResult,
+  ProjectCodeSymbolIndex,
+  ProjectCodeWorkspaceSnapshot,
+  ProjectScriptCallbackCandidate,
+  ProjectScriptResourcePayload,
+  ProjectScriptSavePayload
+} from '../shared/projectCodeWorkspace'
+import type {
+  ProjectDeletedResourceResult,
+  ProjectDirectoryScanResult,
+  ProjectResourceKind,
+  ProjectResourceMutationResult,
+  ProjectScriptResourceListItem,
+  ProjectResourceTransferMode,
+  ProjectResourceView
+} from '../shared/projectResourceModels'
+import type { ProjectScriptKind } from '../shared/projectScripts'
 
 interface RecentProject {
   name: string
@@ -15,40 +34,6 @@ interface ProjectActionResponse {
   project?: RecentProject
 }
 
-interface ProjectResourceItem {
-  type: 'folder' | 'file'
-  name: string
-  fileName?: string
-  path: string
-  parentPath?: string | null
-  id?: string
-  extension?: string | null
-  resourceType?: ProjectAssetKind | null
-}
-
-interface ProjectResourceView {
-  projectName: string
-  projectPath: string
-  currentPath: string
-  parentPath: string | null
-  items: ProjectResourceItem[]
-}
-
-type ProjectResourceKind = 'folder' | ProjectAssetKind | 'script'
-type ProjectResourceTransferMode = 'copy' | 'move'
-
-interface ProjectResourceMutationResult {
-  view: ProjectResourceView
-  resourceType: ProjectResourceKind
-  resourcePath: string
-  resourceName: string
-  parentPath: string
-}
-
-interface ProjectDeletedResourceResult extends ProjectResourceMutationResult {
-  deletionId: string
-}
-
 interface ProjectAssetFilePayload {
   assetKind: ProjectAssetKind
   resourcePath: string
@@ -61,16 +46,22 @@ interface ProjectAssetSavedEventPayload {
   assetKind: ProjectAssetKind
 }
 
-interface ProjectDirectoryScanResult {
-  trackedCount: number
-  removedCount: number
-}
-
 // Custom APIs for renderer
 const api = {
   openSpriteEditorWindow: () => ipcRenderer.send('open-sprite-editor-window'),
   openProjectAssetEditor: (assetType: ProjectAssetKind, projectPath: string, assetPath: string) =>
     ipcRenderer.invoke('project:assets:open-editor', assetType, projectPath, assetPath) as Promise<boolean>,
+  openProjectScriptEditor: (
+    projectPath: string,
+    resourcePath: string,
+    scriptKind: ProjectScriptKind
+  ) =>
+    ipcRenderer.invoke(
+      'project:scripts:open-editor',
+      projectPath,
+      resourcePath,
+      scriptKind
+    ) as Promise<boolean>,
   pickProjectParentDirectory: () => ipcRenderer.invoke('project:pick-create-location') as Promise<string | null>,
   createProject: (parentDirectory: string, projectName: string) =>
     ipcRenderer.invoke('project:create', parentDirectory, projectName) as Promise<ProjectActionResponse>,
@@ -85,6 +76,55 @@ const api = {
     ipcRenderer.invoke('project:assets:load', projectPath, assetPath) as Promise<ProjectAssetFilePayload>,
   saveProjectAssetFile: (projectPath: string, assetPath: string, document: ProjectAssetDocument) =>
     ipcRenderer.invoke('project:assets:save', projectPath, assetPath, document) as Promise<ProjectAssetFilePayload>,
+  createProjectScriptResource: (
+    projectPath: string,
+    scriptKind: ProjectScriptKind,
+    resourceName?: string
+  ) =>
+    ipcRenderer.invoke(
+      'project:scripts:create',
+      projectPath,
+      scriptKind,
+      resourceName
+    ) as Promise<ProjectResourceMutationResult>,
+  loadProjectScriptResource: (
+    projectPath: string,
+    resourcePath: string,
+    scriptKind: ProjectScriptKind
+  ) =>
+    ipcRenderer.invoke(
+      'project:scripts:load',
+      projectPath,
+      resourcePath,
+      scriptKind
+    ) as Promise<ProjectScriptResourcePayload>,
+  saveProjectScriptResource: (
+    projectPath: string,
+    resourcePath: string,
+    scriptKind: ProjectScriptKind,
+    editableSourceContent: string,
+    headerContent: string
+  ) =>
+    ipcRenderer.invoke(
+      'project:scripts:save',
+      projectPath,
+      resourcePath,
+      scriptKind,
+      editableSourceContent,
+      headerContent
+    ) as Promise<ProjectScriptSavePayload>,
+  listProjectScriptResources: (projectPath: string, scriptKind?: ProjectScriptKind) =>
+    ipcRenderer.invoke(
+      'project:scripts:list',
+      projectPath,
+      scriptKind
+    ) as Promise<ProjectScriptResourceListItem[]>,
+  listProjectScriptCallbackCandidates: (projectPath: string, scriptKind?: ProjectScriptKind) =>
+    ipcRenderer.invoke(
+      'project:scripts:list-callback-candidates',
+      projectPath,
+      scriptKind
+    ) as Promise<ProjectScriptCallbackCandidate[]>,
   getProjectResources: (projectPath: string, currentPath = '') =>
     ipcRenderer.invoke('project:resources:list', projectPath, currentPath) as Promise<ProjectResourceView>,
   createProjectResource: (
@@ -143,6 +183,22 @@ const api = {
     ) as Promise<ProjectResourceMutationResult>,
   scanProjectDirectory: (projectPath: string) =>
     ipcRenderer.invoke('project:resources:scan', projectPath) as Promise<ProjectDirectoryScanResult>,
+  copyProjectEngineCore: (projectPath: string) =>
+    ipcRenderer.invoke('project:code:copy-engine-core', projectPath) as Promise<CopyEngineCoreResult>,
+  readMaxCollisionCallbacks: (projectPath: string) =>
+    ipcRenderer.invoke('project:code:read-max-collision-callbacks', projectPath) as Promise<number>,
+  generateProjectResourceFiles: (projectPath: string) =>
+    ipcRenderer.invoke(
+      'project:code:generate-resource-files',
+      projectPath
+    ) as Promise<GenerateProjectResourceFilesResult>,
+  getProjectCodeSymbolIndex: (projectPath: string) =>
+    ipcRenderer.invoke('project:code:symbol-index', projectPath) as Promise<ProjectCodeSymbolIndex>,
+  getProjectCodeWorkspaceSnapshot: (projectPath: string) =>
+    ipcRenderer.invoke(
+      'project:code:workspace-snapshot',
+      projectPath
+    ) as Promise<ProjectCodeWorkspaceSnapshot>,
   restoreDeletedProjectResource: (projectPath: string, deletionId: string) =>
     ipcRenderer.invoke(
       'project:resources:restore-deleted',

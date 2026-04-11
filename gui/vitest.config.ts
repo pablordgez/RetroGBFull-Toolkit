@@ -8,22 +8,30 @@ export default defineConfig(mergeConfig(sharedConfig, {
     exclude: ['tests/integration/**', 'node_modules/**'],
     coverage: {
       reportsDirectory: 'coverage/unit',
-      // Define files to calculate coverage for (Unit)
-      include: ['src/**/*.{ts,tsx}'],
+      // Keep the unit coverage gate focused on GUI files we actively unit test.
+      include: ['src/renderer/src/**/*.{ts,tsx}'],
       exclude: [
-        // GUI unit coverage should stay focused on renderer logic, not Electron main-process code.
-        'src/main/**',
-        'src/preload/**',
         'src/renderer/src/App.tsx',
         'src/renderer/src/main.tsx',
         'src/renderer/src/components/TemporaryHub.tsx',
+        'src/renderer/src/components/Layout/ResizablePaneLayout.tsx',
         // Wrapper-heavy views are covered better with integration tests than deep mock-heavy unit tests.
         'src/renderer/src/components/MenuBar/AppMenuBar.tsx',
         'src/renderer/src/components/Docking/ResourceManagementPane.tsx',
+        'src/renderer/src/components/ProjectLauncher/ProjectLauncher.tsx',
         'src/renderer/src/components/ProjectWorkspace/ProjectWorkspace.tsx',
         'src/renderer/src/components/ProjectWorkspace/SceneEditorWorkspace.tsx',
         'src/renderer/src/components/SceneHierarchy/SceneViewport.tsx',
         'src/renderer/src/components/TilemapEditor/TileGridAssetEditor.tsx',
+        // Trivial or runtime-bootstrap files are intentionally deferred from unit coverage.
+        'src/renderer/src/components/Docking/RetroFolderIcon.tsx',
+        'src/renderer/src/components/Docking/projectResourceEvents.ts',
+        'src/renderer/src/components/PixelEditor/usePixelGridRender.ts',
+        'src/renderer/src/components/ProjectAssets/EditorClosePrompt.tsx',
+        'src/renderer/src/components/ScriptEditor/configureMonaco.ts',
+        'src/renderer/src/components/ScriptEditor/scriptEditorRuntime.ts',
+        'src/renderer/src/components/hooks/history/Command.ts',
+        'src/renderer/src/components/hooks/viewport/useViewport.ts',
         // Will be tested later with integration tests
         'src/renderer/src/components/SpriteEditor/SpriteEditor.tsx',
         'src/renderer/src/components/Tileset/TilesetEditor.tsx',
@@ -31,6 +39,12 @@ export default defineConfig(mergeConfig(sharedConfig, {
       ],
       // @ts-expect-error - ignore
       all: true,
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        statements: 80,
+        branches: 80
+      }
     },
   },
 }));

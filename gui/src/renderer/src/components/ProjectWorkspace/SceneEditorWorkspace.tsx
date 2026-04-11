@@ -5,12 +5,18 @@ import type {
   SceneAssetDocument,
   TilemapAssetDocument
 } from '../../../../shared/projectAssets'
+import type { ProjectScriptCallbackCandidate } from '../../../../shared/projectCodeWorkspace'
 import { ProjectAssetPickerModal } from '../ProjectAssets/ProjectAssetPickerModal'
+import { ProjectScriptPickerModal } from '../ProjectAssets/ProjectScriptPickerModal'
 import type { ProjectAssetDragPayload } from '../ProjectAssets/projectAssetDrag'
 import {
   listProjectAssetsByKind,
   type ProjectAssetOption
 } from '../ProjectAssets/projectAssetBrowser'
+import {
+  listProjectScriptsByKind,
+  type ProjectScriptOption
+} from '../ProjectAssets/projectScriptBrowser'
 import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts'
 import { ResizablePaneLayout } from '../Layout/ResizablePaneLayout'
 import { SceneHierarchyPane } from '../SceneHierarchy/SceneHierarchyPane'
@@ -50,6 +56,15 @@ type SceneAssetPickerState =
     }
   | {
       mode: 'sprite'
+      nodeId: string
+    }
+
+type SceneScriptPickerState =
+  | {
+      mode: 'scene-script'
+    }
+  | {
+      mode: 'actor-script'
       nodeId: string
     }
 
@@ -93,12 +108,27 @@ export const SceneEditorWorkspace = ({
   const [isPickerLoading, setIsPickerLoading] = useState(false)
   const [pickerErrorMessage, setPickerErrorMessage] = useState<string | null>(null)
   const [isPickerBusy, setIsPickerBusy] = useState(false)
+  const [scriptPickerState, setScriptPickerState] = useState<SceneScriptPickerState | null>(null)
+  const [scriptPickerOptions, setScriptPickerOptions] = useState<ProjectScriptOption[]>([])
+  const [isScriptPickerLoading, setIsScriptPickerLoading] = useState(false)
+  const [scriptPickerErrorMessage, setScriptPickerErrorMessage] = useState<string | null>(null)
+  const [isScriptPickerBusy, setIsScriptPickerBusy] = useState(false)
   const [pendingActorSaveChoice, setPendingActorSaveChoice] = useState<{
     nodeId: string
     actorName: string
     existingResourcePath: string
   } | null>(null)
   const [isActorSaveBusy, setIsActorSaveBusy] = useState(false)
+  const [sceneScriptOptions, setSceneScriptOptions] = useState<ProjectScriptOption[]>([])
+  const [actorScriptOptions, setActorScriptOptions] = useState<ProjectScriptOption[]>([])
+  const [collisionCallbackCandidates, setCollisionCallbackCandidates] = useState<
+    ProjectScriptCallbackCandidate[]
+  >([])
+  const [isCollisionCallbackPickerLoading, setIsCollisionCallbackPickerLoading] = useState(false)
+  const [collisionCallbackPickerErrorMessage, setCollisionCallbackPickerErrorMessage] = useState<
+    string | null
+  >(null)
+  const [maxCollisionCallbacks, setMaxCollisionCallbacks] = useState(0)
 
   const focusWorkspace = useCallback(() => {
     workspaceRef.current?.focus()
@@ -108,7 +138,7 @@ export const SceneEditorWorkspace = ({
     () => editor.undo(),
     () => editor.redo(),
     {
-      enabled: editor.canEdit && pickerState === null,
+      enabled: editor.canEdit && pickerState === null && scriptPickerState === null,
       containerRef: workspaceRef,
       ignoreEditableTargets: true
     }
@@ -146,6 +176,7 @@ export const SceneEditorWorkspace = ({
 
   const openPicker = useCallback(
     (nextPickerState: SceneAssetPickerState) => {
+      setScriptPickerState(null)
       setPickerState(nextPickerState)
       void refreshPickerOptions(nextPickerState)
     },
@@ -158,6 +189,141 @@ export const SceneEditorWorkspace = ({
     setPickerErrorMessage(null)
     setIsPickerBusy(false)
   }, [])
+
+  const refreshScriptPickerOptions = useCallback(
+    async (nextScriptPickerState: SceneScriptPickerState) => {
+      setIsScriptPickerLoading(true)
+      setScriptPickerErrorMessage(null)
+
+      try {
+        const scriptKinds: ProjectScriptOption['kind'][] =
+          nextScriptPickerState.mode === 'scene-script' ? ['scene'] : ['actor']
+        const nextOptions = await listProjectScriptsByKind(projectPath, scriptKinds)
+        setScriptPickerOptions(nextOptions)
+
+        if (nextScriptPickerState.mode === 'scene-script') {
+          setSceneScriptOptions(nextOptions)
+        } else {
+          setActorScriptOptions(nextOptions)
+        }
+      } catch (error) {
+        console.error('[scene-editor] load script picker options failed', error)
+        setScriptPickerErrorMessage(
+          error instanceof Error
+            ? error.message
+            : 'Something went wrong while loading project scripts.'
+        )
+      } finally {
+        setIsScriptPickerLoading(false)
+      }
+    },
+    [projectPath]
+  )
+
+  const openScriptPicker = useCallback(
+    (nextScriptPickerState: SceneScriptPickerState) => {
+      setPickerState(null)
+      setScriptPickerState(nextScriptPickerState)
+      void refreshScriptPickerOptions(nextScriptPickerState)
+    },
+    [refreshScriptPickerOptions]
+  )
+
+  const closeScriptPicker = useCallback(() => {
+    setScriptPickerState(null)
+    setScriptPickerOptions([])
+    setScriptPickerErrorMessage(null)
+    setIsScriptPickerBusy(false)
+  }, [])
+
+  const refreshSceneScriptData = useCallback(async (): Promise<void> => {
+    if (!projectPath) {
+      setSceneScriptOptions([])
+      setActorScriptOptions([])
+      setCollisionCallbackCandidates([])
+      setCollisionCallbackPickerErrorMessage(null)
+      setMaxCollisionCallbacks(0)
+      return
+    }
+
+    setIsCollisionCallbackPickerLoading(true)
+    setCollisionCallbackPickerErrorMessage(null)
+
+    try {
+      const [
+        nextSceneScripts,
+        nextActorScripts,
+        generalCallbackCandidates,
+        actorCallbackCandidates,
+        sceneCallbackCandidates,
+        nextMaxCallbacks
+      ] = await Promise.all([
+        listProjectScriptsByKind(projectPath, ['scene']),
+        listProjectScriptsByKind(projectPath, ['actor']),
+        window.api.listProjectScriptCallbackCandidates(projectPath, 'general'),
+        window.api.listProjectScriptCallbackCandidates(projectPath, 'actor'),
+        window.api.listProjectScriptCallbackCandidates(projectPath, 'scene'),
+        window.api.readMaxCollisionCallbacks(projectPath)
+      ])
+
+      const nextCollisionCallbackCandidates = [
+        ...generalCallbackCandidates,
+        ...actorCallbackCandidates,
+        ...sceneCallbackCandidates
+      ].sort((left, right) => {
+        if (left.scriptPath !== right.scriptPath) {
+          return left.scriptPath.localeCompare(right.scriptPath)
+        }
+
+        return left.functionName.localeCompare(right.functionName)
+      })
+
+      setSceneScriptOptions(nextSceneScripts)
+      setActorScriptOptions(nextActorScripts)
+      setCollisionCallbackCandidates(nextCollisionCallbackCandidates)
+      setMaxCollisionCallbacks(nextMaxCallbacks)
+    } catch (error) {
+      console.error('[scene-editor] load script data failed', error)
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Something went wrong while loading script resources.'
+
+      setCollisionCallbackPickerErrorMessage(message)
+      onStatus('error', message)
+    } finally {
+      setIsCollisionCallbackPickerLoading(false)
+    }
+  }, [onStatus, projectPath])
+
+  const handleSelectScript = useCallback(
+    async (option: ProjectScriptOption | null) => {
+      if (!scriptPickerState) {
+        return
+      }
+
+      setIsScriptPickerBusy(true)
+
+      try {
+        if (scriptPickerState.mode === 'scene-script') {
+          editor.setSceneScriptPath(option?.path ?? null)
+        } else {
+          editor.updateActor(scriptPickerState.nodeId, { scriptPath: option?.path ?? null })
+        }
+
+        closeScriptPicker()
+        focusWorkspace()
+      } catch (error) {
+        console.error('[scene-editor] apply script picker selection failed', error)
+        setScriptPickerErrorMessage(
+          error instanceof Error ? error.message : 'Something went wrong while selecting the script.'
+        )
+      } finally {
+        setIsScriptPickerBusy(false)
+      }
+    },
+    [closeScriptPicker, editor, focusWorkspace, scriptPickerState]
+  )
 
   const handleSelectAsset = useCallback(
     async (option: ProjectAssetOption) => {
@@ -348,6 +514,28 @@ export const SceneEditorWorkspace = ({
     }
   }, [pickerState])
 
+  const scriptPickerCopy = useMemo(() => {
+    if (!scriptPickerState) {
+      return null
+    }
+
+    if (scriptPickerState.mode === 'scene-script') {
+      return {
+        title: 'Select Scene Script',
+        description: 'Choose which scene script should run for this scene.',
+        emptyMessage: 'No scene scripts were found in this project yet.',
+        noneLabel: 'No Scene Script'
+      }
+    }
+
+    return {
+      title: 'Select Actor Script',
+      description: 'Choose which actor script should run for the selected actor.',
+      emptyMessage: 'No actor scripts were found in this project yet.',
+      noneLabel: 'No Actor Script'
+    }
+  }, [scriptPickerState])
+
   const tilemapSize = useMemo(
     () =>
       tilemapDocument
@@ -363,6 +551,10 @@ export const SceneEditorWorkspace = ({
   useEffect(() => {
     clampActorsToMap(tilemapSize)
   }, [clampActorsToMap, tilemapSize])
+
+  useEffect(() => {
+    void refreshSceneScriptData()
+  }, [refreshSceneScriptData, scene])
 
   const drawSceneTilemap = useCallback(
     (canvas: HTMLCanvasElement) => {
@@ -473,12 +665,6 @@ export const SceneEditorWorkspace = ({
             isSaving={isSaving}
             statusMessage={statusMessage}
             onSave={onSave}
-            onRequestTilemapLoad={() => {
-              openPicker({ mode: 'tilemap' })
-            }}
-            onRequestWindowLoad={() => {
-              openPicker({ mode: 'window' })
-            }}
             onRequestActorLoad={(parentId) => {
               openPicker({ mode: 'actor', parentId })
             }}
@@ -496,10 +682,14 @@ export const SceneEditorWorkspace = ({
           panePosition="end"
           pane={
             <SceneInspectorPane
-              key={`${editor.selectedNode?.id ?? 'no-node'}:${editor.selectedActor?.x ?? 0}:${
+              key={`${editor.selectedNode?.id ?? 'scene-root'}:${editor.scriptPath ?? 'no-scene-script'}:${editor.selectedActor?.x ?? 0}:${
                 editor.selectedActor?.y ?? 0
               }:${editor.selectedActor?.spritePath ?? 'no-sprite'}:${
                 editor.selectedActor?.followCamera ?? false
+              }:${editor.selectedActor?.scriptPath ?? 'no-actor-script'}:${
+                (editor.selectedCollision?.callbacks ?? [])
+                  .map((callback) => `${callback.scriptPath}:${callback.functionName}`)
+                  .join('|') || 'no-callbacks'
               }:${editor.selectedCollision?.x ?? 0}:${editor.selectedCollision?.y ?? 0}:${
                 editor.selectedCollision?.width ?? 0
               }:${editor.selectedCollision?.height ?? 0}:${
@@ -508,8 +698,33 @@ export const SceneEditorWorkspace = ({
               className="project-workspace__editor-pane project-workspace__editor-pane--inspector"
               editor={editor}
               tilemapSize={tilemapSize}
+              sceneLabel={sceneLabel}
+              sceneScriptOptions={sceneScriptOptions}
+              actorScriptOptions={actorScriptOptions}
+              collisionCallbackCandidates={collisionCallbackCandidates}
+              isCollisionCallbackPickerLoading={isCollisionCallbackPickerLoading}
+              collisionCallbackPickerErrorMessage={collisionCallbackPickerErrorMessage}
+              maxCollisionCallbacks={maxCollisionCallbacks}
+              onRequestTilemapSelection={() => {
+                openPicker({ mode: 'tilemap' })
+              }}
+              onRequestWindowSelection={() => {
+                openPicker({ mode: 'window' })
+              }}
+              onRequestSceneScriptSelection={() => {
+                openScriptPicker({ mode: 'scene-script' })
+              }}
+              onRequestActorScriptSelection={(nodeId) => {
+                openScriptPicker({ mode: 'actor-script', nodeId })
+              }}
               onRequestSpriteSelection={(nodeId) => {
                 openPicker({ mode: 'sprite', nodeId })
+              }}
+              onRefreshCollisionCallbackCandidates={() => {
+                void refreshSceneScriptData()
+              }}
+              onSetCollisionCallbacks={(nodeId, callbacks) => {
+                editor.setCollisionCallbacks(nodeId, callbacks)
               }}
             />
           }
@@ -595,6 +810,29 @@ export const SceneEditorWorkspace = ({
           }
           onSelect={(option) => {
             void handleSelectAsset(option)
+          }}
+        />
+      )}
+
+      {scriptPickerState && scriptPickerCopy && (
+        <ProjectScriptPickerModal
+          title={scriptPickerCopy.title}
+          description={scriptPickerCopy.description}
+          options={scriptPickerOptions}
+          isLoading={isScriptPickerLoading}
+          errorMessage={scriptPickerErrorMessage}
+          emptyMessage={scriptPickerCopy.emptyMessage}
+          noneLabel={scriptPickerCopy.noneLabel}
+          isBusy={isScriptPickerBusy}
+          onRefresh={() => {
+            void refreshScriptPickerOptions(scriptPickerState)
+          }}
+          onClose={closeScriptPicker}
+          onSelectNone={() => {
+            void handleSelectScript(null)
+          }}
+          onSelect={(option) => {
+            void handleSelectScript(option)
           }}
         />
       )}

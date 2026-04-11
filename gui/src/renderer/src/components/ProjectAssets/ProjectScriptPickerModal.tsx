@@ -1,11 +1,10 @@
 import { type ReactElement, useMemo, useState } from 'react'
-import { PROJECT_ASSET_LABELS } from '../../../../shared/projectAssets'
-import type { ProjectAssetOption } from './projectAssetBrowser'
+import type { ProjectScriptOption } from './projectScriptBrowser'
 
-interface ProjectAssetPickerModalProps {
+interface ProjectScriptPickerModalProps {
   title: string
   description: string
-  options: ProjectAssetOption[]
+  options: ProjectScriptOption[]
   isLoading: boolean
   errorMessage?: string | null
   emptyMessage: string
@@ -14,10 +13,10 @@ interface ProjectAssetPickerModalProps {
   onRefresh: () => void
   onClose: () => void
   onSelectNone?: (() => void) | null
-  onSelect: (option: ProjectAssetOption) => void
+  onSelect: (option: ProjectScriptOption) => void
 }
 
-export const ProjectAssetPickerModal = ({
+export const ProjectScriptPickerModal = ({
   title,
   description,
   options,
@@ -30,7 +29,7 @@ export const ProjectAssetPickerModal = ({
   onClose,
   onSelectNone,
   onSelect
-}: ProjectAssetPickerModalProps): ReactElement => {
+}: ProjectScriptPickerModalProps): ReactElement => {
   const [searchTerm, setSearchTerm] = useState('')
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
   const filteredOptions = useMemo(() => {
@@ -39,11 +38,9 @@ export const ProjectAssetPickerModal = ({
     }
 
     return options.filter((option) => {
-      const kindLabel = PROJECT_ASSET_LABELS[option.kind]
       return (
         option.name.toLowerCase().includes(normalizedSearchTerm) ||
-        option.path.toLowerCase().includes(normalizedSearchTerm) ||
-        kindLabel.toLowerCase().includes(normalizedSearchTerm)
+        option.path.toLowerCase().includes(normalizedSearchTerm)
       )
     })
   }, [normalizedSearchTerm, options])
@@ -59,12 +56,12 @@ export const ProjectAssetPickerModal = ({
           <input
             type="search"
             value={searchTerm}
-            placeholder="Search by name, path, or type"
+            placeholder="Search by name or path"
             onChange={(event) => {
               setSearchTerm(event.target.value)
             }}
             disabled={isLoading || isBusy}
-            aria-label="Search assets"
+            aria-label="Search scripts"
           />
         </div>
 
@@ -83,13 +80,13 @@ export const ProjectAssetPickerModal = ({
               disabled={isBusy}
             >
               <span>{noneLabel ?? 'None'}</span>
-              <span className="tilemap-editor__tileset-path">Clear the current reference.</span>
+              <span className="tilemap-editor__tileset-path">Clear the current script reference.</span>
             </button>
           )}
 
           {isLoading && (
             <div className="tilemap-editor__tileset-option tilemap-editor__tileset-option--empty">
-              Loading assets...
+              Loading scripts...
             </div>
           )}
 
@@ -101,7 +98,7 @@ export const ProjectAssetPickerModal = ({
 
           {!isLoading && options.length > 0 && filteredOptions.length === 0 && (
             <div className="tilemap-editor__tileset-option tilemap-editor__tileset-option--empty">
-              No assets match the current search.
+              No scripts match the current search.
             </div>
           )}
 
@@ -116,9 +113,7 @@ export const ProjectAssetPickerModal = ({
                 }}
                 disabled={isBusy}
               >
-                <span>
-                  {option.name} <small>({PROJECT_ASSET_LABELS[option.kind]})</small>
-                </span>
+                <span>{option.name}</span>
                 <span className="tilemap-editor__tileset-path">{option.path}</span>
               </button>
             ))}
