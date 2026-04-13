@@ -78,6 +78,7 @@ Object.defineProperty(window, 'api', {
     restoreDeletedProjectResource: vi.fn(),
     finalizeDeletedProjectResource: vi.fn().mockResolvedValue(true),
     onProjectAssetSaved: vi.fn(() => () => undefined),
+    onProjectScriptSaved: vi.fn(() => () => undefined),
     createProjectFolder: vi.fn(),
     renameProjectFolder: vi.fn(),
     deleteProjectFolder: vi.fn(),

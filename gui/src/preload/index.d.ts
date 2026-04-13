@@ -45,6 +45,12 @@ interface ProjectAssetSavedEventPayload {
   assetKind: ProjectAssetKind
 }
 
+interface ProjectScriptSavedEventPayload {
+  projectPath: string
+  resourcePath: string
+  scriptKind: ProjectScriptKind
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -145,6 +151,9 @@ declare global {
       onEditorCloseRequested: (listener: () => void) => () => void
       onProjectAssetSaved: (
         listener: (payload: ProjectAssetSavedEventPayload) => void
+      ) => () => void
+      onProjectScriptSaved: (
+        listener: (payload: ProjectScriptSavedEventPayload) => void
       ) => () => void
       confirmEditorClose: () => Promise<boolean>
     }

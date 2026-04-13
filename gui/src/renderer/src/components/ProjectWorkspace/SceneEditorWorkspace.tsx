@@ -5,6 +5,8 @@ import type {
   SceneAssetDocument,
   TilemapAssetDocument
 } from '../../../../shared/projectAssets'
+import type { ProjectCodeSymbolIndex } from '../../../../shared/projectCodeWorkspace'
+import { getParsedScriptPropertyDefinitions } from '../../../../shared/projectScriptProperties'
 import type { ProjectScriptCallbackCandidate } from '../../../../shared/projectCodeWorkspace'
 import { ProjectAssetPickerModal } from '../ProjectAssets/ProjectAssetPickerModal'
 import { ProjectScriptPickerModal } from '../ProjectAssets/ProjectScriptPickerModal'
@@ -57,6 +59,15 @@ type SceneAssetPickerState =
   | {
       mode: 'sprite'
       nodeId: string
+    }
+  | {
+      mode: 'scene-animation-property'
+      propertyName: string
+    }
+  | {
+      mode: 'actor-animation-property'
+      nodeId: string
+      propertyName: string
     }
 
 type SceneScriptPickerState =
@@ -118,6 +129,9 @@ export const SceneEditorWorkspace = ({
     actorName: string
     existingResourcePath: string
   } | null>(null)
+  const [projectCodeSymbolIndex, setProjectCodeSymbolIndex] = useState<ProjectCodeSymbolIndex | null>(
+    null
+  )
   const [isActorSaveBusy, setIsActorSaveBusy] = useState(false)
   const [sceneScriptOptions, setSceneScriptOptions] = useState<ProjectScriptOption[]>([])
   const [actorScriptOptions, setActorScriptOptions] = useState<ProjectScriptOption[]>([])
@@ -365,6 +379,20 @@ export const SceneEditorWorkspace = ({
           return
         }
 
+        if (pickerState.mode === 'scene-animation-property') {
+          editor.setSceneScriptProperty(pickerState.propertyName, option.path)
+          closePicker()
+          focusWorkspace()
+          return
+        }
+
+        if (pickerState.mode === 'actor-animation-property') {
+          editor.setActorScriptProperty(pickerState.nodeId, pickerState.propertyName, option.path)
+          closePicker()
+          focusWorkspace()
+          return
+        }
+
         const payload = await window.api.loadProjectAssetFile(projectPath, option.path)
 
         if (payload.assetKind !== 'actor') {
@@ -507,6 +535,22 @@ export const SceneEditorWorkspace = ({
       }
     }
 
+    if (pickerState.mode === 'scene-animation-property') {
+      return {
+        title: 'Select Animation',
+        description: `Choose which sprite should populate "${pickerState.propertyName}".`,
+        emptyMessage: 'No sprites were found in this project yet.'
+      }
+    }
+
+    if (pickerState.mode === 'actor-animation-property') {
+      return {
+        title: 'Select Animation',
+        description: `Choose which sprite should populate "${pickerState.propertyName}".`,
+        emptyMessage: 'No sprites were found in this project yet.'
+      }
+    }
+
     return {
       title: 'Select Sprite',
       description: 'Choose which sprite the selected actor should render in the scene.',
@@ -547,14 +591,61 @@ export const SceneEditorWorkspace = ({
     [tilemapDocument]
   )
   const clampActorsToMap = editor.clampActorsToMap
+  const sceneScriptPropertyDefinitions = useMemo(
+    () => getParsedScriptPropertyDefinitions(editor.scriptPath, projectCodeSymbolIndex),
+    [editor.scriptPath, projectCodeSymbolIndex]
+  )
+  const actorScriptPropertyDefinitions = useMemo(
+    () => getParsedScriptPropertyDefinitions(editor.selectedActor?.scriptPath ?? null, projectCodeSymbolIndex),
+    [editor.selectedActor?.scriptPath, projectCodeSymbolIndex]
+  )
 
   useEffect(() => {
     clampActorsToMap(tilemapSize)
   }, [clampActorsToMap, tilemapSize])
 
+  const refreshProjectCodeSymbolIndex = useCallback(async (): Promise<void> => {
+    if (!projectPath) {
+      setProjectCodeSymbolIndex(null)
+      return
+    }
+
+    try {
+      const nextSymbolIndex = await window.api.getProjectCodeSymbolIndex(projectPath)
+      setProjectCodeSymbolIndex(nextSymbolIndex)
+    } catch (error) {
+      console.error('[scene-editor] load project code symbol index failed', error)
+      setProjectCodeSymbolIndex(null)
+      onStatus(
+        'error',
+        error instanceof Error
+          ? error.message
+          : 'Something went wrong while loading parsed script properties.'
+      )
+    }
+  }, [onStatus, projectPath])
+
   useEffect(() => {
     void refreshSceneScriptData()
   }, [refreshSceneScriptData, scene])
+
+  useEffect(() => {
+    void refreshProjectCodeSymbolIndex()
+  }, [refreshProjectCodeSymbolIndex, scene, editor.scriptPath, editor.selectedActor?.scriptPath])
+
+  useEffect(() => {
+    if (!projectPath) {
+      return
+    }
+
+    return window.api.onProjectScriptSaved((payload) => {
+      if (payload.projectPath !== projectPath) {
+        return
+      }
+
+      void refreshProjectCodeSymbolIndex()
+    })
+  }, [projectPath, refreshProjectCodeSymbolIndex])
 
   const drawSceneTilemap = useCallback(
     (canvas: HTMLCanvasElement) => {
@@ -682,25 +773,14 @@ export const SceneEditorWorkspace = ({
           panePosition="end"
           pane={
             <SceneInspectorPane
-              key={`${editor.selectedNode?.id ?? 'scene-root'}:${editor.scriptPath ?? 'no-scene-script'}:${editor.selectedActor?.x ?? 0}:${
-                editor.selectedActor?.y ?? 0
-              }:${editor.selectedActor?.spritePath ?? 'no-sprite'}:${
-                editor.selectedActor?.followCamera ?? false
-              }:${editor.selectedActor?.scriptPath ?? 'no-actor-script'}:${
-                (editor.selectedCollision?.callbacks ?? [])
-                  .map((callback) => `${callback.scriptPath}:${callback.functionName}`)
-                  .join('|') || 'no-callbacks'
-              }:${editor.selectedCollision?.x ?? 0}:${editor.selectedCollision?.y ?? 0}:${
-                editor.selectedCollision?.width ?? 0
-              }:${editor.selectedCollision?.height ?? 0}:${
-                editor.selectedCollision?.isBlocking ?? false
-              }`}
               className="project-workspace__editor-pane project-workspace__editor-pane--inspector"
               editor={editor}
               tilemapSize={tilemapSize}
               sceneLabel={sceneLabel}
               sceneScriptOptions={sceneScriptOptions}
               actorScriptOptions={actorScriptOptions}
+              sceneScriptPropertyDefinitions={sceneScriptPropertyDefinitions}
+              actorScriptPropertyDefinitions={actorScriptPropertyDefinitions}
               collisionCallbackCandidates={collisionCallbackCandidates}
               isCollisionCallbackPickerLoading={isCollisionCallbackPickerLoading}
               collisionCallbackPickerErrorMessage={collisionCallbackPickerErrorMessage}
@@ -719,6 +799,18 @@ export const SceneEditorWorkspace = ({
               }}
               onRequestSpriteSelection={(nodeId) => {
                 openPicker({ mode: 'sprite', nodeId })
+              }}
+              onRequestSceneAnimationPropertySelection={(propertyName) => {
+                openPicker({ mode: 'scene-animation-property', propertyName })
+              }}
+              onRequestActorAnimationPropertySelection={(nodeId, propertyName) => {
+                openPicker({ mode: 'actor-animation-property', nodeId, propertyName })
+              }}
+              onSetSceneScriptProperty={(propertyName, propertyValue) => {
+                editor.setSceneScriptProperty(propertyName, propertyValue)
+              }}
+              onSetActorScriptProperty={(nodeId, propertyName, propertyValue) => {
+                editor.setActorScriptProperty(nodeId, propertyName, propertyValue)
               }}
               onRefreshCollisionCallbackCandidates={() => {
                 void refreshSceneScriptData()
@@ -786,6 +878,9 @@ export const SceneEditorWorkspace = ({
               ? 'No Tilemap'
               : pickerState.mode === 'window'
                 ? 'No Window'
+                : pickerState.mode === 'scene-animation-property' ||
+                    pickerState.mode === 'actor-animation-property'
+                  ? 'No Animation'
                 : null
           }
           isBusy={isPickerBusy}
@@ -806,6 +901,22 @@ export const SceneEditorWorkspace = ({
                     closePicker()
                     focusWorkspace()
                   }
+                : pickerState.mode === 'scene-animation-property'
+                  ? () => {
+                      editor.setSceneScriptProperty(pickerState.propertyName, null)
+                      closePicker()
+                      focusWorkspace()
+                    }
+                  : pickerState.mode === 'actor-animation-property'
+                    ? () => {
+                        editor.setActorScriptProperty(
+                          pickerState.nodeId,
+                          pickerState.propertyName,
+                          null
+                        )
+                        closePicker()
+                        focusWorkspace()
+                      }
                 : null
           }
           onSelect={(option) => {

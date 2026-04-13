@@ -38,14 +38,16 @@ void AINIT(void);
             type: {
               name: 'Actor',
               pointerDepth: 0
-            }
+            },
+            isArray: false
           },
           {
             name: 'speed',
             type: {
               name: 'uint8_t',
               pointerDepth: 0
-            }
+            },
+            isArray: false
           }
         ]
       }
