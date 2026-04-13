@@ -105,6 +105,58 @@ describe('projectAssets scene parsing', () => {
     })
   })
 
+  it('round-trips scene and actor script properties without breaking older assets', () => {
+    const sceneDocument = parseProjectAssetDocument({
+      kind: 'scene',
+      version: 1,
+      tilemapPath: null,
+      windowPath: null,
+      scriptPath: 'src/CustomScenes/Room.c',
+      scriptProperties: {
+        speed: 3,
+        active: true,
+        idle_animation: 'Sprites/Hero.rgbsprite.json',
+        optional_animation: null
+      },
+      nodes: []
+    }) as SceneAssetDocument
+    const actorDocument = parseProjectAssetDocument({
+      kind: 'actor',
+      version: 1,
+      root: {
+        id: 'hero',
+        type: 'actor',
+        name: 'Hero',
+        isCollapsed: false,
+        spritePath: null,
+        scriptPath: 'src/CustomActors/Hero.c',
+        scriptProperties: {
+          speed: 5,
+          active: false,
+          idle_animation: 'Sprites/Hero.rgbsprite.json'
+        },
+        x: 0,
+        y: 0,
+        followCamera: false,
+        children: []
+      }
+    }) as ActorAssetDocument
+
+    expect(sceneDocument.scriptProperties).toEqual({
+      speed: 3,
+      active: true,
+      idle_animation: 'Sprites/Hero.rgbsprite.json',
+      optional_animation: null
+    })
+    expect(actorDocument.root.scriptProperties).toEqual({
+      speed: 5,
+      active: false,
+      idle_animation: 'Sprites/Hero.rgbsprite.json'
+    })
+    expect(serializeProjectAssetDocument(sceneDocument)).toContain('"scriptProperties"')
+    expect(serializeProjectAssetDocument(actorDocument)).toContain('"scriptProperties"')
+  })
+
   it('serializes actor resource paths only in scene documents', () => {
     const sceneDocument = parseProjectAssetDocument({
       kind: 'scene',

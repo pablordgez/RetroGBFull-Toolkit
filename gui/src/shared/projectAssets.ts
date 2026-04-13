@@ -1,3 +1,5 @@
+import type { ScriptPropertyMap, ScriptPropertyValue } from './projectScriptProperties'
+
 export type ProjectAssetKind = 'sprite' | 'tileset' | 'tilemap' | 'window' | 'scene' | 'actor'
 
 export interface SceneAssetCollisionCallback {
@@ -21,6 +23,7 @@ export interface SceneAssetActorNode extends BaseSceneAssetNode {
   spritePath: string | null
   resourcePath?: string | null
   scriptPath?: string | null
+  scriptProperties?: ScriptPropertyMap
   x: number
   y: number
   followCamera: boolean
@@ -90,6 +93,7 @@ export interface SceneAssetDocument {
   tilemapPath: string | null
   windowPath: string | null
   scriptPath: string | null
+  scriptProperties?: ScriptPropertyMap
   nodes: SceneAssetNode[]
 }
 
@@ -327,6 +331,31 @@ const isOptionalString = (value: unknown): value is string | null | undefined =>
   return value === undefined || value === null || typeof value === 'string'
 }
 
+const isScriptPropertyValue = (value: unknown): value is ScriptPropertyValue => {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isInteger(value))
+  )
+}
+
+const normalizeScriptProperties = (value: unknown): ScriptPropertyMap | undefined => {
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  const entries = Object.entries(value).flatMap(([propertyName, propertyValue]) => {
+    if (!isScriptPropertyValue(propertyValue)) {
+      return []
+    }
+
+    return [[propertyName, propertyValue] as const]
+  })
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
 export const isSceneActorNode = (node: SceneAssetNode): node is SceneAssetActorNode => {
   return node.type === 'actor'
 }
@@ -460,6 +489,9 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
     ...(typeof value.scriptPath === 'string' && value.scriptPath.length > 0
       ? { scriptPath: value.scriptPath }
       : {}),
+    ...(normalizeScriptProperties(value.scriptProperties)
+      ? { scriptProperties: normalizeScriptProperties(value.scriptProperties) }
+      : {}),
     x: Number.isInteger(value.x) ? Number(value.x) : 0,
     y: Number.isInteger(value.y) ? Number(value.y) : 0,
     followCamera: typeof value.followCamera === 'boolean' ? value.followCamera : false
@@ -518,6 +550,9 @@ const serializeSceneAssetNode = (
       : {}),
     ...(typeof node.scriptPath === 'string' && node.scriptPath.length > 0
       ? { scriptPath: node.scriptPath }
+      : {}),
+    ...(node.scriptProperties && Object.keys(node.scriptProperties).length > 0
+      ? { scriptProperties: node.scriptProperties }
       : {}),
     x: node.x,
     y: node.y,
@@ -627,6 +662,9 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
         tilemapPath: rawDocument.tilemapPath ?? null,
         windowPath: rawDocument.windowPath ?? null,
         scriptPath: rawDocument.scriptPath ?? null,
+        ...(normalizeScriptProperties(rawDocument.scriptProperties)
+          ? { scriptProperties: normalizeScriptProperties(rawDocument.scriptProperties) }
+          : {}),
         nodes: normalizeSceneFollowCameraNodes(normalizedSceneNodes as SceneAssetNode[])
       })
     }
@@ -658,6 +696,10 @@ export const serializeProjectAssetDocument = (assetDocument: ProjectAssetDocumen
         tilemapPath: assetDocument.tilemapPath ?? null,
         windowPath: assetDocument.windowPath ?? null,
         scriptPath: assetDocument.scriptPath ?? null,
+        ...(assetDocument.scriptProperties &&
+        Object.keys(assetDocument.scriptProperties).length > 0
+          ? { scriptProperties: assetDocument.scriptProperties }
+          : {}),
         nodes: sceneNodes.map((node) => serializeSceneAssetNode(node, true))
       },
       null,

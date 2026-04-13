@@ -77,6 +77,12 @@ interface ProjectAssetSavedEventPayload {
   assetKind: ProjectAssetKind
 }
 
+interface ProjectScriptSavedEventPayload {
+  projectPath: string
+  resourcePath: string
+  scriptKind: ProjectScriptKind
+}
+
 const ELECTRON_APP_SCHEME = 'app'
 const CROSS_ORIGIN_RESPONSE_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -627,13 +633,25 @@ ipcMain.handle(
     editableSourceContent: string,
     headerContent: string
   ) => {
-    return saveProjectScriptResource(
+    const payload = await saveProjectScriptResource(
       projectPath,
       resourcePath,
       scriptKind,
       editableSourceContent,
       headerContent
     )
+
+    BrowserWindow.getAllWindows().forEach((window) => {
+      if (!window.isDestroyed()) {
+        window.webContents.send('project:script-saved', {
+          projectPath,
+          resourcePath,
+          scriptKind
+        } satisfies ProjectScriptSavedEventPayload)
+      }
+    })
+
+    return payload
   }
 )
 

@@ -4,7 +4,16 @@ import type {
   SceneAssetNode
 } from '../../../../shared/projectAssets'
 import { getProjectAssetDisplayName } from '../../../../shared/projectAssets'
-import type { ProjectScriptCallbackCandidate } from '../../../../shared/projectCodeWorkspace'
+import type {
+  ParsedScriptPropertyDefinition,
+  ProjectScriptCallbackCandidate
+} from '../../../../shared/projectCodeWorkspace'
+import {
+  getStoredScriptPropertyValue,
+  validateScriptPropertyDraft,
+  type ScriptPropertyMap,
+  type ScriptPropertyValue
+} from '../../../../shared/projectScriptProperties'
 import type { ProjectScriptOption } from '../ProjectAssets/projectScriptBrowser'
 import { ProjectScriptCallbackPickerModal } from '../ProjectAssets/ProjectScriptCallbackPickerModal'
 import {
@@ -27,6 +36,8 @@ interface SceneInspectorPaneProps {
   tilemapSize: { width: number; height: number } | null
   sceneScriptOptions?: ProjectScriptOption[]
   actorScriptOptions?: ProjectScriptOption[]
+  sceneScriptPropertyDefinitions?: ParsedScriptPropertyDefinition[]
+  actorScriptPropertyDefinitions?: ParsedScriptPropertyDefinition[]
   collisionCallbackCandidates?: ProjectScriptCallbackCandidate[]
   isCollisionCallbackPickerLoading?: boolean
   collisionCallbackPickerErrorMessage?: string | null
@@ -36,6 +47,14 @@ interface SceneInspectorPaneProps {
   onRequestSceneScriptSelection?: () => void
   onRequestActorScriptSelection?: (nodeId: string) => void
   onRequestSpriteSelection: (nodeId: string) => void
+  onRequestSceneAnimationPropertySelection?: (propertyName: string) => void
+  onRequestActorAnimationPropertySelection?: (nodeId: string, propertyName: string) => void
+  onSetSceneScriptProperty?: (propertyName: string, propertyValue: ScriptPropertyValue) => void
+  onSetActorScriptProperty?: (
+    nodeId: string,
+    propertyName: string,
+    propertyValue: ScriptPropertyValue
+  ) => void
   onRefreshCollisionCallbackCandidates?: () => void
   onSetCollisionCallbacks?: (nodeId: string, callbacks: SceneAssetCollisionCallback[]) => void
 }
@@ -44,8 +63,14 @@ const buildClassName = (baseClassName: string, extraClassName?: string): string 
   return extraClassName ? `${baseClassName} ${extraClassName}` : baseClassName
 }
 
+const EMPTY_SCRIPT_PROPERTY_DEFINITIONS: ParsedScriptPropertyDefinition[] = []
+
 const getPathLabel = (resourcePath: string | null, fallback: string): string => {
   return resourcePath ? getProjectAssetDisplayName(resourcePath.split('/').pop() ?? fallback) : fallback
+}
+
+const getScriptPropertyInputId = (propertyName: string): string => {
+  return `scene-inspector-script-property-${propertyName}`
 }
 
 export const SceneInspectorPane = ({
@@ -55,6 +80,8 @@ export const SceneInspectorPane = ({
   tilemapSize,
   sceneScriptOptions = [],
   actorScriptOptions = [],
+  sceneScriptPropertyDefinitions = [],
+  actorScriptPropertyDefinitions = [],
   collisionCallbackCandidates = [],
   isCollisionCallbackPickerLoading = false,
   collisionCallbackPickerErrorMessage = null,
@@ -64,6 +91,10 @@ export const SceneInspectorPane = ({
   onRequestSceneScriptSelection = () => undefined,
   onRequestActorScriptSelection = () => undefined,
   onRequestSpriteSelection,
+  onRequestSceneAnimationPropertySelection = () => undefined,
+  onRequestActorAnimationPropertySelection = () => undefined,
+  onSetSceneScriptProperty = () => undefined,
+  onSetActorScriptProperty = () => undefined,
   onRefreshCollisionCallbackCandidates = () => undefined,
   onSetCollisionCallbacks = () => undefined
 }: SceneInspectorPaneProps): ReactElement => {
@@ -84,6 +115,8 @@ export const SceneInspectorPane = ({
   const [yDraft, setYDraft] = useState('0')
   const [widthDraft, setWidthDraft] = useState('8')
   const [heightDraft, setHeightDraft] = useState('8')
+  const [scriptPropertyDrafts, setScriptPropertyDrafts] = useState<Record<string, string>>({})
+  const [scriptPropertyErrors, setScriptPropertyErrors] = useState<Record<string, string>>({})
   const [isCollisionCallbackPickerOpen, setIsCollisionCallbackPickerOpen] = useState(false)
 
   useEffect(() => {
@@ -110,6 +143,39 @@ export const SceneInspectorPane = ({
   useEffect(() => {
     setIsCollisionCallbackPickerOpen(false)
   }, [selectedCollision?.id])
+
+  const activeScriptPropertyDefinitions = useMemo(() => {
+    if (!selectedNode) {
+      return sceneScriptPropertyDefinitions
+    }
+
+    if (selectedActor) {
+      return actorScriptPropertyDefinitions
+    }
+
+    return EMPTY_SCRIPT_PROPERTY_DEFINITIONS
+  }, [actorScriptPropertyDefinitions, sceneScriptPropertyDefinitions, selectedActor, selectedNode])
+  const activeScriptProperties: ScriptPropertyMap | undefined = useMemo(() => {
+    if (!selectedNode) {
+      return editor.sceneScriptProperties
+    }
+
+    return selectedActor?.scriptProperties
+  }, [editor.sceneScriptProperties, selectedActor, selectedNode])
+
+  useEffect(() => {
+    const nextDrafts = Object.fromEntries(
+      activeScriptPropertyDefinitions
+        .filter((definition) => definition.kind === 'integer')
+        .map((definition) => {
+          const currentValue = getStoredScriptPropertyValue(definition, activeScriptProperties)
+          return [definition.name, typeof currentValue === 'number' ? String(currentValue) : '']
+        })
+    )
+
+    setScriptPropertyDrafts(nextDrafts)
+    setScriptPropertyErrors({})
+  }, [activeScriptPropertyDefinitions, activeScriptProperties, selectedActor?.id, selectedNode?.id])
 
   const commitActorAxis = (axis: 'x' | 'y'): void => {
     if (!selectedActor) {
@@ -207,6 +273,228 @@ export const SceneInspectorPane = ({
     selectedActor?.scriptPath ?? null,
     'No actor script selected'
   )
+  const commitScriptProperty = (definition: ParsedScriptPropertyDefinition): void => {
+    if (definition.kind !== 'integer') {
+      return
+    }
+
+    const draftValue = scriptPropertyDrafts[definition.name] ?? ''
+    const validation = validateScriptPropertyDraft(definition, draftValue)
+
+    if (validation.error) {
+      setScriptPropertyErrors((currentErrors) => ({
+        ...currentErrors,
+        [definition.name]: validation.error
+      }))
+      return
+    }
+
+    setScriptPropertyErrors((currentErrors) => {
+      const nextErrors = { ...currentErrors }
+      delete nextErrors[definition.name]
+      return nextErrors
+    })
+
+    if (!selectedNode) {
+      onSetSceneScriptProperty(definition.name, validation.value)
+      return
+    }
+
+    if (selectedActor) {
+      onSetActorScriptProperty(selectedActor.id, definition.name, validation.value)
+    }
+  }
+
+  const resetScriptPropertyDraft = (definition: ParsedScriptPropertyDefinition): void => {
+    const currentValue = getStoredScriptPropertyValue(definition, activeScriptProperties)
+    setScriptPropertyDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      [definition.name]: typeof currentValue === 'number' ? String(currentValue) : ''
+    }))
+    setScriptPropertyErrors((currentErrors) => {
+      const nextErrors = { ...currentErrors }
+      delete nextErrors[definition.name]
+      return nextErrors
+    })
+  }
+
+  const renderScriptPropertyControl = (definition: ParsedScriptPropertyDefinition): ReactElement => {
+    if (definition.kind === 'boolean') {
+      const currentValue = getStoredScriptPropertyValue(definition, activeScriptProperties) === true
+
+      return (
+        <div key={definition.name} className="scene-inspector-pane__property-row">
+          <label
+            className="scene-inspector-pane__property-label"
+            htmlFor={getScriptPropertyInputId(definition.name)}
+          >
+            {definition.name}
+          </label>
+          <input
+            id={getScriptPropertyInputId(definition.name)}
+            type="checkbox"
+            checked={currentValue}
+            onChange={(event) => {
+              if (!selectedNode) {
+                onSetSceneScriptProperty(definition.name, event.target.checked)
+                return
+              }
+
+              if (selectedActor) {
+                onSetActorScriptProperty(selectedActor.id, definition.name, event.target.checked)
+              }
+            }}
+          />
+        </div>
+      )
+    }
+
+    if (definition.kind === 'enum') {
+      const currentValue = getStoredScriptPropertyValue(definition, activeScriptProperties)
+
+      return (
+        <div key={definition.name} className="scene-inspector-pane__property-row">
+          <label
+            className="scene-inspector-pane__property-label"
+            htmlFor={getScriptPropertyInputId(definition.name)}
+          >
+            {definition.name}
+            <small> ({definition.typeName})</small>
+          </label>
+          <select
+            id={getScriptPropertyInputId(definition.name)}
+            className="scene-inspector-pane__property-input"
+            value={typeof currentValue === 'string' ? currentValue : ''}
+            onChange={(event) => {
+              const nextValue = event.target.value
+              const validation = validateScriptPropertyDraft(
+                definition,
+                nextValue.length > 0 ? nextValue : null
+              )
+
+              if (validation.error) {
+                setScriptPropertyErrors((currentErrors) => ({
+                  ...currentErrors,
+                  [definition.name]: validation.error
+                }))
+                return
+              }
+
+              setScriptPropertyErrors((currentErrors) => {
+                const nextErrors = { ...currentErrors }
+                delete nextErrors[definition.name]
+                return nextErrors
+              })
+
+              if (!selectedNode) {
+                onSetSceneScriptProperty(definition.name, validation.value)
+                return
+              }
+
+              if (selectedActor) {
+                onSetActorScriptProperty(selectedActor.id, definition.name, validation.value)
+              }
+            }}
+          >
+            <option value="">Use Default</option>
+            {(definition.enumValues ?? []).map((enumValue) => (
+              <option key={enumValue} value={enumValue}>
+                {enumValue}
+              </option>
+            ))}
+          </select>
+        </div>
+      )
+    }
+
+    if (definition.kind === 'animation') {
+      const currentValue = getStoredScriptPropertyValue(definition, activeScriptProperties)
+      const currentPath = typeof currentValue === 'string' ? currentValue : null
+
+      return (
+        <div key={definition.name} className="scene-inspector-pane__property-row">
+          <span className="scene-inspector-pane__property-label">{definition.name}</span>
+          <div className="scene-inspector-pane__property-actions">
+            <strong className="scene-inspector-pane__property-value">
+              {getPathLabel(currentPath, 'No animation selected')}
+            </strong>
+            <button
+              type="button"
+              onClick={() => {
+                if (!selectedNode) {
+                  onRequestSceneAnimationPropertySelection(definition.name)
+                  return
+                }
+
+                if (selectedActor) {
+                  onRequestActorAnimationPropertySelection(selectedActor.id, definition.name)
+                }
+              }}
+            >
+              {currentPath ? 'Change Animation' : 'Select Animation'}
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div key={definition.name} className="scene-inspector-pane__property-stack">
+        <div className="scene-inspector-pane__property-row">
+          <label
+            className="scene-inspector-pane__property-label"
+            htmlFor={getScriptPropertyInputId(definition.name)}
+          >
+            {definition.name}
+            <small> ({definition.typeName})</small>
+          </label>
+          <input
+            id={getScriptPropertyInputId(definition.name)}
+            className="scene-inspector-pane__property-input"
+            type="text"
+            value={scriptPropertyDrafts[definition.name] ?? ''}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              const nextValue = event.target.value
+              setScriptPropertyDrafts((currentDrafts) => ({
+                ...currentDrafts,
+                [definition.name]: nextValue
+              }))
+
+              const validation = validateScriptPropertyDraft(definition, nextValue)
+              setScriptPropertyErrors((currentErrors) => {
+                const nextErrors = { ...currentErrors }
+
+                if (validation.error) {
+                  nextErrors[definition.name] = validation.error
+                } else {
+                  delete nextErrors[definition.name]
+                }
+
+                return nextErrors
+              })
+            }}
+            onBlur={() => {
+              commitScriptProperty(definition)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                commitScriptProperty(definition)
+              }
+
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                resetScriptPropertyDraft(definition)
+              }
+            }}
+          />
+        </div>
+        {scriptPropertyErrors[definition.name] && (
+          <span className="scene-inspector-pane__hint">{scriptPropertyErrors[definition.name]}</span>
+        )}
+      </div>
+    )
+  }
   const availableCollisionCandidates = useMemo(() => {
     if (!selectedCollision) {
       return []
@@ -325,6 +613,13 @@ export const SceneInspectorPane = ({
                   {tilemapSize ? `${tilemapSize.width * 8} x ${tilemapSize.height * 8}px` : 'Unbounded'}
                 </strong>
               </div>
+
+              {activeScriptPropertyDefinitions.length > 0 && (
+                <>
+                  <div className="scene-inspector-pane__section-title">Script Properties</div>
+                  {activeScriptPropertyDefinitions.map(renderScriptPropertyControl)}
+                </>
+              )}
             </>
           )}
 
@@ -420,6 +715,13 @@ export const SceneInspectorPane = ({
               </div>
 
               <p className="scene-inspector-pane__hint">Positions use 1/16th-pixel precision.</p>
+
+              {activeScriptPropertyDefinitions.length > 0 && (
+                <>
+                  <div className="scene-inspector-pane__section-title">Script Properties</div>
+                  {activeScriptPropertyDefinitions.map(renderScriptPropertyControl)}
+                </>
+              )}
             </>
           )}
 

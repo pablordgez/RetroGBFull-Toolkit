@@ -6,6 +6,8 @@ export default defineConfig(mergeConfig(sharedConfig, {
     // Include all tests EXCEPT integration
     include: ['tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     exclude: ['tests/integration/**', 'node_modules/**'],
+    // Coverage-instrumented filesystem tests in the main process regularly exceed 5s on Windows.
+    testTimeout: 20000,
     coverage: {
       reportsDirectory: 'coverage/unit',
       // Keep the unit coverage gate focused on GUI files we actively unit test.
@@ -20,7 +22,6 @@ export default defineConfig(mergeConfig(sharedConfig, {
         'src/renderer/src/components/Docking/ResourceManagementPane.tsx',
         'src/renderer/src/components/ProjectLauncher/ProjectLauncher.tsx',
         'src/renderer/src/components/ProjectWorkspace/ProjectWorkspace.tsx',
-        'src/renderer/src/components/ProjectWorkspace/SceneEditorWorkspace.tsx',
         'src/renderer/src/components/SceneHierarchy/SceneViewport.tsx',
         'src/renderer/src/components/TilemapEditor/TileGridAssetEditor.tsx',
         // Trivial or runtime-bootstrap files are intentionally deferred from unit coverage.

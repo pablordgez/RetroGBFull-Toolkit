@@ -4,6 +4,7 @@ import type {
   SceneAssetDocument,
   SceneAssetNode
 } from '../../../../shared/projectAssets'
+import type { ScriptPropertyMap, ScriptPropertyValue } from '../../../../shared/projectScriptProperties'
 
 export type SceneHierarchyClipboardOperation = 'copy' | 'cut'
 
@@ -15,6 +16,7 @@ export interface SceneHierarchyClipboardState {
 
 export interface SceneHierarchyHistoryState {
   scriptPath: string | null
+  scriptProperties?: ScriptPropertyMap
   tilemapPath: string | null
   windowPath: string | null
   nodes: SceneAssetNode[]
@@ -36,6 +38,7 @@ export interface SceneNodeRecord {
 
 export interface SceneEditorDocumentSnapshot {
   scriptPath: string | null
+  scriptProperties?: ScriptPropertyMap
   tilemapPath: string | null
   windowPath: string | null
   nodes: SceneAssetNode[]
@@ -72,6 +75,11 @@ export const getDefaultSceneNodeName = (type: SceneAssetNode['type']): string =>
 export const cloneSceneNodeSnapshot = (node: SceneAssetNode): SceneAssetNode => {
   return {
     ...node,
+    ...('scriptProperties' in node && node.scriptProperties
+      ? {
+          scriptProperties: { ...node.scriptProperties }
+        }
+      : {}),
     children: node.children.map(cloneSceneNodeSnapshot)
   }
 }
@@ -81,6 +89,7 @@ export const cloneSceneDocumentSnapshot = (
 ): SceneEditorDocumentSnapshot => {
   return {
     scriptPath: document.scriptPath,
+    ...(document.scriptProperties ? { scriptProperties: { ...document.scriptProperties } } : {}),
     tilemapPath: document.tilemapPath,
     windowPath: document.windowPath,
     nodes: document.nodes.map(cloneSceneNodeSnapshot)
@@ -475,6 +484,17 @@ export const buildDefaultSceneNode = (
     y: 0,
     followCamera: false,
     children: []
+  }
+}
+
+export const mergeScriptPropertyValue = (
+  properties: ScriptPropertyMap | undefined,
+  propertyName: string,
+  propertyValue: ScriptPropertyValue
+): ScriptPropertyMap => {
+  return {
+    ...(properties ?? {}),
+    [propertyName]: propertyValue
   }
 }
 

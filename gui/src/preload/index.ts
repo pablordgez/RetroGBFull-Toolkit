@@ -46,6 +46,12 @@ interface ProjectAssetSavedEventPayload {
   assetKind: ProjectAssetKind
 }
 
+interface ProjectScriptSavedEventPayload {
+  projectPath: string
+  resourcePath: string
+  scriptKind: ProjectScriptKind
+}
+
 // Custom APIs for renderer
 const api = {
   openSpriteEditorWindow: () => ipcRenderer.send('open-sprite-editor-window'),
@@ -236,6 +242,16 @@ const api = {
     ): void => listener(payload)
     ipcRenderer.on('project:asset-saved', wrappedListener)
     return () => ipcRenderer.removeListener('project:asset-saved', wrappedListener)
+  },
+  onProjectScriptSaved: (
+    listener: (payload: ProjectScriptSavedEventPayload) => void
+  ): (() => void) => {
+    const wrappedListener = (
+      _event: Electron.IpcRendererEvent,
+      payload: ProjectScriptSavedEventPayload
+    ): void => listener(payload)
+    ipcRenderer.on('project:script-saved', wrappedListener)
+    return () => ipcRenderer.removeListener('project:script-saved', wrappedListener)
   },
   confirmEditorClose: () => ipcRenderer.invoke('editor:confirm-close') as Promise<boolean>
 }

@@ -7,6 +7,7 @@
   flex-direction: column;
   gap: 12px;
   overflow: auto;
+  container-type: inline-size;
 }
 
 .scene-inspector-pane__empty {
@@ -21,6 +22,13 @@
   gap: 4px;
 }
 
+.scene-inspector-pane__section-title {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+
 .scene-inspector-pane__field span {
   font-size: 0.82rem;
   text-transform: uppercase;
@@ -31,6 +39,133 @@
 .scene-inspector-pane__field select {
   width: 100%;
   box-sizing: border-box;
+}
+
+.scene-inspector-pane__field select,
+select.scene-inspector-pane__property-input {
+  appearance: none;
+  border: 2px solid #0f380f;
+  background-color: #9bbc0f;
+  color: #0f380f;
+  padding: 6px 34px 6px 10px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: bold;
+  line-height: 1.2;
+  box-shadow: 2px 2px 0 rgba(15, 56, 15, 0.18);
+  background-image:
+    linear-gradient(45deg, transparent 50%, #0f380f 50%),
+    linear-gradient(135deg, #0f380f 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) calc(50% - 2px),
+    calc(100% - 11px) calc(50% - 2px);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+.scene-inspector-pane__field select:hover,
+select.scene-inspector-pane__property-input:hover {
+  background-color: #a8c51a;
+}
+
+.scene-inspector-pane__field select:focus,
+select.scene-inspector-pane__property-input:focus {
+  outline: none;
+  background-color: #c4bebb;
+  box-shadow: 0 0 0 1px #0f380f, 3px 3px 0 rgba(15, 56, 15, 0.22);
+}
+
+.scene-inspector-pane__field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.scene-inspector-pane__field small {
+  font-size: 0.72rem;
+  opacity: 0.8;
+  text-transform: none;
+}
+
+.scene-inspector-pane__property-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scene-inspector-pane__property-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.scene-inspector-pane__property-label {
+  min-width: 0;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+
+.scene-inspector-pane__property-label small {
+  font-size: 0.72rem;
+  opacity: 0.8;
+  text-transform: none;
+}
+
+.scene-inspector-pane__property-input {
+  width: 140px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.scene-inspector-pane__property-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.scene-inspector-pane__property-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-inspector-pane__property-row > input[type='checkbox'] {
+  justify-self: end;
+}
+
+@container (max-width: 280px) {
+  .scene-inspector-pane__property-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .scene-inspector-pane__property-label {
+    width: 100%;
+  }
+
+  .scene-inspector-pane__property-input {
+    width: 100%;
+  }
+
+  .scene-inspector-pane__property-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .scene-inspector-pane__property-row > input[type='checkbox'] {
+    justify-self: start;
+  }
 }
 
 .scene-inspector-pane__coords {

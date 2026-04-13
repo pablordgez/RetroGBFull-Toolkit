@@ -302,7 +302,8 @@ const parseFieldDeclarations = (content: string): ProjectCodeStructField[] => {
     const type = parseTypeReference(`${match[1]} ${match[2]}`.trim())
     fields.push({
       name: match[3],
-      type
+      type,
+      isArray: declaration.includes('[')
     })
   }
 

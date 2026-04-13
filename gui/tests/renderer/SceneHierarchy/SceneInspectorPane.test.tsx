@@ -2,7 +2,10 @@ import React from 'react'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { SceneAssetDocument } from '../../../src/shared/projectAssets'
-import type { ProjectScriptCallbackCandidate } from '../../../src/shared/projectCodeWorkspace'
+import type {
+  ParsedScriptPropertyDefinition,
+  ProjectScriptCallbackCandidate
+} from '../../../src/shared/projectCodeWorkspace'
 import { SceneInspectorPane } from '../../../src/renderer/src/components/SceneHierarchy/SceneInspectorPane'
 import { useSceneDocumentEditor } from '../../../src/renderer/src/components/SceneHierarchy/useSceneDocumentEditor'
 
@@ -11,6 +14,13 @@ const createScene = (): SceneAssetDocument => ({
   version: 1,
   tilemapPath: 'Maps/Room.rgbtilemap.json',
   windowPath: null,
+  scriptPath: 'src/CustomScenes/Room.c',
+  scriptProperties: {
+    gravity: 2,
+    paused: false,
+    intro_animation: 'Sprites/RoomIntro.rgbsprite.json',
+    state: 'STATE_RUN'
+  },
   nodes: [
     {
       id: 'hero-node',
@@ -18,6 +28,13 @@ const createScene = (): SceneAssetDocument => ({
       name: 'Hero',
       isCollapsed: false,
       spritePath: null,
+      scriptPath: 'src/CustomActors/Hero.c',
+      scriptProperties: {
+        speed: 3,
+        active: true,
+        idle_animation: 'Sprites/HeroIdle.rgbsprite.json',
+        mood: 'MOOD_ALERT'
+      },
       x: 0,
       y: 0,
       followCamera: false,
@@ -68,9 +85,65 @@ const collisionCallbackCandidates: ProjectScriptCallbackCandidate[] = [
   }
 ]
 
+const sceneScriptPropertyDefinitions: ParsedScriptPropertyDefinition[] = [
+  {
+    name: 'gravity',
+    kind: 'integer',
+    typeName: 'uint8_t',
+    minimum: 0,
+    maximum: 255,
+    isSigned: false
+  },
+  {
+    name: 'paused',
+    kind: 'boolean',
+    typeName: 'BOOLEAN'
+  },
+  {
+    name: 'intro_animation',
+    kind: 'animation',
+    typeName: 'Animation'
+  },
+  {
+    name: 'state',
+    kind: 'enum',
+    typeName: 'SceneState',
+    enumValues: ['STATE_IDLE', 'STATE_RUN']
+  }
+]
+
+const actorScriptPropertyDefinitions: ParsedScriptPropertyDefinition[] = [
+  {
+    name: 'speed',
+    kind: 'integer',
+    typeName: 'uint8_t',
+    minimum: 0,
+    maximum: 255,
+    isSigned: false
+  },
+  {
+    name: 'active',
+    kind: 'boolean',
+    typeName: 'BOOLEAN'
+  },
+  {
+    name: 'idle_animation',
+    kind: 'animation',
+    typeName: 'Animation'
+  },
+  {
+    name: 'mood',
+    kind: 'enum',
+    typeName: 'HeroMood',
+    enumValues: ['MOOD_CALM', 'MOOD_ALERT']
+  }
+]
+
 const renderInspector = () => {
   const onRequestSpriteSelection = vi.fn()
   const onRequestActorScriptSelection = vi.fn()
+  const onRequestSceneAnimationPropertySelection = vi.fn()
+  const onRequestActorAnimationPropertySelection = vi.fn()
 
   const Harness = () => {
     const [scene, setScene] = React.useState(createScene())
@@ -90,10 +163,20 @@ const renderInspector = () => {
         <SceneInspectorPane
           editor={editor}
           tilemapSize={{ width: 20, height: 18 }}
+          sceneScriptPropertyDefinitions={sceneScriptPropertyDefinitions}
+          actorScriptPropertyDefinitions={actorScriptPropertyDefinitions}
           collisionCallbackCandidates={collisionCallbackCandidates}
           maxCollisionCallbacks={4}
           onRequestActorScriptSelection={onRequestActorScriptSelection}
           onRequestSpriteSelection={onRequestSpriteSelection}
+          onRequestSceneAnimationPropertySelection={onRequestSceneAnimationPropertySelection}
+          onRequestActorAnimationPropertySelection={onRequestActorAnimationPropertySelection}
+          onSetSceneScriptProperty={(propertyName, propertyValue) => {
+            editor.setSceneScriptProperty(propertyName, propertyValue)
+          }}
+          onSetActorScriptProperty={(nodeId, propertyName, propertyValue) => {
+            editor.setActorScriptProperty(nodeId, propertyName, propertyValue)
+          }}
           onSetCollisionCallbacks={(nodeId, callbacks) => {
             editor.setCollisionCallbacks(nodeId, callbacks)
           }}
@@ -106,7 +189,9 @@ const renderInspector = () => {
 
   return {
     onRequestSpriteSelection,
-    onRequestActorScriptSelection
+    onRequestActorScriptSelection,
+    onRequestSceneAnimationPropertySelection,
+    onRequestActorAnimationPropertySelection
   }
 }
 
@@ -121,18 +206,31 @@ describe('SceneInspectorPane', () => {
     expect(screen.getByText('0')).toBeInTheDocument()
   })
 
-  it('updates actor state, resets invalid drafts, and requests sprite selection', () => {
-    const { onRequestSpriteSelection, onRequestActorScriptSelection } = renderInspector()
+  it('updates actor state, validates script properties, and requests sprite selection', () => {
+    const {
+      onRequestSpriteSelection,
+      onRequestActorScriptSelection,
+      onRequestActorAnimationPropertySelection
+    } = renderInspector()
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Hero' }))
 
     expect(screen.getByText('No sprite selected')).toBeInTheDocument()
     expect(screen.getByText('160 x 144px')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('3')).toBeInTheDocument()
+    expect(screen.getByLabelText('active')).toBeChecked()
+    expect(screen.getByText('HeroIdle')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /mood/i })).toHaveValue('MOOD_ALERT')
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Sprite' }))
     expect(onRequestSpriteSelection).toHaveBeenCalledWith('hero-node')
-    fireEvent.click(screen.getByRole('button', { name: 'Select Actor Script' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change Actor Script' }))
     expect(onRequestActorScriptSelection).toHaveBeenCalledWith('hero-node')
+    fireEvent.click(screen.getByRole('button', { name: 'Change Animation' }))
+    expect(onRequestActorAnimationPropertySelection).toHaveBeenCalledWith(
+      'hero-node',
+      'idle_animation'
+    )
 
     const followCameraCheckbox = screen.getByLabelText('Follow camera')
     fireEvent.click(followCameraCheckbox)
@@ -146,6 +244,42 @@ describe('SceneInspectorPane', () => {
     fireEvent.change(xInput, { target: { value: '4' } })
     fireEvent.keyDown(xInput, { key: 'Enter' })
     expect(xInput).toHaveValue('4')
+
+    const speedInput = screen.getByRole('textbox', { name: /speed/i })
+    fireEvent.change(speedInput, { target: { value: '999' } })
+    fireEvent.blur(speedInput)
+    expect(screen.getByText('Maximum value is 255.')).toBeInTheDocument()
+    expect(speedInput).toHaveValue('999')
+    fireEvent.keyDown(speedInput, { key: 'Escape' })
+    expect(speedInput).toHaveValue('3')
+
+    fireEvent.change(screen.getByRole('combobox', { name: /mood/i }), {
+      target: { value: 'MOOD_CALM' }
+    })
+    expect(screen.getByRole('combobox', { name: /mood/i })).toHaveValue('MOOD_CALM')
+  })
+
+  it('shows and updates scene script properties when the scene root is selected', () => {
+    const { onRequestSceneAnimationPropertySelection } = renderInspector()
+
+    expect(screen.getByDisplayValue('2')).toBeInTheDocument()
+
+    const gravityInput = screen.getByRole('textbox', { name: /gravity/i })
+    fireEvent.change(gravityInput, { target: { value: '12' } })
+    fireEvent.keyDown(gravityInput, { key: 'Enter' })
+    expect(gravityInput).toHaveValue('12')
+
+    const pausedCheckbox = screen.getByLabelText('paused')
+    fireEvent.click(pausedCheckbox)
+    expect(pausedCheckbox).toBeChecked()
+
+    fireEvent.change(screen.getByRole('combobox', { name: /state/i }), {
+      target: { value: 'STATE_IDLE' }
+    })
+    expect(screen.getByRole('combobox', { name: /state/i })).toHaveValue('STATE_IDLE')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change Animation' }))
+    expect(onRequestSceneAnimationPropertySelection).toHaveBeenCalledWith('intro_animation')
   })
 
   it('updates collision state and restores collision drafts on escape', () => {

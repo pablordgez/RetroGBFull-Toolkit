@@ -53,6 +53,7 @@ export interface ProjectCodeTypeReference {
 export interface ProjectCodeStructField {
   name: string
   type: ProjectCodeTypeReference | null
+  isArray?: boolean
 }
 
 export interface ProjectCodeStructSymbol {
@@ -126,6 +127,18 @@ export interface GenerateProjectResourceFilesResult {
   sceneCount: number
   actorScriptCount: number
   sceneScriptCount: number
+}
+
+export type ParsedScriptPropertyKind = 'integer' | 'boolean' | 'animation' | 'enum'
+
+export interface ParsedScriptPropertyDefinition {
+  name: string
+  kind: ParsedScriptPropertyKind
+  typeName: string
+  minimum?: number
+  maximum?: number
+  isSigned?: boolean
+  enumValues?: string[]
 }
 
 const trimLeadingSlashes = (value: string): string => value.replace(/^\/+/, '')
