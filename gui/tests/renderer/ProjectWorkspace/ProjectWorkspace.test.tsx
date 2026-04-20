@@ -34,6 +34,10 @@ const openProjectMenu = () => {
   fireEvent.click(screen.getByRole('menuitem', { name: 'Project' }))
 }
 
+const openCodeMenu = () => {
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Code' }))
+}
+
 const getShortcutLabel = (key: string) => {
   return /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? `\u2318${key}` : `Ctrl+${key}`
 }
@@ -696,6 +700,186 @@ describe('<ProjectWorkspace />', () => {
       )
     })
     expect(screen.queryByText('Sprites HD')).not.toBeInTheDocument()
+  })
+
+  it('opens the save-data editor and builds project code from the code menu', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: []
+    })
+    vi.mocked(window.api.buildProjectCode).mockResolvedValue({
+      writtenFiles: ['src/Saves/SaveData.h'],
+      saveDataEntryCount: 2,
+      spriteCount: 1,
+      tilesetCount: 0,
+      tilemapCount: 0,
+      windowCount: 0,
+      sceneCount: 0,
+      actorScriptCount: 0,
+      sceneScriptCount: 0
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    openCodeMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit Save Data...' }))
+
+    await waitFor(() => {
+      expect(window.api.openProjectSaveDataEditor).toHaveBeenCalledWith('/projects/Alpha')
+    })
+
+    openCodeMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Build Project Code' }))
+
+    await waitFor(() => {
+      expect(window.api.buildProjectCode).toHaveBeenCalledWith('/projects/Alpha')
+    })
+
+    expect(
+      await screen.findByText(
+        'Built project code for 2 save entries, 1 sprites, 0 tilesets, 0 tilemaps, 0 windows, and 0 scenes.'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('opens the bank dialog for bankable resources and saves a new bank', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        {
+          type: 'file',
+          id: 'sprite-1',
+          name: 'Hero',
+          fileName: 'Hero.rgbsprite.json',
+          path: 'Hero.rgbsprite.json',
+          parentPath: null,
+          extension: 'json',
+          resourceType: 'sprite',
+          bank: 255
+        }
+      ]
+    })
+    vi.mocked(window.api.updateProjectResourceBank).mockResolvedValue({
+      resourceType: 'sprite',
+      resourcePath: 'Hero.rgbsprite.json',
+      resourceName: 'Hero',
+      parentPath: '',
+      bank: 23,
+      view: {
+        projectName: 'Alpha',
+        projectPath: '/projects/Alpha',
+        currentPath: '',
+        parentPath: null,
+        items: [
+          {
+            type: 'file',
+            id: 'sprite-1',
+            name: 'Hero',
+            fileName: 'Hero.rgbsprite.json',
+            path: 'Hero.rgbsprite.json',
+            parentPath: null,
+            extension: 'json',
+            resourceType: 'sprite',
+            bank: 23
+          }
+        ]
+      }
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    const heroButton = (await screen.findByText('Hero')).closest('button')
+
+    if (!heroButton) {
+      throw new Error('Expected Hero resource button.')
+    }
+
+    fireEvent.contextMenu(heroButton, { clientX: 120, clientY: 120 })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Bank...' }))
+    fireEvent.change(screen.getByDisplayValue('255'), { target: { value: '23' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(window.api.updateProjectResourceBank).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'sprite',
+        'Hero.rgbsprite.json',
+        23
+      )
+    })
+  })
+
+  it('marks a scene as the starting scene from the resource context menu', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      startingScenePath: null,
+      items: [
+        {
+          type: 'file',
+          id: 'scene-1',
+          name: 'Intro',
+          fileName: 'Intro.rgbscene.json',
+          path: 'Intro.rgbscene.json',
+          parentPath: null,
+          extension: 'json',
+          resourceType: 'scene',
+          bank: null
+        }
+      ]
+    })
+    vi.mocked(window.api.updateProjectStartingScene).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      startingScenePath: 'Intro.rgbscene.json',
+      items: [
+        {
+          type: 'file',
+          id: 'scene-1',
+          name: 'Intro',
+          fileName: 'Intro.rgbscene.json',
+          path: 'Intro.rgbscene.json',
+          parentPath: null,
+          extension: 'json',
+          resourceType: 'scene',
+          bank: null
+        }
+      ]
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    const introButton = (await screen.findByText('Intro')).closest('button')
+
+    if (!introButton) {
+      throw new Error('Expected Intro resource button.')
+    }
+
+    fireEvent.contextMenu(introButton, { clientX: 120, clientY: 120 })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Set As Starting Scene' }))
+
+    await waitFor(() => {
+      expect(window.api.updateProjectStartingScene).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Intro.rgbscene.json'
+      )
+    })
   })
 
   it('sanitizes rename conflict errors and automatically reverts to the previous name', async () => {

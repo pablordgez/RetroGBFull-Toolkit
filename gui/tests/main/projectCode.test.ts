@@ -1,10 +1,12 @@
-import { mkdtemp, readFile, rm, stat } from 'fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadProjectAssetFile, saveProjectAssetFile } from '../../src/main/projectAssetFiles'
+import { saveProjectSaveDataState } from '../../src/main/projectMetadata'
 import { createProjectStructure } from '../../src/main/projectLauncher'
 import {
+  copyBundledEngineCore,
   generateProjectResourceFiles,
   listProjectScriptCallbackCandidates,
   loadProjectScriptResource,
@@ -15,7 +17,9 @@ import {
   createProjectResource,
   createProjectScriptResource,
   deleteProjectResource,
-  listProjectScriptResources
+  listProjectScriptResources,
+  updateProjectResourceBank,
+  updateProjectStartingScene
 } from '../../src/main/projectResources'
 
 const tempDirectories: string[] = []
@@ -242,5 +246,176 @@ describe('projectCode collision callback helpers', () => {
     expect(emptyMapRegistrySource).not.toContain('empty_map')
     expect(emptyMapRegistrySource).toContain('Map* maps[NUMBER_OF_MAPS] = {')
     expect(emptyMapRegistrySource).toContain('const AssetEntry map_data[NUMBER_OF_MAPS] = {')
+  })
+
+  it('generates save-data blocks from the project save-data state', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    await saveProjectSaveDataState(project.path, {
+      entries: [
+        {
+          id: 'coins',
+          name: 'coins',
+          type: 'uint8_t',
+          defaultValue: '0'
+        },
+        {
+          id: 'last_position',
+          name: 'last_position',
+          type: 'uint16_t',
+          defaultValue: '128'
+        }
+      ]
+    })
+
+    await generateProjectResourceFiles(project.path)
+
+    const saveDataHeader = await readFile(join(project.path, 'src', 'Saves', 'SaveData.h'), 'utf-8')
+    const saveDataSource = await readFile(join(project.path, 'src', 'Saves', 'SaveData.c'), 'utf-8')
+
+    expect(saveDataHeader).toContain('uint8_t coins;')
+    expect(saveDataHeader).toContain('uint16_t last_position;')
+    expect(saveDataSource).toContain('save_data.coins = 0;')
+    expect(saveDataSource).toContain('save_data.last_position = 128;')
+  })
+
+  it('injects generated scene initialization into the real scene script and rewrites main.c to the selected starting scene', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const scene = await createProjectResource(project.path, 'scene', '', 'Room')
+    const sceneScript = await createProjectScriptResource(project.path, 'scene', 'RoomLogic')
+    const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
+
+    const loadedScene = await loadProjectAssetFile(project.path, scene.resourcePath)
+    const loadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+
+    if (loadedScene.document.kind !== 'scene' || loadedTilemap.document.kind !== 'tilemap') {
+      throw new Error('Expected scene and tilemap documents.')
+    }
+
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...loadedTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await saveProjectAssetFile(project.path, scene.resourcePath, {
+      ...loadedScene.document,
+      tilemapPath: tilemap.resourcePath,
+      scriptPath: sceneScript.resourcePath
+    })
+    await updateProjectStartingScene(project.path, scene.resourcePath)
+
+    await generateProjectResourceFiles(project.path)
+
+    const mainSource = await readFile(join(project.path, 'src', 'main.c'), 'utf-8')
+    const roomLogicSource = await readFile(join(project.path, sceneScript.resourcePath), 'utf-8')
+    const projectBindingsPath = join(project.path, 'src', 'Generated', 'ProjectBindings.c')
+
+    expect(mainSource).toContain('#include "CustomScenes/RoomLogic.h"')
+    expect(mainSource).toContain('RoomLogic ss;')
+    expect(mainSource).toContain('ss.base.type = _RoomLogic;')
+    expect(roomLogicSource).toContain('// BEGIN GENERATED SCENE INITIALIZATION')
+    expect(roomLogicSource).toContain('set_scene_map(maps[dungeon]);')
+    await expect(stat(projectBindingsPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('can rebuild scenes without custom scene scripts without treating managed scene files as user scripts', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const scene = await createProjectResource(project.path, 'scene', '', 'Room')
+    const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
+
+    const loadedScene = await loadProjectAssetFile(project.path, scene.resourcePath)
+    const loadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+
+    if (loadedScene.document.kind !== 'scene' || loadedTilemap.document.kind !== 'tilemap') {
+      throw new Error('Expected scene and tilemap documents.')
+    }
+
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...loadedTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await saveProjectAssetFile(project.path, scene.resourcePath, {
+      ...loadedScene.document,
+      tilemapPath: tilemap.resourcePath
+    })
+    await updateProjectStartingScene(project.path, scene.resourcePath)
+
+    await generateProjectResourceFiles(project.path)
+    await generateProjectResourceFiles(project.path)
+
+    const roomScenePath = join(project.path, 'src', 'CustomScenes', 'Room.c')
+    const sampleScenePath = join(project.path, 'src', 'CustomScenes', 'SampleScene.c')
+
+    expect(await readFile(roomScenePath, 'utf-8')).toContain('// RETROGBFULL MANAGED SCENE FILE')
+    await expect(stat(sampleScenePath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('copies the bundled gbdk directory next to the project during build', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const siblingGbdkPath = join(workspaceDirectory, 'gbdk')
+
+    await expect(stat(siblingGbdkPath)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    await generateProjectResourceFiles(project.path)
+
+    expect((await stat(siblingGbdkPath)).isDirectory()).toBe(true)
+    expect((await stat(join(siblingGbdkPath, 'bin'))).isDirectory()).toBe(true)
+  })
+
+  it('refreshes existing core files when copying the bundled engine core again', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const mainSourcePath = join(project.path, 'src', 'main.c')
+
+    await writeFile(mainSourcePath, '// local override that should be replaced\n', 'utf-8')
+
+    const copyResult = await copyBundledEngineCore(project.path)
+    const refreshedMainSource = await readFile(mainSourcePath, 'utf-8')
+
+    expect(copyResult.copiedPaths).toContain('src/main.c')
+    expect(copyResult.skippedPaths).not.toContain('src/main.c')
+    expect(refreshedMainSource).toContain('#include "GameManager/GameManager.h"')
+    expect(refreshedMainSource).toContain('init_actor_functions();')
+    expect(refreshedMainSource).not.toContain('local override that should be replaced')
+  })
+
+  it('emits non-default banks into generated resources and managed script preambles', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+    const script = await createProjectScriptResource(project.path, 'general', 'Shared')
+    const spriteIdentifier = normalizeResourceIdentifierStem('Hero')
+    const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
+    const scriptSourcePath = join(project.path, script.resourcePath)
+
+    await updateProjectResourceBank(project.path, 'sprite', sprite.resourcePath, 7)
+    await updateProjectResourceBank(project.path, 'script', script.resourcePath, 23)
+
+    const loadedScript = await loadProjectScriptResource(project.path, script.resourcePath, 'general')
+    expect(loadedScript.managedSourcePrefix).toContain('#pragma bank 23')
+
+    await saveProjectScriptResource(
+      project.path,
+      script.resourcePath,
+      'general',
+      'void helper(void){\n}\n',
+      loadedScript.headerContent
+    )
+
+    await generateProjectResourceFiles(project.path)
+
+    expect(await readFile(spriteSourcePath, 'utf-8')).toContain('#pragma bank 7')
+    expect(await readFile(scriptSourcePath, 'utf-8')).toContain('#pragma bank 23')
   })
 })

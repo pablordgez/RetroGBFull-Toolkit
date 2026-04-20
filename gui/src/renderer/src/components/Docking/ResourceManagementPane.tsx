@@ -8,6 +8,7 @@ import { PROJECT_ASSET_LABELS } from '../../../../shared/projectAssets'
 import { PROJECT_SCRIPT_LABELS, type ProjectScriptKind } from '../../../../shared/projectScripts'
 import type {
   ProjectDeletedResourceResult,
+  ProjectResourceFileItem,
   ProjectResourceItem,
   ProjectResourceKind,
   ProjectResourceMutationResult,
@@ -47,6 +48,14 @@ interface PendingDeleteResourceState {
   name: string
   resourceType: ProjectResourceKind
   scriptKind?: ProjectScriptKind | null
+}
+
+interface PendingBankResourceState {
+  path: string
+  name: string
+  resourceType: ProjectResourceKind
+  currentBank: number
+  draftBank: string
 }
 
 type ResourceClipboardOperation = 'copy' | 'cut'
@@ -126,6 +135,14 @@ const getTrackedResourceKind = (resource: ProjectResourceItem): ProjectResourceK
   return resource.resourceType ?? null
 }
 
+const supportsBankOverride = (resource: ProjectResourceItem): resource is ProjectResourceFileItem => {
+  return resource.type === 'file' && resource.bank != null
+}
+
+const isSceneResource = (resource: ProjectResourceItem): resource is ProjectResourceFileItem => {
+  return resource.type === 'file' && resource.resourceType === 'scene'
+}
+
 const getResourceIcon = (resource: ProjectResourceItem): ReactElement => {
   if (resource.type === 'folder') {
     return <RetroFolderIcon className="resource-management-pane__folder-icon" />
@@ -166,6 +183,9 @@ export const ResourceManagementPane = ({
   const [editingResource, setEditingResource] = useState<EditingResourceState | null>(null)
   const [pendingDeleteResource, setPendingDeleteResource] =
     useState<PendingDeleteResourceState | null>(null)
+  const [pendingBankResource, setPendingBankResource] = useState<PendingBankResourceState | null>(
+    null
+  )
   const [selectedResourcePath, setSelectedResourcePath] = useState<string | null>(null)
   const [clipboardResource, setClipboardResource] = useState<ResourceClipboardState | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -176,6 +196,7 @@ export const ResourceManagementPane = ({
   const isInteractionDisabled = isBusy || isHistoryBusy
   const currentResourcePath = resourceView?.currentPath ?? ''
   const editingResourcePath = editingResource?.path ?? null
+  const startingScenePath = resourceView?.startingScenePath ?? null
 
   const showErrorStatus = (message: string): void => {
     setStatusTone('error')
@@ -199,6 +220,7 @@ export const ResourceManagementPane = ({
       try {
         const nextView = await window.api.getProjectResources(projectPath, nextPath)
         setResourceView(nextView)
+        setPendingBankResource(null)
         setStatusMessage(null)
         return { ok: true, errorMessage: null as string | null }
       } catch (error) {
@@ -222,6 +244,7 @@ export const ResourceManagementPane = ({
       setResourceView(null)
       setEditingResource(null)
       setPendingDeleteResource(null)
+      setPendingBankResource(null)
       setSelectedResourcePath(null)
       setClipboardResource(null)
       showErrorStatus('This window was opened without a project path.')
@@ -273,6 +296,20 @@ export const ResourceManagementPane = ({
   }, [resourceView, selectedResourcePath])
 
   useEffect(() => {
+    if (!pendingBankResource) {
+      return
+    }
+
+    const matchingResource = resourceView?.items.find(
+      (resource) => resource.path === pendingBankResource.path
+    )
+
+    if (!matchingResource || !supportsBankOverride(matchingResource)) {
+      setPendingBankResource(null)
+    }
+  }, [pendingBankResource, resourceView])
+
+  useEffect(() => {
     if (!editingResourcePath || !renameInputRef.current) {
       return
     }
@@ -289,6 +326,7 @@ export const ResourceManagementPane = ({
     result: ProjectResourceMutationResult | ProjectDeletedResourceResult
   ): void => {
     setResourceView(result.view)
+    setPendingBankResource(null)
     setStatusMessage(null)
     paneRef.current?.focus()
   }
@@ -1069,6 +1107,81 @@ export const ResourceManagementPane = ({
     [currentResourcePath, isInteractionDisabled, loadResources, onOpenScene, projectPath]
   )
 
+  const handleSaveResourceBank = useCallback(async (): Promise<void> => {
+    if (!pendingBankResource || !projectPath) {
+      return
+    }
+
+    const trimmedBank = pendingBankResource.draftBank.trim()
+
+    if (!/^\d+$/.test(trimmedBank)) {
+      showErrorStatus('Bank must be an integer between 0 and 255.')
+      return
+    }
+
+    const parsedBank = Number(trimmedBank)
+
+    if (!Number.isInteger(parsedBank) || parsedBank < 0 || parsedBank > 255) {
+      showErrorStatus('Bank must be an integer between 0 and 255.')
+      return
+    }
+
+    setIsBusy(true)
+
+    try {
+      const result = await window.api.updateProjectResourceBank(
+        projectPath,
+        pendingBankResource.resourceType,
+        pendingBankResource.path,
+        parsedBank
+      )
+      applyResourceMutation(result)
+      setPendingBankResource(null)
+      showInfoStatus(`Assigned bank ${parsedBank} to "${pendingBankResource.name}".`)
+    } catch (error) {
+      console.error('[resource-management-pane] updateProjectResourceBank failed', error)
+      showErrorStatus(
+        getFriendlyErrorMessage(
+          error,
+          'Something went wrong while updating the resource bank. Please try again.'
+        )
+      )
+    } finally {
+      setIsBusy(false)
+    }
+  }, [pendingBankResource, projectPath])
+
+  const handleSetStartingScene = useCallback(
+    async (scenePath: string | null, sceneName: string | null): Promise<void> => {
+      if (!projectPath) {
+        return
+      }
+
+      setIsBusy(true)
+
+      try {
+        await window.api.updateProjectStartingScene(projectPath, scenePath)
+        await loadResources(currentResourcePath)
+        showInfoStatus(
+          scenePath && sceneName
+            ? `"${sceneName}" is now the starting scene.`
+            : 'Cleared the starting scene selection.'
+        )
+      } catch (error) {
+        console.error('[resource-management-pane] updateProjectStartingScene failed', error)
+        showErrorStatus(
+          getFriendlyErrorMessage(
+            error,
+            'Something went wrong while updating the starting scene. Please try again.'
+          )
+        )
+      } finally {
+        setIsBusy(false)
+      }
+    },
+    [currentResourcePath, loadResources, projectPath]
+  )
+
   const rootMenuOptions = useMemo((): ContextMenuOption[] => {
     return [
       {
@@ -1233,6 +1346,42 @@ export const ResourceManagementPane = ({
                     disabled: !canPasteClipboardResource,
                     onSelect: () => void handlePasteClipboardResource()
                   },
+                  ...(isSceneResource(resource)
+                    ? [
+                        {
+                          id: `start-scene-${resource.path}`,
+                          label:
+                            startingScenePath === resource.path
+                              ? 'Clear Starting Scene'
+                              : 'Set As Starting Scene',
+                          disabled: isInteractionDisabled,
+                          onSelect: () => {
+                            void handleSetStartingScene(
+                              startingScenePath === resource.path ? null : resource.path,
+                              resource.name
+                            )
+                          }
+                        } satisfies ContextMenuOption
+                      ]
+                    : []),
+                  ...(supportsBankOverride(resource)
+                    ? [
+                        {
+                          id: `bank-${resource.path}`,
+                          label: 'Bank...',
+                          disabled: isInteractionDisabled,
+                          onSelect: () => {
+                            setPendingBankResource({
+                              path: resource.path,
+                              name: resource.name,
+                              resourceType,
+                              currentBank: resource.bank ?? 255,
+                              draftBank: String(resource.bank ?? 255)
+                            })
+                          }
+                        } satisfies ContextMenuOption
+                      ]
+                    : []),
                   {
                     id: `rename-${resource.path}`,
                     label: 'Rename',
@@ -1308,6 +1457,9 @@ export const ResourceManagementPane = ({
                           }}
                           onClick={(event) => event.stopPropagation()}
                         />
+                        {isSceneResource(resource) && startingScenePath === resource.path && (
+                          <span className="resource-management-pane__item-badge">START</span>
+                        )}
                       </div>
                     ) : (
                       <button
@@ -1343,6 +1495,9 @@ export const ResourceManagementPane = ({
                       >
                         {getResourceIcon(resource)}
                         <span className="resource-management-pane__item-name">{resource.name}</span>
+                        {isSceneResource(resource) && startingScenePath === resource.path && (
+                          <span className="resource-management-pane__item-badge">START</span>
+                        )}
                       </button>
                     )}
                   </ContextMenuRegion>
@@ -1394,6 +1549,76 @@ export const ResourceManagementPane = ({
                   disabled={isInteractionDisabled}
                 >
                   Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {pendingBankResource && (
+          <div className="resource-management-pane__modal-backdrop">
+            <div className="resource-management-pane__modal" role="dialog" aria-modal="true">
+              <h2>Set Bank For &quot;{pendingBankResource.name}&quot;</h2>
+              <p className="resource-management-pane__modal-copy">
+                Choose the ROM bank that should be emitted for this generated source file or script
+                preamble.
+              </p>
+
+              <label
+                className="resource-management-pane__modal-copy"
+                style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}
+              >
+                <span>Bank (0-255)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={255}
+                  value={pendingBankResource.draftBank}
+                  onChange={(event) => {
+                    const nextValue = event.target.value
+                    setPendingBankResource((currentBankResource) =>
+                      currentBankResource
+                        ? {
+                            ...currentBankResource,
+                            draftBank: nextValue
+                          }
+                        : null
+                    )
+                  }}
+                  disabled={isInteractionDisabled}
+                />
+              </label>
+
+              <div className="resource-management-pane__modal-actions">
+                <button
+                  type="button"
+                  onClick={() => setPendingBankResource(null)}
+                  disabled={isInteractionDisabled}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPendingBankResource((currentBankResource) =>
+                      currentBankResource
+                        ? {
+                            ...currentBankResource,
+                            draftBank: '255'
+                          }
+                        : null
+                    )
+                  }
+                  disabled={isInteractionDisabled || pendingBankResource.currentBank === 255}
+                >
+                  Reset To 255
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveResourceBank()}
+                  disabled={isInteractionDisabled}
+                >
+                  Save
                 </button>
               </div>
             </div>

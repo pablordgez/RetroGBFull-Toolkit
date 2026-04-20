@@ -30,6 +30,9 @@ describe('projectLauncher helpers', () => {
 
         expect(validation.isValid).toBe(true);
         expect(projectFileContents).toContain('"name": "MyProject"');
+        expect(projectFileContents).toContain('"startingScenePath": null');
+        expect(projectFileContents).toContain('"saveData"');
+        expect(projectFileContents).toContain('"entries": []');
         expect(projectFileContents).toContain('"items": []');
     });
 

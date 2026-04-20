@@ -1,8 +1,15 @@
 import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
 import { basename, dirname, join, relative, resolve } from 'path'
+import {
+  loadProjectSaveDataState,
+  loadProjectStartingScenePath,
+  readProjectTrackedResourceBank,
+  readProjectTrackedResourceBanks
+} from './projectMetadata'
 import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
 import { normalizeCodeIdentifier, normalizeCodeIdentifierStem } from '../shared/codeIdentifiers'
 import type {
+  BuildProjectCodeResult,
   CopyEngineCoreResult,
   GenerateProjectResourceFilesResult,
   ProjectScriptCallbackCandidate,
@@ -23,6 +30,8 @@ import {
   getProjectAssetKindFromFileName,
   parseProjectAssetDocument
 } from '../shared/projectAssets'
+import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
+import { validateProjectSaveDataEntries } from '../shared/projectSaveData'
 import {
   type ProjectScriptKind,
   PROJECT_SCRIPT_DIRECTORY_BY_KIND,
@@ -44,6 +53,7 @@ interface ProjectAssetRecordLike {
   path: string
   name: string
   identifier: string
+  bank: number
   document: ProjectAssetDocument
 }
 
@@ -52,6 +62,16 @@ interface ProjectScriptRecordResolved {
   path: string
   name: string
   identifier: string
+  bank: number
+}
+
+interface BuiltSceneRecord {
+  asset: ProjectAssetRecordLike
+  identifier: string
+  sourcePath: string
+  headerPath: string
+  bank: number
+  isManagedFile: boolean
 }
 
 type SceneNodeEmitter = (
@@ -72,6 +92,23 @@ const RESERVED_CALLBACK_NAMES = new Set(['AINIT', 'AUPDATE', 'SINIT', 'SUPDATE']
 const IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES = new Set(['deleted-resources'])
 const INTERNAL_GENERATION_DIRECTORY = '.retrogbfull'
 const RESOURCE_GENERATION_MANIFEST_PATH = `${INTERNAL_GENERATION_DIRECTORY}/resource-generation-manifest.json`
+const SCRIPT_ENVIRONMENT_PATH = 'src/ScriptEnvironment.h'
+const SAVE_DATA_HEADER_PATH = 'src/Saves/SaveData.h'
+const SAVE_DATA_SOURCE_PATH = 'src/Saves/SaveData.c'
+const MAIN_SOURCE_PATH = 'src/main.c'
+const SAVE_DATA_VARIABLE_BEGIN = '    // BEGIN SAVE DATA VARIABLES'
+const SAVE_DATA_VARIABLE_END = '    // END SAVE DATA VARIABLES'
+const SAVE_DATA_INITIALIZATION_BEGIN = '    // BEGIN SAVE DATA VARIABLE INITIALIZATION'
+const SAVE_DATA_INITIALIZATION_END = '    // END SAVE DATA VARIABLE INITIALIZATION'
+const GENERATED_SCENE_BUILD_BEGIN = '    // BEGIN GENERATED SCENE INITIALIZATION'
+const GENERATED_SCENE_BUILD_END = '    // END GENERATED SCENE INITIALIZATION'
+const STARTING_SCENE_INCLUDE_BEGIN = '// BEGIN STARTING SCENE INCLUDE'
+const STARTING_SCENE_INCLUDE_END = '// END STARTING SCENE INCLUDE'
+const STARTING_SCENE_INSTANTIATION_BEGIN = '    // BEGIN STARTING SCENE INSTANTIATION'
+const STARTING_SCENE_INSTANTIATION_END = '    // END STARTING SCENE INSTANTIATION'
+const MANAGED_SCENE_FILE_MARKER = '// RETROGBFULL MANAGED SCENE FILE'
+const MANAGED_DEFAULT_ACTOR_FILE_MARKER = '// RETROGBFULL MANAGED DEFAULT ACTOR FILE'
+const CORE_PLACEHOLDER_SCENE_FILE_MARKER = '// RETROGBFULL CORE PLACEHOLDER SCENE'
 
 interface ResourceGenerationManifest {
   version: 1
@@ -91,6 +128,10 @@ const resolvePathWithinProject = (projectPath: string, resourcePath: string): st
 
 const getBundledCorePath = (): string => {
   return resolve(__dirname, '../../../core')
+}
+
+const getBundledGbdkPath = (): string => {
+  return resolve(__dirname, '../../../gbdk')
 }
 
 const walkRelativePaths = async (
@@ -123,12 +164,70 @@ const walkRelativePaths = async (
   return discoveredPaths
 }
 
+const cleanupBundledDirectoryInTarget = async (
+  sourceBasePath: string,
+  targetBasePath: string
+): Promise<void> => {
+  const relativePaths = await walkRelativePaths(sourceBasePath)
+
+  for (const relativePath of relativePaths) {
+    const sourcePath = join(sourceBasePath, relativePath)
+    const targetPath = join(targetBasePath, relativePath)
+    const sourceStats = await stat(sourcePath)
+
+    if (sourceStats.isDirectory()) {
+      continue
+    }
+
+    try {
+      await rm(targetPath, { force: true })
+    } catch {
+      // Missing files are fine during a refresh.
+    }
+  }
+}
+
+const copyBundledDirectoryIntoTarget = async (
+  sourceBasePath: string,
+  targetBasePath: string
+): Promise<{ copiedPaths: string[]; skippedPaths: string[] }> => {
+  const relativePaths = await walkRelativePaths(sourceBasePath)
+  const copiedPaths: string[] = []
+  const skippedPaths: string[] = []
+
+  for (const relativePath of relativePaths) {
+    const sourcePath = join(sourceBasePath, relativePath)
+    const targetPath = join(targetBasePath, relativePath)
+    const sourceStats = await stat(sourcePath)
+
+    if (sourceStats.isDirectory()) {
+      await mkdir(targetPath, { recursive: true })
+      continue
+    }
+
+    try {
+      await stat(targetPath)
+      skippedPaths.push(relativePath.replace(/\\/g, '/'))
+      continue
+    } catch {
+      await mkdir(dirname(targetPath), { recursive: true })
+      await cp(sourcePath, targetPath, { recursive: false, errorOnExist: true })
+      copiedPaths.push(relativePath.replace(/\\/g, '/'))
+    }
+  }
+
+  return {
+    copiedPaths,
+    skippedPaths
+  }
+}
+
 const escapeHeaderGuardName = (scriptName: string): string => {
   return `${normalizeCodeIdentifier(scriptName).toUpperCase()}_H`
 }
 
-const buildManagedSourcePrefix = (scriptFileStem: string): string => {
-  return `#pragma bank 255\n#include "${scriptFileStem}.h"\n#include "Generated/ScriptEnvironment.h"\n\n`
+const buildManagedSourcePrefix = (scriptFileStem: string, bank: number): string => {
+  return `#pragma bank ${bank}\n#include "${scriptFileStem}.h"\n#include "ScriptEnvironment.h"\n\n`
 }
 
 const buildActorHeaderTemplate = (scriptIdentifier: string): string => {
@@ -162,7 +261,8 @@ const buildGeneralSourceTemplate = (): string => {
 
 const buildScriptTemplates = (
   scriptKind: ProjectScriptKind,
-  scriptName: string
+  scriptName: string,
+  bank = DEFAULT_PROJECT_RESOURCE_BANK
 ): { managedSourcePrefix: string; editableSourceContent: string; headerContent: string } => {
   const scriptFileStem = getProjectScriptDisplayName(scriptName)
   const scriptIdentifier = normalizeCodeIdentifier(scriptFileStem)
@@ -170,19 +270,19 @@ const buildScriptTemplates = (
   switch (scriptKind) {
     case 'actor':
       return {
-        managedSourcePrefix: buildManagedSourcePrefix(scriptFileStem),
+        managedSourcePrefix: buildManagedSourcePrefix(scriptFileStem, bank),
         editableSourceContent: buildActorSourceTemplate(scriptIdentifier),
         headerContent: buildActorHeaderTemplate(scriptIdentifier)
       }
     case 'scene':
       return {
-        managedSourcePrefix: buildManagedSourcePrefix(scriptFileStem),
+        managedSourcePrefix: buildManagedSourcePrefix(scriptFileStem, bank),
         editableSourceContent: buildSceneSourceTemplate(scriptIdentifier),
         headerContent: buildSceneHeaderTemplate(scriptIdentifier)
       }
     case 'general':
       return {
-        managedSourcePrefix: buildManagedSourcePrefix(scriptFileStem),
+        managedSourcePrefix: buildManagedSourcePrefix(scriptFileStem, bank),
         editableSourceContent: buildGeneralSourceTemplate(),
         headerContent: buildGeneralHeaderTemplate(scriptIdentifier)
       }
@@ -193,7 +293,7 @@ const splitEditableSourceContent = (sourceContent: string): string => {
   const sourceLines = sourceContent.split('\n')
   let index = 0
 
-  if (sourceLines[index]?.trim() === '#pragma bank 255') {
+  if (/^#pragma\s+bank\s+\d+\s*$/.test(sourceLines[index]?.trim() ?? '')) {
     index += 1
   }
 
@@ -201,7 +301,11 @@ const splitEditableSourceContent = (sourceContent: string): string => {
     index += 1
   }
 
-  if ((sourceLines[index] ?? '').trim() === '#include "Generated/ScriptEnvironment.h"') {
+  if (
+    ['#include "Generated/ScriptEnvironment.h"', '#include "ScriptEnvironment.h"'].includes(
+      (sourceLines[index] ?? '').trim()
+    )
+  ) {
     index += 1
   }
 
@@ -210,6 +314,18 @@ const splitEditableSourceContent = (sourceContent: string): string => {
   }
 
   return sourceLines.slice(index).join('\n')
+}
+
+const extractManagedSourceBank = (sourceContent: string): number | null => {
+  const firstLine = sourceContent.split('\n', 1)[0]?.trim() ?? ''
+  const match = firstLine.match(/^#pragma\s+bank\s+(\d+)\s*$/)
+
+  if (!match) {
+    return null
+  }
+
+  const parsedBank = Number(match[1])
+  return Number.isInteger(parsedBank) ? parsedBank : null
 }
 
 const getScriptFilePaths = (
@@ -228,6 +344,335 @@ const getScriptFilePaths = (
   }
 }
 
+const replaceManagedBlock = (
+  fileContent: string,
+  beginMarker: string,
+  endMarker: string,
+  nextLines: string[]
+): string => {
+  const beginIndex = fileContent.indexOf(beginMarker)
+  const endIndex = fileContent.indexOf(endMarker)
+
+  if (beginIndex < 0 || endIndex < 0 || endIndex < beginIndex) {
+    throw new ProjectLauncherError(
+      `The managed save-data markers could not be found in ${beginMarker.includes('INITIALIZATION') ? SAVE_DATA_SOURCE_PATH : SAVE_DATA_HEADER_PATH}.`
+    )
+  }
+
+  const beforeContent = fileContent.slice(0, beginIndex + beginMarker.length)
+  const afterContent = fileContent.slice(endIndex)
+  const insertedContent = nextLines.length > 0 ? `\n${nextLines.join('\n')}\n\n` : '\n\n'
+
+  return `${beforeContent}${insertedContent}${afterContent}`
+}
+
+const writeProjectSaveDataFiles = async (
+  projectPath: string
+): Promise<{ writtenFiles: string[]; entryCount: number }> => {
+  const saveDataState = await loadProjectSaveDataState(projectPath)
+  const validationIssues = validateProjectSaveDataEntries(saveDataState.entries)
+
+  if (validationIssues.length > 0) {
+    throw new ProjectLauncherError(validationIssues[0].message)
+  }
+
+  const headerAbsolutePath = resolvePathWithinProject(projectPath, SAVE_DATA_HEADER_PATH)
+  const sourceAbsolutePath = resolvePathWithinProject(projectPath, SAVE_DATA_SOURCE_PATH)
+  const [headerContent, sourceContent] = await Promise.all([
+    readFile(headerAbsolutePath, 'utf-8'),
+    readFile(sourceAbsolutePath, 'utf-8')
+  ])
+
+  const variableLines = saveDataState.entries.map((entry) => {
+    return `    ${entry.type.trim()} ${entry.name.trim()};`
+  })
+  const initializationLines = saveDataState.entries.map((entry) => {
+    return `    save_data.${entry.name.trim()} = ${entry.defaultValue.trim()};`
+  })
+
+  const nextHeaderContent = replaceManagedBlock(
+    headerContent,
+    SAVE_DATA_VARIABLE_BEGIN,
+    SAVE_DATA_VARIABLE_END,
+    variableLines
+  )
+  const nextSourceContent = replaceManagedBlock(
+    sourceContent,
+    SAVE_DATA_INITIALIZATION_BEGIN,
+    SAVE_DATA_INITIALIZATION_END,
+    initializationLines
+  )
+
+  const writtenFiles = await Promise.all([
+    writeManagedTextFile(projectPath, SAVE_DATA_HEADER_PATH, nextHeaderContent),
+    writeManagedTextFile(projectPath, SAVE_DATA_SOURCE_PATH, nextSourceContent)
+  ])
+
+  return {
+    writtenFiles,
+    entryCount: saveDataState.entries.length
+  }
+}
+
+const stripGeneratedSceneInitializationBlock = (sourceContent: string): string => {
+  const blockPattern = new RegExp(
+    `\\n?${GENERATED_SCENE_BUILD_BEGIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${GENERATED_SCENE_BUILD_END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n?`,
+    'g'
+  )
+
+  return sourceContent.replace(blockPattern, '\n')
+}
+
+const findMatchingBraceIndex = (sourceContent: string, openingBraceIndex: number): number => {
+  let depth = 0
+
+  for (let index = openingBraceIndex; index < sourceContent.length; index += 1) {
+    const character = sourceContent[index]
+
+    if (character === '{') {
+      depth += 1
+      continue
+    }
+
+    if (character === '}') {
+      depth -= 1
+
+      if (depth === 0) {
+        return index
+      }
+    }
+  }
+
+  return -1
+}
+
+const injectGeneratedSceneInitializationBlock = (
+  sourceContent: string,
+  initializationLines: string[]
+): string => {
+  const strippedSourceContent = stripGeneratedSceneInitializationBlock(sourceContent)
+
+  if (initializationLines.length === 0) {
+    return strippedSourceContent
+  }
+
+  const sinitMatch = strippedSourceContent.match(
+    /void\s+SINIT\s*\(\s*void\s*\)\s*(?:BANKED|NONBANKED)?\s*\{/
+  )
+
+  if (!sinitMatch || typeof sinitMatch.index !== 'number') {
+    throw new ProjectLauncherError(
+      'Scene scripts must define `void SINIT(void) BANKED` so build-time scene initialization can be injected.'
+    )
+  }
+
+  const openingBraceIndex = strippedSourceContent.indexOf('{', sinitMatch.index)
+  const closingBraceIndex = findMatchingBraceIndex(strippedSourceContent, openingBraceIndex)
+
+  if (openingBraceIndex < 0 || closingBraceIndex < 0) {
+    throw new ProjectLauncherError(
+      'The scene SINIT function could not be parsed for generated initialization.'
+    )
+  }
+
+  const functionBody = strippedSourceContent.slice(openingBraceIndex + 1, closingBraceIndex)
+  const initSceneMatch = functionBody.match(/^[ \t]*.*init_scene\s*\([^)]*\)\s*;.*$/m)
+  const blockLines = [
+    GENERATED_SCENE_BUILD_BEGIN,
+    ...initializationLines,
+    GENERATED_SCENE_BUILD_END
+  ]
+  const blockText = `${blockLines.join('\n')}\n`
+
+  if (initSceneMatch && typeof initSceneMatch.index === 'number') {
+    const insertionOffset = initSceneMatch.index + initSceneMatch[0].length
+    const insertionIndex = openingBraceIndex + 1 + insertionOffset
+
+    return `${strippedSourceContent.slice(0, insertionIndex)}\n${blockText}${strippedSourceContent.slice(insertionIndex)}`
+  }
+
+  return `${strippedSourceContent.slice(0, openingBraceIndex + 1)}\n${blockText}${strippedSourceContent.slice(openingBraceIndex + 1)}`
+}
+
+const getProjectScriptHeaderPath = (resourcePath: string): string => {
+  return `${dirname(resourcePath).replace(/\\/g, '/')}/${buildProjectScriptHeaderFileName(getProjectScriptDisplayName(basename(resourcePath)))}`
+}
+
+const buildManagedSceneFileContents = (
+  sceneIdentifier: string,
+  bank: number,
+  initializationLines: string[]
+): { headerContent: string; sourceContent: string } => {
+  const sourceContent = injectGeneratedSceneInitializationBlock(
+    `${buildManagedSourcePrefix(sceneIdentifier, bank)}${MANAGED_SCENE_FILE_MARKER}\n\n${buildSceneSourceTemplate(sceneIdentifier)}`,
+    initializationLines
+  )
+
+  return {
+    headerContent: `${MANAGED_SCENE_FILE_MARKER}\n${buildSceneHeaderTemplate(sceneIdentifier)}`,
+    sourceContent
+  }
+}
+
+const buildManagedDefaultActorFileContents = (
+  actorIdentifier: string,
+  bank: number
+): { headerContent: string; sourceContent: string } => {
+  return {
+    headerContent: `${MANAGED_DEFAULT_ACTOR_FILE_MARKER}\n${buildActorHeaderTemplate(actorIdentifier)}`,
+    sourceContent: `${buildManagedSourcePrefix(actorIdentifier, bank)}${MANAGED_DEFAULT_ACTOR_FILE_MARKER}\n\n${buildActorSourceTemplate(actorIdentifier)}`
+  }
+}
+
+const removeLegacyGeneratedFiles = async (projectPath: string): Promise<void> => {
+  const generatedDirectoryPath = resolvePathWithinProject(projectPath, 'src/Generated')
+
+  await Promise.all([
+    rm(resolvePathWithinProject(projectPath, 'src/Generated/ProjectBindings.h'), { force: true }),
+    rm(resolvePathWithinProject(projectPath, 'src/Generated/ProjectBindings.c'), { force: true }),
+    rm(resolvePathWithinProject(projectPath, 'src/Generated/ScriptEnvironment.h'), { force: true })
+  ])
+
+  try {
+    const remainingEntries = await readdir(generatedDirectoryPath)
+
+    if (remainingEntries.length === 0) {
+      await rm(generatedDirectoryPath, { recursive: true, force: true })
+    }
+  } catch {
+    // The legacy directory does not exist in all projects.
+  }
+}
+
+const syncManagedSceneFiles = async (projectPath: string, keepPaths: string[]): Promise<void> => {
+  const customScenesPath = resolvePathWithinProject(projectPath, 'src/CustomScenes')
+  const keepPathSet = new Set(keepPaths.map((path) => path.replace(/\\/g, '/')))
+
+  try {
+    const relativePaths = await walkRelativePaths(customScenesPath)
+
+    for (const relativePath of relativePaths) {
+      if (!relativePath.endsWith('.c') && !relativePath.endsWith('.h')) {
+        continue
+      }
+
+      const projectRelativePath = `src/CustomScenes/${relativePath.replace(/\\/g, '/')}`
+
+      if (keepPathSet.has(projectRelativePath)) {
+        continue
+      }
+
+      const absolutePath = resolvePathWithinProject(projectPath, projectRelativePath)
+      const fileContent = await readFile(absolutePath, 'utf-8')
+
+      if (!fileContent.includes(MANAGED_SCENE_FILE_MARKER)) {
+        continue
+      }
+
+      await rm(absolutePath, { force: true })
+    }
+  } catch {
+    // Custom scenes may not exist in invalid or half-built projects yet.
+  }
+}
+
+const rewriteStartingSceneInMain = async (
+  projectPath: string,
+  sceneIdentifier: string
+): Promise<string> => {
+  const mainAbsolutePath = resolvePathWithinProject(projectPath, MAIN_SOURCE_PATH)
+  const mainContent = await readFile(mainAbsolutePath, 'utf-8')
+  let nextMainContent = mainContent
+
+  if (
+    mainContent.includes(STARTING_SCENE_INCLUDE_BEGIN) &&
+    mainContent.includes(STARTING_SCENE_INCLUDE_END)
+  ) {
+    nextMainContent = replaceManagedBlock(
+      nextMainContent,
+      STARTING_SCENE_INCLUDE_BEGIN,
+      STARTING_SCENE_INCLUDE_END,
+      [`#include "CustomScenes/${sceneIdentifier}.h"`]
+    )
+  } else {
+    nextMainContent = nextMainContent.replace(
+      /#include\s+"CustomScenes\/[^"]+\.h"/,
+      `#include "CustomScenes/${sceneIdentifier}.h"`
+    )
+  }
+
+  if (
+    nextMainContent.includes(STARTING_SCENE_INSTANTIATION_BEGIN) &&
+    nextMainContent.includes(STARTING_SCENE_INSTANTIATION_END)
+  ) {
+    nextMainContent = replaceManagedBlock(
+      nextMainContent,
+      STARTING_SCENE_INSTANTIATION_BEGIN,
+      STARTING_SCENE_INSTANTIATION_END,
+      [
+        `    ${sceneIdentifier} ss;`,
+        `    ss.base.type = _${sceneIdentifier};`,
+        '',
+        '    set_scene((Scene*) &ss);'
+      ]
+    )
+  } else {
+    nextMainContent = nextMainContent.replace(
+      /[ \t]*[A-Za-z_][A-Za-z0-9_]*\s+ss;\r?\n[ \t]*ss\.base\.type\s*=\s*_[A-Za-z_][A-Za-z0-9_]*;\r?\n(?:\r?\n)?[ \t]*set_scene\(\(Scene\*\)\s*&ss\);\r?\n/,
+      `    ${sceneIdentifier} ss;\n    ss.base.type = _${sceneIdentifier};\n\n    set_scene((Scene*) &ss);\n`
+    )
+  }
+
+  if (nextMainContent === mainContent) {
+    const alreadyIncludesStartingScene = mainContent.includes(
+      `#include "CustomScenes/${sceneIdentifier}.h"`
+    )
+    const alreadyInstantiatesStartingScene = mainContent.includes(
+      `ss.base.type = _${sceneIdentifier};`
+    )
+
+    if (!alreadyIncludesStartingScene || !alreadyInstantiatesStartingScene) {
+      throw new ProjectLauncherError(
+        'The project main.c file could not be updated with the selected starting scene.'
+      )
+    }
+
+    return MAIN_SOURCE_PATH
+  }
+
+  await writeFile(mainAbsolutePath, nextMainContent, 'utf-8')
+
+  return MAIN_SOURCE_PATH
+}
+
+const rewriteManagedProjectScriptSource = async (
+  projectPath: string,
+  script: ProjectScriptRecordResolved
+): Promise<string> => {
+  const sourceAbsolutePath = resolvePathWithinProject(projectPath, script.path)
+  const existingSourceContent = await readFile(sourceAbsolutePath, 'utf-8')
+  const editableSourceContent = splitEditableSourceContent(existingSourceContent)
+  const managedSourcePrefix = buildManagedSourcePrefix(script.name, script.bank)
+
+  await writeFile(sourceAbsolutePath, `${managedSourcePrefix}${editableSourceContent}`, 'utf-8')
+
+  return script.path.replace(/\\/g, '/')
+}
+
+const rewriteScriptedSceneInitialization = async (
+  projectPath: string,
+  sceneScript: ProjectScriptRecordResolved,
+  initializationLines: string[]
+): Promise<string> => {
+  const sourceAbsolutePath = resolvePathWithinProject(projectPath, sceneScript.path)
+  const sourceContent = await readFile(sourceAbsolutePath, 'utf-8')
+  const nextSourceContent = injectGeneratedSceneInitializationBlock(sourceContent, initializationLines)
+
+  await writeFile(sourceAbsolutePath, nextSourceContent, 'utf-8')
+
+  return sceneScript.path.replace(/\\/g, '/')
+}
+
 const ensureProjectDirectory = async (projectPath: string): Promise<string> => {
   const validation = await validateProjectDirectory(projectPath)
 
@@ -243,32 +688,14 @@ const ensureProjectDirectory = async (projectPath: string): Promise<string> => {
 export const copyBundledEngineCore = async (projectPath: string): Promise<CopyEngineCoreResult> => {
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
   const bundledCorePath = getBundledCorePath()
-  const relativePaths = await walkRelativePaths(bundledCorePath)
-  const copiedPaths: string[] = []
-  const skippedPaths: string[] = []
 
-  for (const relativePath of relativePaths) {
-    const sourcePath = join(bundledCorePath, relativePath)
-    const targetPath = join(normalizedProjectPath, relativePath)
-    const sourceStats = await stat(sourcePath)
+  await cleanupBundledDirectoryInTarget(bundledCorePath, normalizedProjectPath)
 
-    if (sourceStats.isDirectory()) {
-      await mkdir(targetPath, { recursive: true })
-      continue
-    }
+  const { copiedPaths, skippedPaths } = await copyBundledDirectoryIntoTarget(
+    bundledCorePath,
+    normalizedProjectPath
+  )
 
-    try {
-      await stat(targetPath)
-      skippedPaths.push(relativePath.replace(/\\/g, '/'))
-      continue
-    } catch {
-      await mkdir(dirname(targetPath), { recursive: true })
-      await cp(sourcePath, targetPath, { recursive: false, errorOnExist: true })
-      copiedPaths.push(relativePath.replace(/\\/g, '/'))
-    }
-  }
-
-  await mkdir(resolvePathWithinProject(normalizedProjectPath, 'src/Generated'), { recursive: true })
   await writeGeneratedScriptEnvironment(normalizedProjectPath)
 
   return {
@@ -277,13 +704,43 @@ export const copyBundledEngineCore = async (projectPath: string): Promise<CopyEn
   }
 }
 
+const ensureBundledGbdkAvailableForProject = async (
+  projectPath: string
+): Promise<{ copiedPaths: string[]; skippedPaths: string[] }> => {
+  const bundledGbdkPath = getBundledGbdkPath()
+  const projectParentPath = dirname(projectPath)
+  const targetGbdkPath = join(projectParentPath, 'gbdk')
+
+  try {
+    const bundledGbdkStats = await stat(bundledGbdkPath)
+
+    if (!bundledGbdkStats.isDirectory()) {
+      throw new ProjectLauncherError('The bundled GBDK directory could not be found.')
+    }
+  } catch {
+    throw new ProjectLauncherError('The bundled GBDK directory could not be found.')
+  }
+
+  return copyBundledDirectoryIntoTarget(bundledGbdkPath, targetGbdkPath)
+}
+
+const buildScriptEnvironmentHeaderContent = (
+  scriptHeaderIncludes: string[]
+): string => {
+  return `#ifndef SCRIPT_ENVIRONMENT_H\n#define SCRIPT_ENVIRONMENT_H\n#include "MainDefinitions.h"\n#include "Actor/Actor.h"\n#include "Scene/Scene.h"\n#include "Collisions/CollisionManager.h"\n#include "Collisions/ColliderRegistry.h"\n#include "Assets/Animations/AnimationRegistry.h"\n#include "Assets/Map/MapRegistry.h"\n#include "Assets/Music/SongRegistry.h"\n#include "Saves/SaveData.h"\n${scriptHeaderIncludes.length > 0 ? `${scriptHeaderIncludes.join('\n')}\n` : ''}#include <gb/gb.h>\n#include <stdint.h>\n#include <stdio.h>\n#include <string.h>\n\n#endif // SCRIPT_ENVIRONMENT_H\n`
+}
+
 export const writeGeneratedScriptEnvironment = async (projectPath: string): Promise<void> => {
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
-  const headerPath = resolvePathWithinProject(
-    normalizedProjectPath,
-    'src/Generated/ScriptEnvironment.h'
-  )
-  const headerContent = `#ifndef SCRIPT_ENVIRONMENT_H\n#define SCRIPT_ENVIRONMENT_H\n#include "MainDefinitions.h"\n#include "Actor/Actor.h"\n#include "Scene/Scene.h"\n#include "Collisions/CollisionManager.h"\n#include "Collisions/ColliderRegistry.h"\n#include "Assets/Animations/AnimationRegistry.h"\n#include "Assets/Map/MapRegistry.h"\n#include "Assets/Music/SongRegistry.h"\n#include "Saves/SaveData.h"\n#include "Generated/ProjectBindings.h"\n#include <gb/gb.h>\n#include <stdint.h>\n#include <stdio.h>\n#include <string.h>\n\n#endif // SCRIPT_ENVIRONMENT_H\n`
+  const headerPath = resolvePathWithinProject(normalizedProjectPath, SCRIPT_ENVIRONMENT_PATH)
+  const scriptRecords = await loadProjectScriptRecords(normalizedProjectPath)
+  const scriptHeaderIncludes = [...new Set(
+    scriptRecords.map((script) => {
+      const headerPath = getProjectScriptHeaderPath(script.path).replace(/\\/g, '/')
+      return `#include "${headerPath.replace(/^src\//, '')}"`
+    })
+  )].sort((left, right) => left.localeCompare(right))
+  const headerContent = buildScriptEnvironmentHeaderContent(scriptHeaderIncludes)
 
   await mkdir(dirname(headerPath), { recursive: true })
   await writeFile(headerPath, headerContent, 'utf-8')
@@ -293,24 +750,25 @@ export const createProjectScriptFiles = async (
   projectPath: string,
   scriptKind: ProjectScriptKind,
   scriptName: string,
-  resourcePath?: string
+  resourcePath?: string,
+  bank = DEFAULT_PROJECT_RESOURCE_BANK
 ): Promise<{ resourcePath: string; sourcePath: string; headerPath: string }> => {
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
   const nextScriptName = normalizeCodeIdentifier(scriptName)
   const paths = getScriptFilePaths(scriptKind, nextScriptName, resourcePath)
-  const templates = buildScriptTemplates(scriptKind, nextScriptName)
+  const templates = buildScriptTemplates(scriptKind, nextScriptName, bank)
   const sourceAbsolutePath = resolvePathWithinProject(normalizedProjectPath, paths.sourcePath)
   const headerAbsolutePath = resolvePathWithinProject(normalizedProjectPath, paths.headerPath)
 
   await mkdir(dirname(sourceAbsolutePath), { recursive: true })
   await mkdir(dirname(headerAbsolutePath), { recursive: true })
-  await writeGeneratedScriptEnvironment(normalizedProjectPath)
   await writeFile(
     sourceAbsolutePath,
     `${templates.managedSourcePrefix}${templates.editableSourceContent}`,
     'utf-8'
   )
   await writeFile(headerAbsolutePath, templates.headerContent, 'utf-8')
+  await writeGeneratedScriptEnvironment(normalizedProjectPath)
 
   return paths
 }
@@ -325,10 +783,13 @@ export const loadProjectScriptResource = async (
   const paths = getScriptFilePaths(scriptKind, scriptName, resourcePath)
   const sourceAbsolutePath = resolvePathWithinProject(normalizedProjectPath, paths.sourcePath)
   const headerAbsolutePath = resolvePathWithinProject(normalizedProjectPath, paths.headerPath)
+  const bank = await readProjectTrackedResourceBank(normalizedProjectPath, paths.resourcePath)
   const sourceContent = await readFile(sourceAbsolutePath, 'utf-8')
   const headerContent = await readFile(headerAbsolutePath, 'utf-8')
-  const { managedSourcePrefix } = buildScriptTemplates(scriptKind, scriptName)
-  const editableSourceContent = splitEditableSourceContent(sourceContent)
+  const { managedSourcePrefix } = buildScriptTemplates(scriptKind, scriptName, bank)
+  const editableSourceContent = stripGeneratedSceneInitializationBlock(
+    splitEditableSourceContent(sourceContent)
+  )
 
   return {
     resourcePath: paths.resourcePath,
@@ -355,12 +816,13 @@ export const saveProjectScriptResource = async (
   const paths = getScriptFilePaths(scriptKind, scriptName, resourcePath)
   const sourceAbsolutePath = resolvePathWithinProject(normalizedProjectPath, paths.sourcePath)
   const headerAbsolutePath = resolvePathWithinProject(normalizedProjectPath, paths.headerPath)
-  const { managedSourcePrefix } = buildScriptTemplates(scriptKind, scriptName)
+  const bank = await readProjectTrackedResourceBank(normalizedProjectPath, paths.resourcePath)
+  const { managedSourcePrefix } = buildScriptTemplates(scriptKind, scriptName, bank)
   const sourceContent = `${managedSourcePrefix}${editableSourceContent}`
 
-  await writeGeneratedScriptEnvironment(normalizedProjectPath)
   await writeFile(sourceAbsolutePath, sourceContent, 'utf-8')
   await writeFile(headerAbsolutePath, headerContent, 'utf-8')
+  await writeGeneratedScriptEnvironment(normalizedProjectPath)
 
   return {
     resourcePath: paths.resourcePath,
@@ -395,11 +857,14 @@ export const renameProjectScriptFiles = async (
   const nextScriptName = getProjectScriptDisplayName(basename(nextResourcePath))
   const previousIdentifier = normalizeCodeIdentifier(previousScriptName)
   const nextIdentifier = normalizeCodeIdentifier(nextScriptName)
-  const nextManagedSourcePrefix = buildManagedSourcePrefix(nextScriptName)
   const [movedSourceContent, movedHeaderContent] = await Promise.all([
     readFile(nextSourceAbsolutePath, 'utf-8'),
     readFile(nextHeaderAbsolutePath, 'utf-8')
   ])
+  const nextManagedSourcePrefix = buildManagedSourcePrefix(
+    nextScriptName,
+    extractManagedSourceBank(movedSourceContent) ?? DEFAULT_PROJECT_RESOURCE_BANK
+  )
 
   const updatedSourceContent = splitEditableSourceContent(
     movedSourceContent
@@ -416,6 +881,7 @@ export const renameProjectScriptFiles = async (
     'utf-8'
   )
   await writeFile(nextHeaderAbsolutePath, updatedHeaderContent, 'utf-8')
+  await writeGeneratedScriptEnvironment(normalizedProjectPath)
 }
 
 export const moveProjectScriptFilesToDeletedContainer = async (
@@ -578,7 +1044,6 @@ export const readMaxCollisionCallbacks = async (projectPath: string): Promise<nu
 }
 
 const MANAGED_DEFAULT_ACTOR_IDENTIFIER = 'GeneratedDefaultActor'
-const MANAGED_EMPTY_SCENE_IDENTIFIER = 'GeneratedEmptyScene'
 
 const normalizeManifestResourcePaths = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
@@ -658,7 +1123,10 @@ const collectProjectResourcePaths = async (projectPath: string): Promise<string[
 }
 
 const loadProjectAssetRecords = async (projectPath: string): Promise<ProjectAssetRecordLike[]> => {
-  const relativePaths = await collectProjectResourcePaths(projectPath)
+  const [relativePaths, trackedBanks] = await Promise.all([
+    collectProjectResourcePaths(projectPath),
+    readProjectTrackedResourceBanks(projectPath)
+  ])
   const assetRecords: ProjectAssetRecordLike[] = []
 
   for (const resourcePath of relativePaths) {
@@ -682,6 +1150,7 @@ const loadProjectAssetRecords = async (projectPath: string): Promise<ProjectAsse
       path: resourcePath.replace(/\\/g, '/'),
       name: displayName,
       identifier: normalizeCodeIdentifierStem(displayName),
+      bank: trackedBanks.get(resourcePath.replace(/\\/g, '/')) ?? DEFAULT_PROJECT_RESOURCE_BANK,
       document
     })
   }
@@ -692,7 +1161,10 @@ const loadProjectAssetRecords = async (projectPath: string): Promise<ProjectAsse
 const loadProjectScriptRecords = async (
   projectPath: string
 ): Promise<ProjectScriptRecordResolved[]> => {
-  const relativePaths = await collectProjectResourcePaths(projectPath)
+  const [relativePaths, trackedBanks] = await Promise.all([
+    collectProjectResourcePaths(projectPath),
+    readProjectTrackedResourceBanks(projectPath)
+  ])
   const scriptRecords: ProjectScriptRecordResolved[] = []
 
   for (const resourcePath of relativePaths) {
@@ -706,16 +1178,101 @@ const loadProjectScriptRecords = async (
       continue
     }
 
+    const absolutePath = resolvePathWithinProject(projectPath, resourcePath)
+    const sourceContent = await readFile(absolutePath, 'utf-8')
+
+    if (
+      sourceContent.includes(MANAGED_SCENE_FILE_MARKER) ||
+      sourceContent.includes(MANAGED_DEFAULT_ACTOR_FILE_MARKER) ||
+      sourceContent.includes(CORE_PLACEHOLDER_SCENE_FILE_MARKER)
+    ) {
+      continue
+    }
+
     const displayName = getProjectScriptDisplayName(basename(resourcePath))
     scriptRecords.push({
       kind: scriptKind,
       path: resourcePath.replace(/\\/g, '/'),
       name: displayName,
-      identifier: normalizeCodeIdentifier(displayName)
+      identifier: normalizeCodeIdentifier(displayName),
+      bank: trackedBanks.get(resourcePath.replace(/\\/g, '/')) ?? DEFAULT_PROJECT_RESOURCE_BANK
     })
   }
 
   return scriptRecords.sort((left, right) => left.path.localeCompare(right.path))
+}
+
+const cleanupCorePlaceholderScene = async (
+  projectPath: string,
+  sceneIdentifiers: string[],
+  startingSceneIdentifier: string | null
+): Promise<string[]> => {
+  const placeholderPaths = ['src/CustomScenes/SampleScene.h', 'src/CustomScenes/SampleScene.c']
+  const shouldKeepPlaceholder =
+    sceneIdentifiers.length === 0 ||
+    sceneIdentifiers.includes('SampleScene') ||
+    startingSceneIdentifier === 'SampleScene'
+
+  if (shouldKeepPlaceholder) {
+    return []
+  }
+
+  const removedPaths: string[] = []
+
+  for (const resourcePath of placeholderPaths) {
+    const absolutePath = resolvePathWithinProject(projectPath, resourcePath)
+
+    try {
+      const fileContent = await readFile(absolutePath, 'utf-8')
+
+      if (!fileContent.includes(CORE_PLACEHOLDER_SCENE_FILE_MARKER)) {
+        continue
+      }
+
+      await rm(absolutePath, { force: true })
+      removedPaths.push(resourcePath)
+    } catch {
+      // Placeholder files may already be gone in existing projects.
+    }
+  }
+
+  return removedPaths
+}
+
+const buildSceneRecords = (
+  sceneAssets: ProjectAssetRecordLike[],
+  sceneScriptsByPath: Map<string, ProjectScriptRecordResolved>
+): BuiltSceneRecord[] => {
+  return sceneAssets.map((scene) => {
+    const document = scene.document as SceneAssetDocument
+    const sceneScript = document.scriptPath ? sceneScriptsByPath.get(document.scriptPath) : null
+
+    if (document.scriptPath && !sceneScript) {
+      throw new ProjectLauncherError(
+        `Scene "${scene.name}" references a missing scene script resource: ${document.scriptPath}`
+      )
+    }
+
+    if (sceneScript) {
+      return {
+        asset: scene,
+        identifier: sceneScript.identifier,
+        sourcePath: sceneScript.path,
+        headerPath: getProjectScriptHeaderPath(sceneScript.path),
+        bank: sceneScript.bank,
+        isManagedFile: false
+      }
+    }
+
+    return {
+      asset: scene,
+      identifier: scene.identifier,
+      sourcePath: `src/CustomScenes/${scene.identifier}.c`,
+      headerPath: `src/CustomScenes/${scene.identifier}.h`,
+      bank: DEFAULT_PROJECT_RESOURCE_BANK,
+      isManagedFile: true
+    }
+  })
 }
 
 const formatConflictLines = (label: string, conflicts: Map<string, string[]>): string[] => {
@@ -923,7 +1480,7 @@ const buildSpriteResourceFiles = (
   ]
   const metaspriteLines = buildMetaspriteLines(sprite.identifier, document.width, document.height)
   const sourceLines = [
-    '#pragma bank 255',
+    `#pragma bank ${sprite.bank}`,
     `#include "${sprite.identifier}.h"`,
     '',
     `BANKREF(${sprite.identifier}_bankref)`,
@@ -962,7 +1519,7 @@ const buildTilesetResourceFiles = (
     ''
   ]
   const sourceLines = [
-    '#pragma bank 255',
+    `#pragma bank ${tileset.bank}`,
     `#include "${tileset.identifier}.h"`,
     '',
     `BANKREF(${tileset.identifier}_bankref)`,
@@ -1005,7 +1562,7 @@ const buildMapResourceFiles = (
     ''
   ]
   const sourceLines = [
-    '#pragma bank 255',
+    `#pragma bank ${resource.bank}`,
     `#include "${resource.identifier}.h"`,
     '',
     `BANKREF(${resource.identifier}_bankref)`,
@@ -1257,7 +1814,6 @@ const buildActorRegistryHeader = (actorScripts: ProjectScriptRecordResolved[]): 
     '',
     'typedef enum {',
     '    TAG_NONE,',
-    '    TAG_PLAYER,',
     '} Tags;',
     '',
     '#endif // ACTOR_REGISTRY_H',
@@ -1265,8 +1821,8 @@ const buildActorRegistryHeader = (actorScripts: ProjectScriptRecordResolved[]): 
   ].join('\n')
 }
 
-const buildSceneRegistryHeader = (sceneAliases: string[]): string => {
-  const scenes = sceneAliases.length > 0 ? sceneAliases : [MANAGED_EMPTY_SCENE_IDENTIFIER]
+const buildSceneRegistryHeader = (sceneIdentifiers: string[]): string => {
+  const scenes = Array.from(new Set(sceneIdentifiers.length > 0 ? sceneIdentifiers : ['SampleScene']))
 
   return [
     '#ifndef SCENE_REGISTRY_H',
@@ -1295,43 +1851,6 @@ const buildSceneRegistryHeader = (sceneAliases: string[]): string => {
     '#undef _SCENE',
     '',
     '#endif /* SCENE_REGISTRY_H */',
-    ''
-  ].join('\n')
-}
-
-const buildSceneAliasHeader = (
-  sceneAssets: ProjectAssetRecordLike[],
-  sceneScriptsByPath: Map<string, ProjectScriptRecordResolved>
-): string => {
-  const includes = new Set<string>()
-  const aliasLines: string[] = []
-
-  for (const scene of sceneAssets) {
-    const document = scene.document as SceneAssetDocument
-    const script = document.scriptPath ? sceneScriptsByPath.get(document.scriptPath) : null
-
-    if (script) {
-      includes.add(`#include "CustomScenes/${script.identifier}.h"`)
-      aliasLines.push(`typedef ${script.identifier} ${scene.identifier};`)
-      continue
-    }
-
-    aliasLines.push(`typedef struct {\n    Scene base;\n} ${scene.identifier};`)
-  }
-
-  if (sceneAssets.length === 0) {
-    aliasLines.push(`typedef struct {\n    Scene base;\n} ${MANAGED_EMPTY_SCENE_IDENTIFIER};`)
-  }
-
-  return [
-    '#ifndef PROJECT_BINDINGS_H',
-    '#define PROJECT_BINDINGS_H',
-    '#include "Scene/Scene.h"',
-    '#include "Actor/Actor.h"',
-    ...[...includes],
-    ...(includes.size > 0 ? [''] : []),
-    ...aliasLines.flatMap((line) => [line, '']),
-    '#endif // PROJECT_BINDINGS_H',
     ''
   ].join('\n')
 }
@@ -1375,9 +1894,14 @@ const createNodeEmitter = (
       }
 
       const colliderVariable = `${actorVariable}_collider`
-      lines.push(
-        `    Collider* ${colliderVariable} = Generated_CreateCollider(${worldX}, ${worldY}, ${collisionNode.width}, ${collisionNode.height}, ${collisionNode.isBlocking ? 1 : 0});`
-      )
+      lines.push(`    Collider* ${colliderVariable} = (Collider*) malloc(sizeof(Collider));`)
+      lines.push(`    memset(${colliderVariable}, 0, sizeof(Collider));`)
+      lines.push(`    ${colliderVariable}->x = ${worldX};`)
+      lines.push(`    ${colliderVariable}->y = ${worldY};`)
+      lines.push(`    ${colliderVariable}->width = ${collisionNode.width};`)
+      lines.push(`    ${colliderVariable}->height = ${collisionNode.height};`)
+      lines.push(`    ${colliderVariable}->is_blocking = ${collisionNode.isBlocking ? 1 : 0};`)
+      lines.push(`    ${colliderVariable}->type = BOX_COLLIDER;`)
       lines.push(`    THIS_ACTOR = ${parentActorVariable ?? actorVariable};`)
       lines.push(`    set_collider(${colliderVariable});`)
 
@@ -1432,170 +1956,53 @@ const createNodeEmitter = (
   return emitNode
 }
 
-const buildProjectBindingsSource = (
-  sceneAssets: ProjectAssetRecordLike[],
-  spriteAssetsByPath: Map<string, ProjectAssetRecordLike>,
+const buildSceneInitializationLines = (
+  scene: ProjectAssetRecordLike,
   tilemapAssetsByPath: Map<string, ProjectAssetRecordLike>,
   windowAssetsByPath: Map<string, ProjectAssetRecordLike>,
-  actorScripts: ProjectScriptRecordResolved[],
-  sceneScripts: ProjectScriptRecordResolved[]
-): string => {
-  const actorScriptsByPath = new Map(actorScripts.map((script) => [script.path, script]))
-  const sceneScriptsByPath = new Map(sceneScripts.map((script) => [script.path, script]))
-  const includeLines = [
-    '#pragma bank 255',
-    '#include "Generated/ProjectBindings.h"',
-    '#include "Actor/ActorRegistry.h"',
-    '#include "Assets/Animations/AnimationRegistry.h"',
-    '#include "Assets/Map/MapRegistry.h"',
-    '#include "Collisions/Collider.h"',
-    '#include "Collisions/CollisionManager.h"',
-    '#include <stdlib.h>',
-    '#include <string.h>'
-  ]
-  const callbackDeclarations = new Set<string>()
-  const sceneScriptDeclarations = new Set<string>()
+  emitNode: SceneNodeEmitter
+): string[] => {
+  const document = scene.document as SceneAssetDocument
+  const lines: string[] = []
 
-  for (const script of actorScripts) {
-    includeLines.push(`#include "CustomActors/${script.identifier}.h"`)
+  if (document.tilemapPath) {
+    const tilemap = tilemapAssetsByPath.get(document.tilemapPath)
+
+    if (!tilemap) {
+      throw new ProjectLauncherError(
+        `Scene "${scene.name}" references a missing tilemap resource: ${document.tilemapPath}`
+      )
+    }
+
+    lines.push(`    set_scene_map(maps[${tilemap.identifier}]);`)
   }
 
-  for (const script of sceneScripts) {
-    includeLines.push(`#include "CustomScenes/${script.identifier}.h"`)
+  if (document.windowPath) {
+    const windowResource = windowAssetsByPath.get(document.windowPath)
+
+    if (!windowResource) {
+      throw new ProjectLauncherError(
+        `Scene "${scene.name}" references a missing window resource: ${document.windowPath}`
+      )
+    }
+
+    lines.push(`    set_scene_window(maps[${windowResource.identifier}]);`)
   }
 
-  const sourceLines = [...includeLines, '']
-  sourceLines.push('void Actor_Init_GeneratedDefaultActor(void){')
-  sourceLines.push('    init_actor(THIS_ACTOR);')
-  sourceLines.push('}')
-  sourceLines.push('')
-  sourceLines.push('void Actor_Update_GeneratedDefaultActor(void){')
-  sourceLines.push('}')
-  sourceLines.push('')
-  sourceLines.push(
-    'static Collider* Generated_CreateCollider(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint8_t is_blocking) BANKED{'
-  )
-  sourceLines.push('    Collider* collider = (Collider*) malloc(sizeof(Collider));')
-  sourceLines.push('    memset(collider, 0, sizeof(Collider));')
-  sourceLines.push('    collider->x = x;')
-  sourceLines.push('    collider->y = y;')
-  sourceLines.push('    collider->width = width;')
-  sourceLines.push('    collider->height = height;')
-  sourceLines.push('    collider->is_blocking = is_blocking;')
-  sourceLines.push('    collider->type = BOX_COLLIDER;')
-  sourceLines.push('    return collider;')
-  sourceLines.push('}')
-  sourceLines.push('')
+  const counters = { actor: 0 }
 
-  if (sceneAssets.length === 0) {
-    sourceLines.push(`void scene_init_state_${MANAGED_EMPTY_SCENE_IDENTIFIER}(void) BANKED{`)
-    sourceLines.push('    init_scene(THIS_SCENE);')
-    sourceLines.push('}')
-    sourceLines.push('')
-    sourceLines.push(`void scene_update_${MANAGED_EMPTY_SCENE_IDENTIFIER}(void){`)
-    sourceLines.push('    update_actors();')
-    sourceLines.push('    draw_actors();')
-    sourceLines.push('}')
-    sourceLines.push('')
-    return sourceLines.join('\n')
+  for (const node of document.nodes) {
+    emitNode(node, null, lines, counters)
   }
 
-  for (const scene of sceneAssets) {
-    const document = scene.document as SceneAssetDocument
-    const sceneScript = document.scriptPath ? sceneScriptsByPath.get(document.scriptPath) : null
-
-    if (sceneScript) {
-      sceneScriptDeclarations.add(`void scene_init_state_${sceneScript.identifier}(void) BANKED;`)
-      sceneScriptDeclarations.add(`void scene_update_${sceneScript.identifier}(void);`)
-    }
-
-    const collectCallbacks = (currentNode: SceneAssetNode): void => {
-      if (currentNode.type === 'collision') {
-        for (const callback of currentNode.callbacks) {
-          callbackDeclarations.add(`void ${callback.functionName}(void);`)
-        }
-      }
-
-      for (const childNode of currentNode.children) {
-        collectCallbacks(childNode)
-      }
-    }
-
-    for (const node of document.nodes) {
-      collectCallbacks(node)
-    }
-  }
-
-  if (sceneScriptDeclarations.size > 0 || callbackDeclarations.size > 0) {
-    sourceLines.push(...[...sceneScriptDeclarations].sort())
-    sourceLines.push(...[...callbackDeclarations].sort())
-    sourceLines.push('')
-  }
-
-  const emitNode = createNodeEmitter(spriteAssetsByPath, actorScriptsByPath)
-
-  for (const scene of sceneAssets) {
-    const document = scene.document as SceneAssetDocument
-    const sceneScript = document.scriptPath ? sceneScriptsByPath.get(document.scriptPath) : null
-    sourceLines.push(`void scene_init_state_${scene.identifier}(void) BANKED{`)
-    sourceLines.push('    init_scene(THIS_SCENE);')
-
-    if (sceneScript) {
-      sourceLines.push(`    scene_init_state_${sceneScript.identifier}();`)
-    }
-
-    if (document.tilemapPath) {
-      const tilemap = tilemapAssetsByPath.get(document.tilemapPath)
-
-      if (!tilemap) {
-        throw new ProjectLauncherError(
-          `Scene "${scene.name}" references a missing tilemap resource: ${document.tilemapPath}`
-        )
-      }
-
-      sourceLines.push(`    set_scene_map(maps[${tilemap.identifier}]);`)
-    }
-
-    if (document.windowPath) {
-      const windowResource = windowAssetsByPath.get(document.windowPath)
-
-      if (!windowResource) {
-        throw new ProjectLauncherError(
-          `Scene "${scene.name}" references a missing window resource: ${document.windowPath}`
-        )
-      }
-
-      sourceLines.push(`    set_scene_window(maps[${windowResource.identifier}]);`)
-    }
-
-    const counters = { actor: 0 }
-
-    for (const node of document.nodes) {
-      emitNode(node, null, sourceLines, counters)
-    }
-
-    sourceLines.push('}')
-    sourceLines.push('')
-    sourceLines.push(`void scene_update_${scene.identifier}(void){`)
-
-    if (sceneScript) {
-      sourceLines.push(`    scene_update_${sceneScript.identifier}();`)
-    } else {
-      sourceLines.push('    update_actors();')
-      sourceLines.push('    draw_actors();')
-    }
-
-    sourceLines.push('}')
-    sourceLines.push('')
-  }
-
-  return sourceLines.join('\n')
+  return lines
 }
 
-export const generateProjectResourceFiles = async (
+export const buildProjectCode = async (
   projectPath: string
-): Promise<GenerateProjectResourceFilesResult> => {
+): Promise<BuildProjectCodeResult> => {
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
+  await ensureBundledGbdkAvailableForProject(normalizedProjectPath)
   await writeGeneratedScriptEnvironment(normalizedProjectPath)
 
   const [assets, scripts] = await Promise.all([
@@ -1617,8 +2024,134 @@ export const generateProjectResourceFiles = async (
   const tilemapAssetsByPath = new Map(tilemapAssets.map((asset) => [asset.path, asset]))
   const windowAssetsByPath = new Map(windowAssets.map((asset) => [asset.path, asset]))
   const sceneScriptsByPath = new Map(sceneScripts.map((script) => [script.path, script]))
+  const sceneRecords = buildSceneRecords(sceneAssets, sceneScriptsByPath)
+  const configuredStartingScenePath = await loadProjectStartingScenePath(normalizedProjectPath)
+  const startingScene =
+    (configuredStartingScenePath
+      ? sceneRecords.find((scene) => scene.asset.path === configuredStartingScenePath) ?? null
+      : null) ?? sceneRecords[0] ?? null
+  const emitSceneNode = createNodeEmitter(
+    spriteAssetsByPath,
+    new Map(actorScripts.map((script) => [script.path, script]))
+  )
+  const sceneAssetsByScriptPath = new Map<string, ProjectAssetRecordLike[]>()
   const writtenFiles: string[] = []
   const managedResourceDirectories = new Set<string>()
+  const managedScenePaths: string[] = []
+  const saveDataFiles = await writeProjectSaveDataFiles(normalizedProjectPath)
+  writtenFiles.push(...saveDataFiles.writtenFiles)
+
+  for (const scene of sceneAssets) {
+    const document = scene.document as SceneAssetDocument
+
+    if (!document.scriptPath) {
+      continue
+    }
+
+    const matchingScenes = sceneAssetsByScriptPath.get(document.scriptPath) ?? []
+    matchingScenes.push(scene)
+    sceneAssetsByScriptPath.set(document.scriptPath, matchingScenes)
+  }
+
+  for (const [sceneScriptPath, matchingScenes] of sceneAssetsByScriptPath) {
+    if (matchingScenes.length > 1) {
+      const sceneScript = sceneScriptsByPath.get(sceneScriptPath)
+      throw new ProjectLauncherError(
+        `Scene script "${sceneScript?.name ?? sceneScriptPath}" is assigned to multiple scenes. Each generated scene needs its own scene script so build initialization can be injected into SINIT.`
+      )
+    }
+  }
+
+  for (const script of scripts) {
+    writtenFiles.push(await rewriteManagedProjectScriptSource(normalizedProjectPath, script))
+  }
+
+  const managedDefaultActorFiles = buildManagedDefaultActorFileContents(
+    MANAGED_DEFAULT_ACTOR_IDENTIFIER,
+    DEFAULT_PROJECT_RESOURCE_BANK
+  )
+  writtenFiles.push(
+    await writeManagedTextFile(
+      normalizedProjectPath,
+      `src/CustomActors/${MANAGED_DEFAULT_ACTOR_IDENTIFIER}.h`,
+      managedDefaultActorFiles.headerContent
+    )
+  )
+  writtenFiles.push(
+    await writeManagedTextFile(
+      normalizedProjectPath,
+      `src/CustomActors/${MANAGED_DEFAULT_ACTOR_IDENTIFIER}.c`,
+      managedDefaultActorFiles.sourceContent
+    )
+  )
+
+  for (const sceneRecord of sceneRecords) {
+    const initializationLines = buildSceneInitializationLines(
+      sceneRecord.asset,
+      tilemapAssetsByPath,
+      windowAssetsByPath,
+      emitSceneNode
+    )
+
+    if (sceneRecord.isManagedFile) {
+      const managedSceneFiles = buildManagedSceneFileContents(
+        sceneRecord.identifier,
+        sceneRecord.bank,
+        initializationLines
+      )
+      writtenFiles.push(
+        await writeManagedTextFile(
+          normalizedProjectPath,
+          sceneRecord.headerPath,
+          managedSceneFiles.headerContent
+        )
+      )
+      writtenFiles.push(
+        await writeManagedTextFile(
+          normalizedProjectPath,
+          sceneRecord.sourcePath,
+          managedSceneFiles.sourceContent
+        )
+      )
+      managedScenePaths.push(sceneRecord.headerPath, sceneRecord.sourcePath)
+      continue
+    }
+
+    const sceneScriptPath = (sceneRecord.asset.document as SceneAssetDocument).scriptPath
+
+    if (!sceneScriptPath) {
+      throw new ProjectLauncherError(
+        `Scene "${sceneRecord.asset.name}" is missing its scene script assignment.`
+      )
+    }
+
+    const sceneScript = sceneScriptsByPath.get(sceneScriptPath)
+
+    if (!sceneScript) {
+      throw new ProjectLauncherError(
+        `Scene "${sceneRecord.asset.name}" references a missing scene script resource: ${sceneScriptPath}`
+      )
+    }
+
+    writtenFiles.push(
+      await rewriteScriptedSceneInitialization(normalizedProjectPath, sceneScript, initializationLines)
+    )
+  }
+
+  writtenFiles.push(
+    ...(await cleanupCorePlaceholderScene(
+      normalizedProjectPath,
+      sceneRecords.map((scene) => scene.identifier),
+      startingScene?.identifier ?? null
+    ))
+  )
+
+  writtenFiles.push(
+    await rewriteStartingSceneInMain(
+      normalizedProjectPath,
+      startingScene?.identifier ?? 'SampleScene'
+    )
+  )
 
   for (const sprite of spriteAssets) {
     const files = buildSpriteResourceFiles(sprite)
@@ -1740,34 +2273,16 @@ export const generateProjectResourceFiles = async (
     await writeManagedTextFile(
       normalizedProjectPath,
       'src/Scene/SceneRegistry.h',
-      buildSceneRegistryHeader(sceneAssets.map((scene) => scene.identifier))
+      buildSceneRegistryHeader(sceneRecords.map((scene) => scene.identifier))
     )
   )
-  writtenFiles.push(
-    await writeManagedTextFile(
-      normalizedProjectPath,
-      'src/Generated/ProjectBindings.h',
-      buildSceneAliasHeader(sceneAssets, sceneScriptsByPath)
-    )
-  )
-  writtenFiles.push(
-    await writeManagedTextFile(
-      normalizedProjectPath,
-      'src/Generated/ProjectBindings.c',
-      buildProjectBindingsSource(
-        sceneAssets,
-        spriteAssetsByPath,
-        tilemapAssetsByPath,
-        windowAssetsByPath,
-        actorScripts,
-        sceneScripts
-      )
-    )
-  )
+  await removeLegacyGeneratedFiles(normalizedProjectPath)
+  await syncManagedSceneFiles(normalizedProjectPath, managedScenePaths)
   await syncManagedResourceDirectories(normalizedProjectPath, [...managedResourceDirectories])
 
   return {
     writtenFiles: writtenFiles.sort(),
+    saveDataEntryCount: saveDataFiles.entryCount,
     spriteCount: spriteAssets.length,
     tilesetCount: tilesetAssets.length,
     tilemapCount: tilemapAssets.length,
@@ -1776,6 +2291,12 @@ export const generateProjectResourceFiles = async (
     actorScriptCount: actorScripts.length,
     sceneScriptCount: sceneScripts.length
   }
+}
+
+export const generateProjectResourceFiles = async (
+  projectPath: string
+): Promise<GenerateProjectResourceFilesResult> => {
+  return buildProjectCode(projectPath)
 }
 
 export const normalizeResourceIdentifierStem = (resourceName: string): string => {

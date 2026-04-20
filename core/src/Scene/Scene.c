@@ -55,7 +55,7 @@ static void configure_window_split(Map* map) BANKED{
         window_split_stage = 0;
         clear_lcd_scanline_interrupts();
         remove_vblank_interrupt_callback(window_split_vbl_isr);
-        SHOW_WIN;
+        HIDE_WIN;
         return;
     }
 

@@ -1,6 +1,8 @@
 import type { ProjectAssetKind } from './projectAssets'
 import type { ProjectScriptKind } from './projectScripts'
 
+export const DEFAULT_PROJECT_RESOURCE_BANK = 255
+
 export interface ProjectResourceFolderItem {
   type: 'folder'
   id: string
@@ -18,6 +20,7 @@ export interface ProjectResourceFileItem {
   parentPath: string | null
   extension: string | null
   resourceType: ProjectAssetKind | null
+  bank?: number | null
   scriptKind?: ProjectScriptKind | null
 }
 
@@ -31,6 +34,7 @@ export interface ProjectResourceView {
   projectPath: string
   currentPath: string
   parentPath: string | null
+  startingScenePath?: string | null
   items: ProjectResourceItem[]
 }
 
@@ -40,6 +44,7 @@ export interface ProjectResourceMutationResult {
   resourcePath: string
   resourceName: string
   parentPath: string
+  bank?: number | null
   scriptKind?: ProjectScriptKind | null
 }
 

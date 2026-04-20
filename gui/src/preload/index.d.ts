@@ -1,8 +1,9 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
+import type { ProjectSaveDataState } from '../shared/projectSaveData'
 import type {
+  BuildProjectCodeResult,
   CopyEngineCoreResult,
-  GenerateProjectResourceFilesResult,
   ProjectCodeSymbolIndex,
   ProjectCodeWorkspaceSnapshot,
   ProjectScriptCallbackCandidate,
@@ -56,6 +57,7 @@ declare global {
     electron: ElectronAPI
     api: {
       openSpriteEditorWindow: () => void
+      openProjectSaveDataEditor: (projectPath: string) => Promise<boolean>
       openProjectScriptEditor: (
         projectPath: string,
         resourcePath: string,
@@ -73,6 +75,11 @@ declare global {
       closeCurrentProject: () => Promise<boolean>
       openProjectInFileExplorer: (projectPath: string) => Promise<boolean>
       getRecentProjects: () => Promise<RecentProject[]>
+      loadProjectSaveData: (projectPath: string) => Promise<ProjectSaveDataState>
+      saveProjectSaveData: (
+        projectPath: string,
+        saveDataState: ProjectSaveDataState
+      ) => Promise<ProjectSaveDataState>
       loadProjectAssetFile: (projectPath: string, assetPath: string) => Promise<ProjectAssetFilePayload>
       saveProjectAssetFile: (
         projectPath: string,
@@ -130,10 +137,21 @@ declare global {
         destinationParentPath?: string,
         mode?: ProjectResourceTransferMode
       ) => Promise<ProjectResourceMutationResult>
+      updateProjectResourceBank: (
+        projectPath: string,
+        resourceType: ProjectResourceKind,
+        resourcePath: string,
+        bank: number
+      ) => Promise<ProjectResourceMutationResult>
+      updateProjectStartingScene: (
+        projectPath: string,
+        scenePath: string | null
+      ) => Promise<ProjectResourceView>
       scanProjectDirectory: (projectPath: string) => Promise<ProjectDirectoryScanResult>
       copyProjectEngineCore: (projectPath: string) => Promise<CopyEngineCoreResult>
       readMaxCollisionCallbacks: (projectPath: string) => Promise<number>
-      generateProjectResourceFiles: (projectPath: string) => Promise<GenerateProjectResourceFilesResult>
+      buildProjectCode: (projectPath: string) => Promise<BuildProjectCodeResult>
+      generateProjectResourceFiles: (projectPath: string) => Promise<BuildProjectCodeResult>
       getProjectCodeSymbolIndex: (projectPath: string) => Promise<ProjectCodeSymbolIndex>
       getProjectCodeWorkspaceSnapshot: (projectPath: string) => Promise<ProjectCodeWorkspaceSnapshot>
       restoreDeletedProjectResource: (

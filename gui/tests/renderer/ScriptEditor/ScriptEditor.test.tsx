@@ -71,17 +71,17 @@ const generalScriptPayload: ProjectScriptResourcePayload = {
   sourcePath: 'src/Scripts/Test.c',
   headerPath: 'src/Scripts/Test.h',
   sourceContent:
-    '#pragma bank 255\n#include "Test.h"\n#include "Generated/ScriptEnvironment.h"\n\n',
+    '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\n',
   editableSourceContent: '',
   managedSourcePrefix:
-    '#pragma bank 255\n#include "Test.h"\n#include "Generated/ScriptEnvironment.h"\n\n',
+    '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\n',
   headerContent: '#ifndef TEST_H\n#define TEST_H\n\n#endif // TEST_H\n'
 }
 
 const nonBlankGeneralScriptPayload: ProjectScriptResourcePayload = {
   ...generalScriptPayload,
   sourceContent:
-    '#pragma bank 255\n#include "Test.h"\n#include "Generated/ScriptEnvironment.h"\n\nvoid test(void) {\n}\n',
+    '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\nvoid test(void) {\n}\n',
   editableSourceContent: 'void test(void) {\n}\n'
 }
 
@@ -92,10 +92,10 @@ const actorScriptPayload: ProjectScriptResourcePayload = {
   sourcePath: 'src/CustomActors/Hero.c',
   headerPath: 'src/CustomActors/Hero.h',
   sourceContent:
-    '#pragma bank 255\n#include "Hero.h"\n#include "Generated/ScriptEnvironment.h"\n\nvoid AINIT(void){\n}\n',
+    '#pragma bank 255\n#include "Hero.h"\n#include "ScriptEnvironment.h"\n\nvoid AINIT(void){\n}\n',
   editableSourceContent: 'void AINIT(void){\n}\n',
   managedSourcePrefix:
-    '#pragma bank 255\n#include "Hero.h"\n#include "Generated/ScriptEnvironment.h"\n\n',
+    '#pragma bank 255\n#include "Hero.h"\n#include "ScriptEnvironment.h"\n\n',
   headerContent: '#ifndef HERO_H\n#define HERO_H\n#include "Actor/Actor.h"\n\n#endif // HERO_H\n'
 }
 
@@ -118,7 +118,7 @@ describe('<ScriptEditor />', () => {
       resourcePath: 'src/Scripts/Test.c',
       scriptKind: 'general',
       sourceContent:
-        '#pragma bank 255\n#include "Test.h"\n#include "Generated/ScriptEnvironment.h"\n\n',
+        '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\n',
       headerContent: '#ifndef TEST_H\n#define TEST_H\n\n#endif // TEST_H\n'
     })
   })

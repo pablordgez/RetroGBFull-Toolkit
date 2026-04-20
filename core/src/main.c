@@ -5,7 +5,9 @@
 #include "Saves/SaveData.h"
 #include "Interrupts/InterruptManager.h"
 #include "Scene/SceneRegistry.h"
+// BEGIN STARTING SCENE INCLUDE
 #include "CustomScenes/SampleScene.h"
+// END STARTING SCENE INCLUDE
 
 SaveData save_data;
 
@@ -26,14 +28,20 @@ void main(void)
     THIS_GAME_MANAGER = &gm;
     gm.current_scene = NULL;
 
+    // BEGIN STARTING SCENE INSTANTIATION
     SampleScene ss;
     ss.base.type = _SampleScene;
 
     set_scene((Scene*) &ss);
+    // END STARTING SCENE INSTANTIATION
     enable_interrupts();
 
     DISPLAY_ON;
-    SHOW_WIN;
+    if(THIS_GAME_MANAGER->current_scene != NULL && THIS_GAME_MANAGER->current_scene->window != NULL){
+        SHOW_WIN;
+    } else{
+        HIDE_WIN;
+    }
     SHOW_BKG;
     SHOW_SPRITES;
     

@@ -25,6 +25,7 @@ import {
   serializeProjectAssetDocument
 } from '../shared/projectAssets'
 import { normalizeCodeIdentifier } from '../shared/codeIdentifiers'
+import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 import {
   ProjectScriptKind,
   PROJECT_SCRIPT_DIRECTORY_BY_KIND,
@@ -53,6 +54,7 @@ export interface ProjectAssetRecord {
   path: string
   parentPath: string | null
   resourceType: ProjectAssetKind
+  bank: number | null
   createdAt: string
   updatedAt: string
 }
@@ -65,6 +67,7 @@ export interface ProjectScriptRecord {
   parentPath: string | null
   resourceType: 'script'
   scriptKind: ProjectScriptKind
+  bank: number
   createdAt: string
   updatedAt: string
 }
@@ -85,6 +88,7 @@ export interface ProjectResourceMutationResult {
   resourcePath: string
   resourceName: string
   parentPath: string
+  bank?: number | null
   scriptKind?: ProjectScriptKind | null
 }
 
@@ -97,6 +101,7 @@ export interface ProjectResourceView {
   projectPath: string
   currentPath: string
   parentPath: string | null
+  startingScenePath?: string | null
   items: ProjectResourceItem[]
 }
 
@@ -117,6 +122,7 @@ export type ProjectResourceItem =
       parentPath: string | null
       extension: string | null
       resourceType: ProjectAssetKind | null
+      bank: number | null
       scriptKind?: ProjectScriptKind | null
     }
 
@@ -125,6 +131,7 @@ export interface ProjectTrackedResource {
   name: string
   path: string
   parentPath: string | null
+  bank?: number | null
   resourceType?: ProjectAssetKind
   scriptKind?: ProjectScriptKind | null
 }
@@ -134,12 +141,13 @@ export interface ProjectDirectoryScanResult {
   removedCount: number
 }
 
-type ProjectResourceAction = 'load' | 'create' | 'rename' | 'delete' | 'paste'
+type ProjectResourceAction = 'load' | 'create' | 'rename' | 'delete' | 'paste' | 'bank'
 export type ProjectResourceTransferMode = 'copy' | 'move'
 
 interface StoredProjectFile extends Record<string, unknown> {
   name?: string
   createdAt?: string
+  startingScenePath?: unknown
   resources?: Record<string, unknown>
 }
 
@@ -158,6 +166,7 @@ interface StoredDeletedResourceMetadata {
   resourcePath: string
   resourceName: string
   parentPath: string
+  startingScenePath?: string | null
   scriptKind?: ProjectScriptKind | null
   resources: ProjectStoredResourceRecord[]
 }
@@ -188,6 +197,16 @@ const normalizeResourcePath = (resourcePath: string): string => {
 const normalizeParentPath = (resourcePath: string | null | undefined): string | null => {
   const normalizedPath = normalizeResourcePath(resourcePath ?? '')
   return normalizedPath.length > 0 ? normalizedPath : null
+}
+
+const normalizeStartingScenePath = (value: unknown): string | null => {
+  const normalizedPath = normalizeResourcePath(typeof value === 'string' ? value : '')
+
+  if (!normalizedPath || getProjectAssetKindFromFileName(basename(normalizedPath)) !== 'scene') {
+    return null
+  }
+
+  return normalizedPath
 }
 
 const isInternalProjectEntry = (entryName: string): boolean => {
@@ -237,6 +256,24 @@ const isTrackedAssetKind = (value: string): value is ProjectAssetKind => {
 
 const isTrackedScriptKind = (value: string): value is ProjectScriptKind => {
   return value === 'actor' || value === 'scene' || value === 'general'
+}
+
+const isBankableAssetKind = (
+  value: ProjectAssetKind | 'script'
+): value is 'script' | 'sprite' | 'tileset' | 'tilemap' | 'window' => {
+  return (
+    value === 'script' ||
+    value === 'sprite' ||
+    value === 'tileset' ||
+    value === 'tilemap' ||
+    value === 'window'
+  )
+}
+
+const normalizeBank = (value: unknown): number => {
+  return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 255
+    ? Number(value)
+    : DEFAULT_PROJECT_RESOURCE_BANK
 }
 
 const getDeletedResourceContainerPath = (projectPath: string, deletionId: string): string => {
@@ -331,6 +368,7 @@ const buildStoredAssetRecord = (
   resourceType: ProjectAssetKind,
   options?: {
     id?: string
+    bank?: number | null
     createdAt?: string
     updatedAt?: string
   }
@@ -345,6 +383,7 @@ const buildStoredAssetRecord = (
     path: normalizedPath,
     parentPath: getResourceParentPath(normalizedPath),
     resourceType,
+    bank: isBankableAssetKind(resourceType) ? normalizeBank(options?.bank) : null,
     createdAt: options?.createdAt ?? now,
     updatedAt: options?.updatedAt ?? now
   }
@@ -355,6 +394,7 @@ const buildStoredScriptRecord = (
   scriptKind: ProjectScriptKind,
   options?: {
     id?: string
+    bank?: number | null
     createdAt?: string
     updatedAt?: string
   }
@@ -370,6 +410,7 @@ const buildStoredScriptRecord = (
     parentPath: getResourceParentPath(normalizedPath),
     resourceType: 'script',
     scriptKind,
+    bank: normalizeBank(options?.bank),
     createdAt: options?.createdAt ?? now,
     updatedAt: options?.updatedAt ?? now
   }
@@ -381,6 +422,7 @@ const buildStoredResourceRecord = (
   scriptKind?: ProjectScriptKind,
   options?: {
     id?: string
+    bank?: number | null
     createdAt?: string
     updatedAt?: string
   }
@@ -515,6 +557,7 @@ const parseStoredResourceRecord = (value: unknown): ProjectStoredResourceRecord 
         getResourceParentPath(normalizedPath),
       resourceType: 'script',
       scriptKind,
+      bank: normalizeBank(value.bank),
       createdAt,
       updatedAt
     }
@@ -532,6 +575,7 @@ const parseStoredResourceRecord = (value: unknown): ProjectStoredResourceRecord 
       normalizeParentPath(value.parentPath as string | null | undefined) ??
       getResourceParentPath(normalizedPath),
     resourceType,
+    bank: isBankableAssetKind(resourceType) ? normalizeBank(value.bank) : null,
     createdAt,
     updatedAt
   }
@@ -580,6 +624,7 @@ const parseDeletedResourceMetadata = (value: unknown): StoredDeletedResourceMeta
     resourcePath,
     resourceName,
     parentPath,
+    startingScenePath: normalizeStartingScenePath(value.startingScenePath),
     scriptKind:
       typeof value.scriptKind === 'string' && isTrackedScriptKind(value.scriptKind)
         ? value.scriptKind
@@ -639,9 +684,11 @@ const writeProjectFile = async (
 ): Promise<void> => {
   const resourcesSection = isRecord(projectFile.resources) ? projectFile.resources : {}
   const remainingResourcesSection = { ...resourcesSection }
+  const startingScenePath = normalizeStartingScenePath(projectFile.startingScenePath)
   delete remainingResourcesSection.folders
   const nextProjectFile: StoredProjectFile = {
     ...projectFile,
+    startingScenePath,
     resources: {
       ...remainingResourcesSection,
       items: resources.map((resource) =>
@@ -663,6 +710,9 @@ const writeProjectFile = async (
               parentPath: resource.parentPath,
               resourceType: resource.resourceType,
               ...(resource.resourceType === 'script' ? { scriptKind: resource.scriptKind } : {}),
+              ...(resource.bank !== null && resource.bank !== DEFAULT_PROJECT_RESOURCE_BANK
+                ? { bank: resource.bank }
+                : {}),
               createdAt: resource.createdAt,
               updatedAt: resource.updatedAt
             }
@@ -899,12 +949,38 @@ const buildFileItem = (resource: ProjectAssetRecord | ProjectScriptRecord): Proj
     parentPath: resource.parentPath,
     extension: extname(fileName).slice(1) || null,
     resourceType: resource.resourceType === 'script' ? null : resource.resourceType,
+    bank: resource.bank,
     ...(resource.resourceType === 'script' ? { scriptKind: resource.scriptKind } : {})
   }
 }
 
+const getStateStartingScenePath = (state: Pick<ProjectResourceState, 'projectFile'>): string | null => {
+  return normalizeStartingScenePath(state.projectFile.startingScenePath)
+}
+
+const setStateStartingScenePath = (
+  state: Pick<ProjectResourceState, 'projectFile'>,
+  startingScenePath: string | null
+): void => {
+  state.projectFile.startingScenePath = normalizeStartingScenePath(startingScenePath)
+}
+
+const remapStartingScenePath = (
+  currentStartingScenePath: string | null,
+  sourceRootPath: string,
+  targetRootPath: string
+): string | null => {
+  if (!currentStartingScenePath || !isSameOrDescendantPath(currentStartingScenePath, sourceRootPath)) {
+    return currentStartingScenePath
+  }
+
+  return currentStartingScenePath === sourceRootPath
+    ? targetRootPath
+    : `${targetRootPath}${currentStartingScenePath.slice(sourceRootPath.length)}`
+}
+
 const buildProjectResourceView = (
-  state: Pick<ProjectResourceState, 'projectName' | 'projectPath'>,
+  state: Pick<ProjectResourceState, 'projectName' | 'projectPath' | 'projectFile'>,
   resources: ProjectStoredResourceRecord[],
   currentPath = ''
 ): ProjectResourceView => {
@@ -928,6 +1004,7 @@ const buildProjectResourceView = (
     projectPath: state.projectPath,
     currentPath: normalizedCurrentPath,
     parentPath: getResourceParentPath(normalizedCurrentPath),
+    startingScenePath: getStateStartingScenePath(state),
     items
   }
 }
@@ -965,6 +1042,15 @@ const removeTrackedResourceSubtree = async (
       resources: state.resources,
       removedCount: 0
     }
+  }
+
+  const currentStartingScenePath = getStateStartingScenePath(state)
+
+  if (
+    currentStartingScenePath &&
+    isSameOrDescendantPath(currentStartingScenePath, normalizedResourcePath)
+  ) {
+    setStateStartingScenePath(state, null)
   }
 
   const persistedResources = await writeProjectResources(state, nextResources)
@@ -1027,6 +1113,20 @@ const reconcileTrackedProjectResources = async (
       resources: state.resources,
       removedCount: 0
     }
+  }
+
+  const currentStartingScenePath = getStateStartingScenePath(state)
+
+  if (
+    currentStartingScenePath &&
+    !existingResources.some(
+      (resource) =>
+        resource.type === 'file' &&
+        resource.resourceType === 'scene' &&
+        resource.path === currentStartingScenePath
+    )
+  ) {
+    setStateStartingScenePath(state, null)
   }
 
   const persistedResources = await writeProjectResources(state, existingResources)
@@ -1139,6 +1239,7 @@ const relocateTrackedResource = (
   options?: {
     resetIdentity?: boolean
     scriptKind?: ProjectScriptKind
+    bank?: number | null
   }
 ): ProjectStoredResourceRecord => {
   const now = new Date().toISOString()
@@ -1155,6 +1256,7 @@ const relocateTrackedResource = (
       : undefined,
     {
       id: options?.resetIdentity ? randomUUID() : resource.id,
+      bank: resource.type === 'file' ? (options?.bank ?? resource.bank) : null,
       createdAt: options?.resetIdentity ? now : resource.createdAt,
       updatedAt: now
     }
@@ -1339,7 +1441,8 @@ export const getProjectResourceErrorMessage = (
     create: 'Something went wrong while creating the resource. Please try again.',
     rename: 'Something went wrong while renaming the resource. Please try again.',
     delete: 'Something went wrong while deleting the resource. Please try again.',
-    paste: 'Something went wrong while pasting the resource. Please try again.'
+    paste: 'Something went wrong while pasting the resource. Please try again.',
+    bank: 'Something went wrong while updating the resource bank. Please try again.'
   }
 
   const errorCode =
@@ -1387,10 +1490,94 @@ export const getTrackedProjectResource = async (
         name: resource.name,
         path: resource.path,
         parentPath: resource.parentPath,
+        bank: resource.bank,
         ...(resource.resourceType === 'script'
           ? { scriptKind: resource.scriptKind }
           : { resourceType: resource.resourceType })
       }
+}
+
+export const updateProjectResourceBank = async (
+  projectPath: string,
+  resourceType: ProjectResourceKind,
+  resourcePath: string,
+  bank: number
+): Promise<ProjectResourceMutationResult> => {
+  assertSupportedResourceKind(resourceType)
+
+  const state = await readProjectResourceState(projectPath)
+  const normalizedResourcePath = normalizeResourcePath(resourcePath)
+  const trackedResource = findTrackedResourceRecord(state.resources, normalizedResourcePath)
+
+  if (!trackedResource) {
+    throw new ProjectLauncherError('The selected resource could not be found.')
+  }
+
+  assertTrackedResourceType(trackedResource, resourceType)
+
+  if (
+    trackedResource.type !== 'file' ||
+    !isBankableAssetKind(trackedResource.resourceType)
+  ) {
+    throw new ProjectLauncherError('The selected resource does not support ROM bank overrides.')
+  }
+
+  const nextBank = normalizeBank(bank)
+  const now = new Date().toISOString()
+  const nextResources = await writeProjectResources(
+    state,
+    state.resources.map((resource) => {
+      if (resource.path !== normalizedResourcePath || resource.type !== 'file') {
+        return resource
+      }
+
+      return buildStoredResourceRecord(
+        resource.resourceType,
+        resource.path,
+        resource.resourceType === 'script' ? resource.scriptKind : undefined,
+        {
+          id: resource.id,
+          bank: nextBank,
+          createdAt: resource.createdAt,
+          updatedAt: now
+        }
+      )
+    })
+  )
+
+  return {
+    view: buildProjectResourceView(state, nextResources, trackedResource.parentPath ?? ''),
+    resourceType: trackedResource.resourceType,
+    resourcePath: trackedResource.path,
+    resourceName: trackedResource.name,
+    parentPath: trackedResource.parentPath ?? '',
+    bank: nextBank,
+    ...(trackedResource.resourceType === 'script' ? { scriptKind: trackedResource.scriptKind } : {})
+  }
+}
+
+export const updateProjectStartingScene = async (
+  projectPath: string,
+  scenePath: string | null
+): Promise<ProjectResourceView> => {
+  const state = await readProjectResourceState(projectPath)
+  const nextStartingScenePath = normalizeStartingScenePath(scenePath)
+  let sceneParentPath = ''
+
+  if (nextStartingScenePath) {
+    const trackedScene = findTrackedResourceRecord(state.resources, nextStartingScenePath)
+
+    if (!trackedScene || trackedScene.type !== 'file' || trackedScene.resourceType !== 'scene') {
+      throw new ProjectLauncherError('The selected starting scene could not be found.')
+    }
+
+    sceneParentPath = trackedScene.parentPath ?? ''
+  }
+
+  setStateStartingScenePath(state, nextStartingScenePath)
+  await writeProjectResources(state, state.resources)
+
+  return buildProjectResourceView(state, state.resources, sceneParentPath)
 }
 
 export const pruneMissingProjectResource = async (
@@ -1499,6 +1686,7 @@ export const createProjectScriptResource = async (
     resourcePath,
     resourceName: safeResourceName,
     parentPath,
+    bank: DEFAULT_PROJECT_RESOURCE_BANK,
     scriptKind
   }
 }
@@ -1554,7 +1742,10 @@ export const createProjectResource = async (
     resourceType,
     resourcePath: targetResourcePath,
     resourceName: safeResourceName,
-    parentPath: normalizedParentPath
+    parentPath: normalizedParentPath,
+    ...(resourceType !== 'folder' && isBankableAssetKind(resourceType)
+      ? { bank: DEFAULT_PROJECT_RESOURCE_BANK }
+      : {})
   }
 }
 
@@ -1617,28 +1808,35 @@ export const renameProjectResource = async (
     }
   }
 
-  const nextResources = await writeProjectResources(
+  const relocatedResources = state.resources.map((resource) =>
+    isSameOrDescendantPath(resource.path, normalizedResourcePath)
+      ? relocateTrackedResource(
+          resource,
+          normalizedResourcePath,
+          nextResourcePath,
+          trackedResource.type === 'file' && trackedResource.resourceType === 'script'
+            ? { scriptKind: trackedResource.scriptKind }
+            : undefined
+        )
+      : resource
+  )
+  setStateStartingScenePath(
     state,
-    state.resources.map((resource) =>
-      isSameOrDescendantPath(resource.path, normalizedResourcePath)
-        ? relocateTrackedResource(
-            resource,
-            normalizedResourcePath,
-            nextResourcePath,
-            trackedResource.type === 'file' && trackedResource.resourceType === 'script'
-              ? { scriptKind: trackedResource.scriptKind }
-              : undefined
-          )
-        : resource
+    remapStartingScenePath(
+      getStateStartingScenePath(state),
+      normalizedResourcePath,
+      nextResourcePath
     )
   )
+  const persistedResources = await writeProjectResources(state, relocatedResources)
 
   return {
-    view: buildProjectResourceView(state, nextResources, parentPath),
+    view: buildProjectResourceView(state, persistedResources, parentPath),
     resourceType,
     resourcePath: nextResourcePath,
     resourceName: normalizedResourceName,
     parentPath,
+    ...(trackedResource.type === 'file' ? { bank: trackedResource.bank } : {}),
     ...(trackedResource.type === 'file' && trackedResource.resourceType === 'script'
       ? { scriptKind: trackedResource.scriptKind }
       : {})
@@ -1677,12 +1875,23 @@ export const deleteProjectResource = async (
 
   const nextDeletionId = deletionId ?? randomUUID()
   const removedResources = getTrackedResourceSubtree(state.resources, normalizedResourcePath)
+  const currentStartingScenePath = getStateStartingScenePath(state)
   const metadata: StoredDeletedResourceMetadata = {
     deletionId: nextDeletionId,
     resourceType,
     resourcePath: normalizedResourcePath,
     resourceName: trackedResource.name,
     parentPath: trackedResource.parentPath ?? '',
+    startingScenePath:
+      currentStartingScenePath &&
+      removedResources.some(
+        (resource) =>
+          resource.type === 'file' &&
+          resource.resourceType === 'scene' &&
+          resource.path === currentStartingScenePath
+      )
+        ? currentStartingScenePath
+        : null,
     scriptKind:
       trackedResource.type === 'file' && trackedResource.resourceType === 'script'
         ? trackedResource.scriptKind
@@ -1709,6 +1918,13 @@ export const deleteProjectResource = async (
     )
   }
 
+  if (
+    currentStartingScenePath &&
+    isSameOrDescendantPath(currentStartingScenePath, normalizedResourcePath)
+  ) {
+    setStateStartingScenePath(state, null)
+  }
+
   const nextResources = await writeProjectResources(
     state,
     state.resources.filter(
@@ -1722,6 +1938,7 @@ export const deleteProjectResource = async (
     resourcePath: metadata.resourcePath,
     resourceName: metadata.resourceName,
     parentPath: metadata.parentPath,
+    ...(trackedResource.type === 'file' ? { bank: trackedResource.bank } : {}),
     ...(metadata.scriptKind ? { scriptKind: metadata.scriptKind } : {}),
     deletionId: nextDeletionId
   }
@@ -1733,6 +1950,9 @@ export const restoreDeletedProjectResource = async (
 ): Promise<ProjectResourceMutationResult> => {
   const state = await readProjectResourceState(projectPath)
   const metadata = await readDeletedResourceMetadata(state.projectPath, deletionId)
+  const restoredRootResource = metadata.resources.find(
+    (resource) => resource.path === metadata.resourcePath
+  )
 
   assertSupportedResourceKind(metadata.resourceType)
   if (metadata.resourceType !== 'folder') {
@@ -1759,6 +1979,10 @@ export const restoreDeletedProjectResource = async (
     )
   }
 
+  if (metadata.startingScenePath) {
+    setStateStartingScenePath(state, metadata.startingScenePath)
+  }
+
   const nextResources = await writeProjectResources(state, [
     ...state.resources,
     ...metadata.resources
@@ -1770,6 +1994,7 @@ export const restoreDeletedProjectResource = async (
     resourcePath: metadata.resourcePath,
     resourceName: metadata.resourceName,
     parentPath: metadata.parentPath,
+    ...(restoredRootResource?.type === 'file' ? { bank: restoredRootResource.bank } : {}),
     ...(metadata.scriptKind ? { scriptKind: metadata.scriptKind } : {})
   }
 }
@@ -1876,6 +2101,17 @@ export const transferProjectResource = async (
             : resource
         )
 
+  if (mode === 'move') {
+    setStateStartingScenePath(
+      state,
+      remapStartingScenePath(
+        getStateStartingScenePath(state),
+        normalizedResourcePath,
+        target.resourcePath
+      )
+    )
+  }
+
   const persistedResources = await writeProjectResources(state, nextResources)
 
   return {
@@ -1884,6 +2120,7 @@ export const transferProjectResource = async (
     resourcePath: target.resourcePath,
     resourceName: target.resourceName,
     parentPath: normalizedDestinationParentPath,
+    ...(trackedResource.type === 'file' ? { bank: trackedResource.bank } : {}),
     ...(trackedResource.type === 'file' && trackedResource.resourceType === 'script'
       ? { scriptKind: trackedResource.scriptKind }
       : {})

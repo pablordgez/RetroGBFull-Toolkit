@@ -1,0 +1,193 @@
+import { readFile, writeFile } from 'fs/promises'
+import { basename } from 'path'
+import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
+import { getProjectAssetKindFromFileName } from '../shared/projectAssets'
+import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
+import {
+  parseProjectSaveDataState,
+  serializeProjectSaveDataState,
+  validateProjectSaveDataEntries,
+  type ProjectSaveDataState
+} from '../shared/projectSaveData'
+import { getProjectScriptKindFromPath, isProjectScriptSourcePath } from '../shared/projectScripts'
+
+interface StoredProjectFile extends Record<string, unknown> {
+  resources?: Record<string, unknown>
+  saveData?: unknown
+  startingScenePath?: unknown
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null
+}
+
+const normalizeResourcePath = (resourcePath: string): string => {
+  return resourcePath
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0 && segment !== '.')
+    .join('/')
+}
+
+const parseStoredStartingScenePath = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const normalizedPath = normalizeResourcePath(value)
+
+  if (!normalizedPath || getProjectAssetKindFromFileName(basename(normalizedPath)) !== 'scene') {
+    return null
+  }
+
+  return normalizedPath
+}
+
+const isValidBank = (value: unknown): value is number => {
+  return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 255
+}
+
+const isBankableResourcePath = (resourcePath: string): boolean => {
+  if (isProjectScriptSourcePath(resourcePath) && getProjectScriptKindFromPath(resourcePath)) {
+    return true
+  }
+
+  const assetKind = getProjectAssetKindFromFileName(basename(resourcePath))
+
+  return (
+    assetKind === 'sprite' ||
+    assetKind === 'tileset' ||
+    assetKind === 'tilemap' ||
+    assetKind === 'window'
+  )
+}
+
+const readStoredProjectFile = async (
+  projectPath: string
+): Promise<{
+  jsonPath: string
+  projectPath: string
+  projectFile: StoredProjectFile
+}> => {
+  const validation = await validateProjectDirectory(projectPath)
+
+  if (!validation.isValid) {
+    throw new ProjectLauncherError(
+      validation.message ?? 'The selected project could not be loaded.'
+    )
+  }
+
+  const rawContent = await readFile(validation.jsonPath, 'utf-8')
+  const parsedContent = JSON.parse(rawContent)
+
+  return {
+    jsonPath: validation.jsonPath,
+    projectPath: validation.path,
+    projectFile: isRecord(parsedContent) ? parsedContent : {}
+  }
+}
+
+const buildTrackedResourceBankMap = (projectFile: StoredProjectFile): Map<string, number> => {
+  const resourcesSection = isRecord(projectFile.resources) ? projectFile.resources : {}
+  const items = Array.isArray(resourcesSection.items) ? resourcesSection.items : []
+  const bankMap = new Map<string, number>()
+
+  for (const item of items) {
+    if (!isRecord(item) || item.type !== 'file' || typeof item.path !== 'string') {
+      continue
+    }
+
+    const normalizedPath = normalizeResourcePath(item.path)
+
+    if (!normalizedPath || !isBankableResourcePath(normalizedPath)) {
+      continue
+    }
+
+    bankMap.set(
+      normalizedPath,
+      isValidBank(item.bank) ? Number(item.bank) : DEFAULT_PROJECT_RESOURCE_BANK
+    )
+  }
+
+  return bankMap
+}
+
+export const readProjectTrackedResourceBanks = async (
+  projectPath: string
+): Promise<Map<string, number>> => {
+  const { projectFile } = await readStoredProjectFile(projectPath)
+  return buildTrackedResourceBankMap(projectFile)
+}
+
+export const readProjectTrackedResourceBank = async (
+  projectPath: string,
+  resourcePath: string
+): Promise<number> => {
+  const normalizedPath = normalizeResourcePath(resourcePath)
+
+  if (!normalizedPath || !isBankableResourcePath(normalizedPath)) {
+    return DEFAULT_PROJECT_RESOURCE_BANK
+  }
+
+  const bankMap = await readProjectTrackedResourceBanks(projectPath)
+  return bankMap.get(normalizedPath) ?? DEFAULT_PROJECT_RESOURCE_BANK
+}
+
+export const loadProjectSaveDataState = async (
+  projectPath: string
+): Promise<ProjectSaveDataState> => {
+  const { projectFile } = await readStoredProjectFile(projectPath)
+  return parseProjectSaveDataState(projectFile.saveData)
+}
+
+export const loadProjectStartingScenePath = async (
+  projectPath: string
+): Promise<string | null> => {
+  const { projectFile } = await readStoredProjectFile(projectPath)
+  return parseStoredStartingScenePath(projectFile.startingScenePath)
+}
+
+export const saveProjectStartingScenePath = async (
+  projectPath: string,
+  scenePath: string | null
+): Promise<string | null> => {
+  const nextStartingScenePath = parseStoredStartingScenePath(scenePath)
+  const { jsonPath, projectFile } = await readStoredProjectFile(projectPath)
+  const nextProjectFile: StoredProjectFile = {
+    ...projectFile,
+    startingScenePath: nextStartingScenePath
+  }
+
+  await writeFile(jsonPath, `${JSON.stringify(nextProjectFile, null, 2)}\n`, 'utf-8')
+
+  return nextStartingScenePath
+}
+
+export const saveProjectSaveDataState = async (
+  projectPath: string,
+  saveDataState: ProjectSaveDataState
+): Promise<ProjectSaveDataState> => {
+  const validationIssues = validateProjectSaveDataEntries(saveDataState.entries)
+
+  if (validationIssues.length > 0) {
+    throw new ProjectLauncherError(validationIssues[0].message)
+  }
+
+  const { jsonPath, projectFile } = await readStoredProjectFile(projectPath)
+  const nextProjectFile: StoredProjectFile = {
+    ...projectFile,
+    saveData: serializeProjectSaveDataState(saveDataState)
+  }
+
+  await writeFile(jsonPath, `${JSON.stringify(nextProjectFile, null, 2)}\n`, 'utf-8')
+
+  return {
+    entries: saveDataState.entries.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      type: entry.type,
+      defaultValue: entry.defaultValue
+    }))
+  }
+}
