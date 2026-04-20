@@ -366,7 +366,12 @@ describe('projectCode collision callback helpers', () => {
     await generateProjectResourceFiles(project.path)
     await generateProjectResourceFiles(project.path)
 
-    const roomScenePath = join(project.path, 'src', 'CustomScenes', 'Room.c')
+    const roomScenePath = join(
+      project.path,
+      'src',
+      'CustomScenes',
+      `${normalizeResourceIdentifierStem('Room')}.c`
+    )
     const sampleScenePath = join(project.path, 'src', 'CustomScenes', 'SampleScene.c')
 
     expect(await readFile(roomScenePath, 'utf-8')).toContain('// RETROGBFULL MANAGED SCENE FILE')
