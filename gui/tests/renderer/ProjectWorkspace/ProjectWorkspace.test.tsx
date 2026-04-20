@@ -1112,7 +1112,15 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    fireEvent.click(screen.getByText('Hero').closest('button')!)
+    const heroButton = (await within(screen.getByTestId('resource-management-pane')).findByText(
+      'Hero'
+    )).closest('button')
+
+    if (!heroButton) {
+      throw new Error('Expected Hero resource button.')
+    }
+
+    fireEvent.click(heroButton)
     fireEvent.keyDown(window, { key: 'c', ctrlKey: true })
     fireEvent.keyDown(window, { key: 'v', ctrlKey: true })
 
