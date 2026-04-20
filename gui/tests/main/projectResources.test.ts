@@ -262,6 +262,39 @@ describe('project resource helpers', () => {
     expect(environmentHeader).toContain('#include "Scripts/Shared.h"')
   })
 
+  it('refreshes ScriptEnvironment.h when general scripts are deleted, restored, and moved', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const generalScript = await createProjectScriptResource(project.path, 'general', 'Shared')
+    await createProjectResource(project.path, 'folder', 'src/Scripts', 'Archive')
+    const environmentHeaderPath = join(project.path, 'src', 'ScriptEnvironment.h')
+
+    expect(await readFile(environmentHeaderPath, 'utf-8')).toContain('#include "Scripts/Shared.h"')
+
+    const deletedScript = await deleteProjectResource(project.path, 'script', generalScript.resourcePath)
+    expect(await readFile(environmentHeaderPath, 'utf-8')).not.toContain(
+      '#include "Scripts/Shared.h"'
+    )
+
+    await restoreDeletedProjectResource(project.path, deletedScript.deletionId)
+    expect(await readFile(environmentHeaderPath, 'utf-8')).toContain('#include "Scripts/Shared.h"')
+
+    const movedScript = await transferProjectResource(
+      project.path,
+      'script',
+      generalScript.resourcePath,
+      'src/Scripts/Archive',
+      'move'
+    )
+    expect(movedScript.resourcePath).toBe('src/Scripts/Archive/Shared.c')
+    expect(await readFile(environmentHeaderPath, 'utf-8')).toContain(
+      '#include "Scripts/Archive/Shared.h"'
+    )
+    expect(await readFile(environmentHeaderPath, 'utf-8')).not.toContain(
+      '#include "Scripts/Shared.h"'
+    )
+  })
+
   it('copies assets with unique names and moves them into other folders', async () => {
     const workspaceDirectory = await createTempWorkspace()
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')

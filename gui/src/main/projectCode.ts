@@ -906,6 +906,7 @@ export const moveProjectScriptFilesToDeletedContainer = async (
       buildProjectScriptHeaderFileName(getProjectScriptDisplayName(basename(resourcePath)))
     )
   )
+  await writeGeneratedScriptEnvironment(normalizedProjectPath)
 }
 
 export const restoreProjectScriptFilesFromDeletedContainer = async (
@@ -930,6 +931,7 @@ export const restoreProjectScriptFilesFromDeletedContainer = async (
     ),
     headerAbsolutePath
   )
+  await writeGeneratedScriptEnvironment(normalizedProjectPath)
 }
 
 export const transferProjectScriptFiles = async (
@@ -958,11 +960,13 @@ export const transferProjectScriptFiles = async (
   if (mode === 'copy') {
     await cp(sourceAbsolutePath, destinationSourceAbsolutePath, { errorOnExist: true })
     await cp(headerAbsolutePath, destinationHeaderAbsolutePath, { errorOnExist: true })
+    await writeGeneratedScriptEnvironment(normalizedProjectPath)
     return
   }
 
   await rename(sourceAbsolutePath, destinationSourceAbsolutePath)
   await rename(headerAbsolutePath, destinationHeaderAbsolutePath)
+  await writeGeneratedScriptEnvironment(normalizedProjectPath)
 }
 
 export const scriptFilesExist = async (
