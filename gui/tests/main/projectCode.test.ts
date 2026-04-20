@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -11,7 +11,8 @@ import {
   listProjectScriptCallbackCandidates,
   loadProjectScriptResource,
   normalizeResourceIdentifierStem,
-  saveProjectScriptResource
+  saveProjectScriptResource,
+  setBundledGbdkPathForTests
 } from '../../src/main/projectCode'
 import {
   createProjectResource,
@@ -24,8 +25,17 @@ import {
 
 const tempDirectories: string[] = []
 
+const prepareBundledGbdkFixture = async (workspaceDirectory: string): Promise<void> => {
+  const bundledGbdkPath = join(workspaceDirectory, 'bundled-gbdk')
+  const bundledGbdkBinPath = join(bundledGbdkPath, 'bin')
+  await mkdir(bundledGbdkBinPath, { recursive: true })
+  await writeFile(join(bundledGbdkBinPath, 'lcc'), '', { encoding: 'utf-8', flag: 'w' })
+  setBundledGbdkPathForTests(bundledGbdkPath)
+}
+
 describe('projectCode collision callback helpers', () => {
   afterEach(async () => {
+    setBundledGbdkPathForTests(null)
     await Promise.all(
       tempDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
     )
@@ -103,6 +113,7 @@ describe('projectCode collision callback helpers', () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
     const spriteIdentifier = normalizeResourceIdentifierStem('Hero')
     const spriteDirectory = join(project.path, 'res', spriteIdentifier)
@@ -149,6 +160,7 @@ describe('projectCode collision callback helpers', () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
     const spriteIdentifier = normalizeResourceIdentifierStem('Hero')
     const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
@@ -211,6 +223,7 @@ describe('projectCode collision callback helpers', () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
     const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
     const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
     const mapIdentifier = normalizeResourceIdentifierStem('Dungeon')
@@ -252,6 +265,7 @@ describe('projectCode collision callback helpers', () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
 
     await saveProjectSaveDataState(project.path, {
       entries: [
@@ -285,6 +299,7 @@ describe('projectCode collision callback helpers', () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
     const scene = await createProjectResource(project.path, 'scene', '', 'Room')
     const sceneScript = await createProjectScriptResource(project.path, 'scene', 'RoomLogic')
     const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
@@ -326,6 +341,7 @@ describe('projectCode collision callback helpers', () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
     const scene = await createProjectResource(project.path, 'scene', '', 'Room')
     const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
     const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
@@ -362,6 +378,7 @@ describe('projectCode collision callback helpers', () => {
     tempDirectories.push(workspaceDirectory)
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
     const siblingGbdkPath = join(workspaceDirectory, 'gbdk')
+    await prepareBundledGbdkFixture(workspaceDirectory)
 
     await expect(stat(siblingGbdkPath)).rejects.toMatchObject({ code: 'ENOENT' })
 
@@ -369,6 +386,7 @@ describe('projectCode collision callback helpers', () => {
 
     expect((await stat(siblingGbdkPath)).isDirectory()).toBe(true)
     expect((await stat(join(siblingGbdkPath, 'bin'))).isDirectory()).toBe(true)
+    expect((await stat(join(siblingGbdkPath, 'bin', 'lcc'))).isFile()).toBe(true)
   })
 
   it('refreshes existing core files when copying the bundled engine core again', async () => {
@@ -393,6 +411,7 @@ describe('projectCode collision callback helpers', () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
     const script = await createProjectScriptResource(project.path, 'general', 'Shared')
     const spriteIdentifier = normalizeResourceIdentifierStem('Hero')

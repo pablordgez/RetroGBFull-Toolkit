@@ -130,8 +130,10 @@ const getBundledCorePath = (): string => {
   return resolve(__dirname, '../../../core')
 }
 
+let bundledGbdkPathOverride: string | null = null
+
 const getBundledGbdkPath = (): string => {
-  return resolve(__dirname, '../../../gbdk')
+  return bundledGbdkPathOverride ?? resolve(__dirname, '../../../gbdk')
 }
 
 const walkRelativePaths = async (
@@ -702,6 +704,10 @@ export const copyBundledEngineCore = async (projectPath: string): Promise<CopyEn
     copiedPaths,
     skippedPaths
   }
+}
+
+export const setBundledGbdkPathForTests = (path: string | null): void => {
+  bundledGbdkPathOverride = path
 }
 
 const ensureBundledGbdkAvailableForProject = async (
