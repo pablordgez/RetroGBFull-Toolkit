@@ -118,8 +118,9 @@ export interface ProjectCodeDiagnostic {
   endColumn: number
 }
 
-export interface GenerateProjectResourceFilesResult {
+export interface BuildProjectCodeResult {
   writtenFiles: string[]
+  saveDataEntryCount: number
   spriteCount: number
   tilesetCount: number
   tilemapCount: number
@@ -128,6 +129,8 @@ export interface GenerateProjectResourceFilesResult {
   actorScriptCount: number
   sceneScriptCount: number
 }
+
+export type GenerateProjectResourceFilesResult = BuildProjectCodeResult
 
 export type ParsedScriptPropertyKind = 'integer' | 'boolean' | 'animation' | 'enum'
 

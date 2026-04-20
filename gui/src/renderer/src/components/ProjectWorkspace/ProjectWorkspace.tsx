@@ -34,7 +34,8 @@ const GENERIC_WORKSPACE_ERRORS = {
   fileExplorer: 'Something went wrong while opening the project folder.',
   scan: 'Something went wrong while scanning the project directory.',
   copyCore: 'Something went wrong while copying the engine core.',
-  generateResources: 'Something went wrong while generating resource files.'
+  buildCode: 'Something went wrong while building project code.',
+  openSaveData: 'Something went wrong while opening the save-data editor.'
 } as const
 
 const formatScanStatusMessage = (result: ProjectDirectoryScanResult): string => {
@@ -216,7 +217,7 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [projectPath])
 
-  const handleGenerateResourceFiles = useCallback(async () => {
+  const handleBuildProjectCode = useCallback(async () => {
     if (!projectPath) {
       return
     }
@@ -224,17 +225,37 @@ export const ProjectWorkspace = (): ReactElement => {
     setIsBusy(true)
 
     try {
-      const result = await window.api.generateProjectResourceFiles(projectPath)
+      const result = await window.api.buildProjectCode(projectPath)
       showStatus(
         'info',
-        `Generated code for ${result.spriteCount} sprites, ${result.tilesetCount} tilesets, ${result.tilemapCount} tilemaps, ${result.windowCount} windows, and ${result.sceneCount} scenes.`
+        `Built project code for ${result.saveDataEntryCount} save entr${result.saveDataEntryCount === 1 ? 'y' : 'ies'}, ${result.spriteCount} sprites, ${result.tilesetCount} tilesets, ${result.tilemapCount} tilemaps, ${result.windowCount} windows, and ${result.sceneCount} scenes.`
       )
       setRefreshVersion((currentVersion) => currentVersion + 1)
     } catch (error) {
-      console.error('[project-workspace] generateProjectResourceFiles failed', error)
+      console.error('[project-workspace] buildProjectCode failed', error)
       showStatus(
         'error',
-        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.generateResources
+        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.buildCode
+      )
+    } finally {
+      setIsBusy(false)
+    }
+  }, [projectPath])
+
+  const handleOpenSaveDataEditor = useCallback(async () => {
+    if (!projectPath) {
+      return
+    }
+
+    setIsBusy(true)
+
+    try {
+      await window.api.openProjectSaveDataEditor(projectPath)
+    } catch (error) {
+      console.error('[project-workspace] openProjectSaveDataEditor failed', error)
+      showStatus(
+        'error',
+        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openSaveData
       )
     } finally {
       setIsBusy(false)
@@ -318,24 +339,31 @@ export const ProjectWorkspace = (): ReactElement => {
         label: 'Code',
         items: [
           {
+            id: 'edit-save-data',
+            label: 'Edit Save Data...',
+            disabled: isBusy || !projectPath,
+            onSelect: () => void handleOpenSaveDataEditor()
+          },
+          {
             id: 'copy-engine-core',
             label: 'Copy Engine Core',
             disabled: isBusy || !projectPath,
             onSelect: () => void handleCopyEngineCore()
           },
           {
-            id: 'generate-resource-files',
-            label: 'Generate Resource Files',
+            id: 'build-project-code',
+            label: 'Build Project Code',
             disabled: isBusy || !projectPath,
-            onSelect: () => void handleGenerateResourceFiles()
+            onSelect: () => void handleBuildProjectCode()
           }
         ]
       }
     ]
   }, [
+    handleBuildProjectCode,
     handleCloseProject,
     handleCopyEngineCore,
-    handleGenerateResourceFiles,
+    handleOpenSaveDataEditor,
     handleOpenProject,
     handleOpenProjectInExplorer,
     handleScanProjectDirectory,

@@ -35,13 +35,19 @@ import {
   renameProjectResource,
   scanProjectDirectory,
   restoreDeletedProjectResource,
-  transferProjectResource
+  transferProjectResource,
+  updateProjectResourceBank,
+  updateProjectStartingScene
 } from './projectResources'
 import { ensureProjectAssetFileAvailable, loadProjectAssetFile, saveProjectAssetFile } from './projectAssetFiles'
+import {
+  loadProjectSaveDataState,
+  saveProjectSaveDataState
+} from './projectMetadata'
 import { PROJECT_ASSET_LABELS, ProjectAssetKind } from '../shared/projectAssets'
 import {
+  buildProjectCode,
   copyBundledEngineCore,
-  generateProjectResourceFiles,
   listProjectScriptCallbackCandidates,
   loadProjectScriptResource,
   readMaxCollisionCallbacks,
@@ -585,6 +591,21 @@ ipcMain.handle(
   }
 )
 
+ipcMain.handle('project:save-data:open-editor', async (_, projectPath: string) => {
+  const searchParams = new URLSearchParams({
+    projectPath
+  })
+
+  createChildWindow(`/save-data-editor?${searchParams.toString()}`, {
+    width: 1200,
+    height: 860,
+    title: 'Save Data Editor',
+    interceptClose: true
+  })
+
+  return true
+})
+
 ipcMain.handle('project:assets:load', async (_, projectPath: string, assetPath: string) => {
   return loadProjectAssetFile(projectPath, assetPath)
 })
@@ -604,6 +625,20 @@ ipcMain.handle('project:assets:save', async (_, projectPath: string, assetPath: 
 
   return payload
 })
+
+ipcMain.handle(
+  'project:save-data:load',
+  async (_, projectPath: string) => {
+    return loadProjectSaveDataState(projectPath)
+  }
+)
+
+ipcMain.handle(
+  'project:save-data:save',
+  async (_, projectPath: string, saveDataState) => {
+    return saveProjectSaveDataState(projectPath, saveDataState)
+  }
+)
 
 ipcMain.handle(
   'project:scripts:create',
@@ -683,8 +718,12 @@ ipcMain.handle('project:code:read-max-collision-callbacks', async (_, projectPat
   return readMaxCollisionCallbacks(projectPath)
 })
 
+ipcMain.handle('project:code:build', async (_, projectPath: string) => {
+  return buildProjectCode(projectPath)
+})
+
 ipcMain.handle('project:code:generate-resource-files', async (_, projectPath: string) => {
-  return generateProjectResourceFiles(projectPath)
+  return buildProjectCode(projectPath)
 })
 
 ipcMain.handle('project:code:symbol-index', async (_, projectPath: string) => {
@@ -810,6 +849,33 @@ ipcMain.handle(
       )
     } catch (error) {
       throw new Error(getProjectResourceErrorMessage(error, 'paste'))
+    }
+  }
+)
+
+ipcMain.handle(
+  'project:resources:update-bank',
+  async (_, projectPath: string, resourceType: string, resourcePath: string, bank: number) => {
+    try {
+      return await updateProjectResourceBank(
+        projectPath,
+        resourceType as Parameters<typeof updateProjectResourceBank>[1],
+        resourcePath,
+        bank
+      )
+    } catch (error) {
+      throw new Error(getProjectResourceErrorMessage(error, 'bank'))
+    }
+  }
+)
+
+ipcMain.handle(
+  'project:resources:update-starting-scene',
+  async (_, projectPath: string, scenePath: string | null) => {
+    try {
+      return await updateProjectStartingScene(projectPath, scenePath)
+    } catch (error) {
+      throw new Error(getProjectResourceErrorMessage(error, 'create'))
     }
   }
 )

@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
+import type { ProjectSaveDataState } from '../shared/projectSaveData'
 import type {
+  BuildProjectCodeResult,
   CopyEngineCoreResult,
-  GenerateProjectResourceFilesResult,
   ProjectCodeSymbolIndex,
   ProjectCodeWorkspaceSnapshot,
   ProjectScriptCallbackCandidate,
@@ -55,6 +56,8 @@ interface ProjectScriptSavedEventPayload {
 // Custom APIs for renderer
 const api = {
   openSpriteEditorWindow: () => ipcRenderer.send('open-sprite-editor-window'),
+  openProjectSaveDataEditor: (projectPath: string) =>
+    ipcRenderer.invoke('project:save-data:open-editor', projectPath) as Promise<boolean>,
   openProjectAssetEditor: (assetType: ProjectAssetKind, projectPath: string, assetPath: string) =>
     ipcRenderer.invoke('project:assets:open-editor', assetType, projectPath, assetPath) as Promise<boolean>,
   openProjectScriptEditor: (
@@ -78,6 +81,14 @@ const api = {
   openProjectInFileExplorer: (projectPath: string) =>
     ipcRenderer.invoke('project:open-in-file-explorer', projectPath) as Promise<boolean>,
   getRecentProjects: () => ipcRenderer.invoke('project:list-recent') as Promise<RecentProject[]>,
+  loadProjectSaveData: (projectPath: string) =>
+    ipcRenderer.invoke('project:save-data:load', projectPath) as Promise<ProjectSaveDataState>,
+  saveProjectSaveData: (projectPath: string, saveDataState: ProjectSaveDataState) =>
+    ipcRenderer.invoke(
+      'project:save-data:save',
+      projectPath,
+      saveDataState
+    ) as Promise<ProjectSaveDataState>,
   loadProjectAssetFile: (projectPath: string, assetPath: string) =>
     ipcRenderer.invoke('project:assets:load', projectPath, assetPath) as Promise<ProjectAssetFilePayload>,
   saveProjectAssetFile: (projectPath: string, assetPath: string, document: ProjectAssetDocument) =>
@@ -187,17 +198,38 @@ const api = {
       destinationParentPath,
       mode
     ) as Promise<ProjectResourceMutationResult>,
+  updateProjectResourceBank: (
+    projectPath: string,
+    resourceType: ProjectResourceKind,
+    resourcePath: string,
+    bank: number
+  ) =>
+    ipcRenderer.invoke(
+      'project:resources:update-bank',
+      projectPath,
+      resourceType,
+      resourcePath,
+      bank
+    ) as Promise<ProjectResourceMutationResult>,
+  updateProjectStartingScene: (projectPath: string, scenePath: string | null) =>
+    ipcRenderer.invoke(
+      'project:resources:update-starting-scene',
+      projectPath,
+      scenePath
+    ) as Promise<ProjectResourceView>,
   scanProjectDirectory: (projectPath: string) =>
     ipcRenderer.invoke('project:resources:scan', projectPath) as Promise<ProjectDirectoryScanResult>,
   copyProjectEngineCore: (projectPath: string) =>
     ipcRenderer.invoke('project:code:copy-engine-core', projectPath) as Promise<CopyEngineCoreResult>,
   readMaxCollisionCallbacks: (projectPath: string) =>
     ipcRenderer.invoke('project:code:read-max-collision-callbacks', projectPath) as Promise<number>,
+  buildProjectCode: (projectPath: string) =>
+    ipcRenderer.invoke('project:code:build', projectPath) as Promise<BuildProjectCodeResult>,
   generateProjectResourceFiles: (projectPath: string) =>
     ipcRenderer.invoke(
       'project:code:generate-resource-files',
       projectPath
-    ) as Promise<GenerateProjectResourceFilesResult>,
+    ) as Promise<BuildProjectCodeResult>,
   getProjectCodeSymbolIndex: (projectPath: string) =>
     ipcRenderer.invoke('project:code:symbol-index', projectPath) as Promise<ProjectCodeSymbolIndex>,
   getProjectCodeWorkspaceSnapshot: (projectPath: string) =>

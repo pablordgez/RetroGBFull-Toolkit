@@ -11,8 +11,6 @@ void init_save_data(void){
     save_data.signature[3] = 'E';
 
     // BEGIN SAVE DATA VARIABLE INITIALIZATION
-    save_data.sample_box_x = 2000;
-    save_data.sample_box_y = 500;
 
     // END SAVE DATA VARIABLE INITIALIZATION
     save_save_data();

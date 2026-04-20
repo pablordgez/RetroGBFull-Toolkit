@@ -121,6 +121,10 @@ const buildProjectFileContents = (projectName: string): string => {
     return `${JSON.stringify({
         name: projectName,
         createdAt: new Date().toISOString(),
+        startingScenePath: null,
+        saveData: {
+            entries: []
+        },
         resources: {
             items: []
         }

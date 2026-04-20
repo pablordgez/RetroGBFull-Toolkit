@@ -20,7 +20,9 @@ import {
   renameProjectFolder,
   restoreDeletedProjectResource,
   scanProjectDirectory,
-  transferProjectResource
+  transferProjectResource,
+  updateProjectResourceBank,
+  updateProjectStartingScene
 } from '../../src/main/projectResources'
 import {
   PROJECT_ASSET_EXTENSIONS,
@@ -221,7 +223,7 @@ describe('project resource helpers', () => {
     const createdSource = await readFile(join(project.path, createdScript.resourcePath), 'utf-8')
 
     expect(createdSource).toBe(
-      '#pragma bank 255\n#include "Shared.h"\n#include "Generated/ScriptEnvironment.h"\n\n'
+      '#pragma bank 255\n#include "Shared.h"\n#include "ScriptEnvironment.h"\n\n'
     )
   })
 
@@ -238,7 +240,58 @@ describe('project resource helpers', () => {
 
     expect(loadedScript.editableSourceContent).toBe('')
     expect(loadedScript.managedSourcePrefix).toBe(
-      '#pragma bank 255\n#include "Shared.h"\n#include "Generated/ScriptEnvironment.h"\n\n'
+      '#pragma bank 255\n#include "Shared.h"\n#include "ScriptEnvironment.h"\n\n'
+    )
+  })
+
+  it('updates ScriptEnvironment.h to include project script headers', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    await createProjectScriptResource(project.path, 'actor', 'Hero')
+    await createProjectScriptResource(project.path, 'general', 'Shared')
+    await createProjectScriptResource(project.path, 'scene', 'RoomLogic')
+
+    const environmentHeader = await readFile(
+      join(project.path, 'src', 'ScriptEnvironment.h'),
+      'utf-8'
+    )
+
+    expect(environmentHeader).toContain('#include "CustomActors/Hero.h"')
+    expect(environmentHeader).toContain('#include "CustomScenes/RoomLogic.h"')
+    expect(environmentHeader).toContain('#include "Scripts/Shared.h"')
+  })
+
+  it('refreshes ScriptEnvironment.h when general scripts are deleted, restored, and moved', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const generalScript = await createProjectScriptResource(project.path, 'general', 'Shared')
+    await createProjectResource(project.path, 'folder', 'src/Scripts', 'Archive')
+    const environmentHeaderPath = join(project.path, 'src', 'ScriptEnvironment.h')
+
+    expect(await readFile(environmentHeaderPath, 'utf-8')).toContain('#include "Scripts/Shared.h"')
+
+    const deletedScript = await deleteProjectResource(project.path, 'script', generalScript.resourcePath)
+    expect(await readFile(environmentHeaderPath, 'utf-8')).not.toContain(
+      '#include "Scripts/Shared.h"'
+    )
+
+    await restoreDeletedProjectResource(project.path, deletedScript.deletionId)
+    expect(await readFile(environmentHeaderPath, 'utf-8')).toContain('#include "Scripts/Shared.h"')
+
+    const movedScript = await transferProjectResource(
+      project.path,
+      'script',
+      generalScript.resourcePath,
+      'src/Scripts/Archive',
+      'move'
+    )
+    expect(movedScript.resourcePath).toBe('src/Scripts/Archive/Shared.c')
+    expect(await readFile(environmentHeaderPath, 'utf-8')).toContain(
+      '#include "Scripts/Archive/Shared.h"'
+    )
+    expect(await readFile(environmentHeaderPath, 'utf-8')).not.toContain(
+      '#include "Scripts/Shared.h"'
     )
   })
 
@@ -311,6 +364,57 @@ describe('project resource helpers', () => {
     expect(rootView.items.map((item) => item.name)).toEqual(['Archive'])
     expect(archiveView.items.map((item) => item.name)).toEqual(['Sprites'])
     expect(nestedView.items.map((item) => item.name)).toEqual(['Bat'])
+  })
+
+  it('stores and restores bank overrides for bankable resources', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+
+    await updateProjectResourceBank(project.path, 'sprite', sprite.resourcePath, 42)
+
+    const rootView = await listProjectResources(project.path)
+    expect(rootView.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: sprite.resourcePath,
+          bank: 42
+        })
+      ])
+    )
+
+    const deletedSprite = await deleteProjectResource(project.path, 'sprite', sprite.resourcePath)
+    await restoreDeletedProjectResource(project.path, deletedSprite.deletionId)
+
+    const restoredView = await listProjectResources(project.path)
+    expect(restoredView.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: sprite.resourcePath,
+          bank: 42
+        })
+      ])
+    )
+  })
+
+  it('tracks the selected starting scene across rename, delete, and restore operations', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const scene = await createProjectResource(project.path, 'scene', '', 'Intro')
+
+    await updateProjectStartingScene(project.path, scene.resourcePath)
+
+    const initialView = await listProjectResources(project.path)
+    expect(initialView.startingScenePath).toBe(scene.resourcePath)
+
+    const renamedScene = await renameProjectResource(project.path, 'scene', scene.resourcePath, 'Opening')
+    expect(renamedScene.view.startingScenePath).toBe(renamedScene.resourcePath)
+
+    const deletedScene = await deleteProjectResource(project.path, 'scene', renamedScene.resourcePath)
+    expect(deletedScene.view.startingScenePath).toBeNull()
+
+    const restoredScene = await restoreDeletedProjectResource(project.path, deletedScene.deletionId)
+    expect(restoredScene.view.startingScenePath).toBe(restoredScene.resourcePath)
   })
 
   it('migrates legacy folder-only project metadata into tracked resource items', async () => {
