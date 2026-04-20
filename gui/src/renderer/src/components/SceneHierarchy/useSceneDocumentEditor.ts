@@ -14,41 +14,37 @@ import {
   type SceneHierarchyClipboardOperation,
   type SceneHierarchyClipboardState,
   type SceneHierarchyHistoryState,
-  buildDefaultSceneNode,
-  buildUniqueSceneNodeName,
   canCreateSceneNodeType,
-  canInsertSceneNodeAtParent,
-  clampSceneActorPosition,
-  clampSceneCollisionRect,
-  clearFollowCameraInSceneNodeSubtree,
   cloneSceneDocumentSnapshot,
-  cloneSceneNodeSnapshot,
-  cloneSceneNodeWithFreshIds,
-  createSceneNodeId,
   findSceneNodeById,
-  findSceneNodeRecord,
-  getDefaultSceneNodeName,
-  getSceneChildNodes,
-  insertSceneNode,
   isSceneActorNode,
   isSceneCollisionNode,
   isValidScenePasteTarget,
-  mapSceneNodes,
-  mergeScriptPropertyValue,
-  removeSceneNodeById,
-  sceneSubtreeContainsNodeId,
-  translateSceneNodeSubtreeSpatial,
   updateSceneNodeById
 } from './sceneHierarchyModel'
+import {
+  type SceneMapSize,
+  buildActorResourcePathChange,
+  buildActorScriptPropertyChange,
+  buildActorUpdateChange,
+  buildCollisionCallbacksChange,
+  buildCollisionUpdateChange,
+  buildFollowedActorChange,
+  buildLoadedActorChange,
+  buildSceneClipboardChange,
+  buildSceneNodeCreationChange,
+  buildSceneNodeDeletionChange,
+  buildScenePasteChange,
+  buildSceneRenameChange,
+  buildSceneScriptPropertyChange,
+  buildTilemapPathChange,
+  clampSceneNodesToMap,
+  snapshotSceneActor
+} from './sceneDocumentEditorCommands'
 
 interface UseSceneDocumentEditorOptions {
   scene: SceneAssetDocument | null
   onSceneChange: (document: SceneAssetDocument) => void
-}
-
-interface SceneMapSize {
-  width: number
-  height: number
 }
 
 export interface SceneDocumentEditor {
@@ -224,83 +220,15 @@ export const useSceneDocumentEditor = ({
     [applyHistoryState, record]
   )
 
-  const clampNodesToMap = useCallback(
-    (nodes: SceneAssetNode[], mapSize: SceneMapSize): SceneAssetNode[] => {
-      const clampNodeList = (
-        currentNodes: SceneAssetNode[],
-        directParentActor: SceneAssetActorNode | null = null
-      ): SceneAssetNode[] => {
-        return currentNodes.map((node) => {
-          if (isSceneActorNode(node)) {
-            const clampedPosition = clampSceneActorPosition(node.x, node.y, mapSize)
-            const nextNode =
-              clampedPosition.x === node.x && clampedPosition.y === node.y
-                ? node
-                : {
-                    ...node,
-                    x: clampedPosition.x,
-                    y: clampedPosition.y
-                  }
+  const commitHistoryValues = useCallback(
+    (nextValues: Partial<SceneHierarchyHistoryState>) => {
+      const previousState = captureHistoryState()
+      const nextState = captureHistoryState(nextValues)
 
-            if (nextNode.children.length === 0) {
-              return nextNode
-            }
-
-            const nextChildren = clampNodeList(nextNode.children, nextNode)
-            const childrenChanged = nextChildren.some(
-              (childNode, index) => childNode !== nextNode.children[index]
-            )
-
-            return childrenChanged ? { ...nextNode, children: nextChildren } : nextNode
-          }
-
-          if (isSceneCollisionNode(node)) {
-            const absoluteX = node.x + (directParentActor?.x ?? 0)
-            const absoluteY = node.y + (directParentActor?.y ?? 0)
-            const clampedRect = clampSceneCollisionRect(
-              absoluteX,
-              absoluteY,
-              node.width,
-              node.height,
-              mapSize
-            )
-            const nextX = clampedRect.x - (directParentActor?.x ?? 0)
-            const nextY = clampedRect.y - (directParentActor?.y ?? 0)
-
-            if (
-              nextX === node.x &&
-              nextY === node.y &&
-              clampedRect.width === node.width &&
-              clampedRect.height === node.height
-            ) {
-              return node
-            }
-
-            return {
-              ...node,
-              x: nextX,
-              y: nextY,
-              width: clampedRect.width,
-              height: clampedRect.height
-            }
-          }
-
-          if (node.children.length === 0) {
-            return node
-          }
-
-          const nextChildren = clampNodeList(node.children, null)
-          const childrenChanged = nextChildren.some(
-            (childNode, index) => childNode !== node.children[index]
-          )
-
-          return childrenChanged ? { ...node, children: nextChildren } : node
-        })
-      }
-
-      return clampNodeList(nodes)
+      applyHistoryState(nextState)
+      recordHistoryTransition(previousState, nextState)
     },
-    []
+    [applyHistoryState, captureHistoryState, recordHistoryTransition]
   )
 
   const selectedNode = useMemo(() => {
@@ -369,36 +297,15 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const nodeName = buildUniqueSceneNodeName(
-        getSceneChildNodes(documentSnapshot.nodes, parentId),
-        getDefaultSceneNodeName(type)
-      )
-      const nextNode = buildDefaultSceneNode(type, nodeName, createSceneNodeId)
-      const nextNodes = insertSceneNode(documentSnapshot.nodes, parentId, nextNode)
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({
-        nodes: nextNodes,
-        selectedNodeId: nextNode.id
-      })
+      const creationChange = buildSceneNodeCreationChange(documentSnapshot.nodes, type, parentId)
 
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
-
-      setEditingNode({
-        nodeId: nextNode.id,
-        draftName: nextNode.name,
-        originalName: nextNode.name
+      commitHistoryValues({
+        nodes: creationChange.nodes,
+        selectedNodeId: creationChange.selectedNodeId
       })
+      setEditingNode(creationChange.editingNode)
     },
-    [
-      applyHistoryState,
-      canCreateNode,
-      captureHistoryState,
-      documentSnapshot.nodes,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [canCreateNode, commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
   const deleteNode = useCallback(
@@ -407,37 +314,15 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const removal = removeSceneNodeById(documentSnapshot.nodes, nodeId)
+      const deletionChange = buildSceneNodeDeletionChange(documentSnapshot.nodes, clipboard, nodeId)
 
-      if (!removal) {
+      if (!deletionChange) {
         return
       }
 
-      const nextClipboard =
-        clipboard?.operation === 'cut' &&
-        clipboard.sourceNodeId &&
-        sceneSubtreeContainsNodeId(removal.removedNode, clipboard.sourceNodeId)
-          ? null
-          : clipboard
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({
-        nodes: removal.nodes,
-        selectedNodeId: removal.parentId,
-        clipboard: nextClipboard
-      })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
+      commitHistoryValues(deletionChange)
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      clipboard,
-      documentSnapshot.nodes,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [clipboard, commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
   const toggleCollapsed = useCallback(
@@ -474,37 +359,18 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const node = findSceneNodeById(documentSnapshot.nodes, nodeId)
+      const clipboardChange = buildSceneClipboardChange(documentSnapshot.nodes, nodeId, operation)
 
-      if (!node) {
+      if (!clipboardChange) {
         return
       }
 
-      const stagedNode =
-        operation === 'copy'
-          ? clearFollowCameraInSceneNodeSubtree(cloneSceneNodeSnapshot(node))
-          : cloneSceneNodeSnapshot(node)
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({
-        selectedNodeId: nodeId,
-        clipboard: {
-          operation,
-          node: stagedNode,
-          sourceNodeId: operation === 'cut' ? nodeId : null
-        }
+      commitHistoryValues({
+        selectedNodeId: clipboardChange.selectedNodeId,
+        clipboard: clipboardChange.clipboard
       })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      documentSnapshot.nodes,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
   const canPasteTo = useCallback(
@@ -520,59 +386,19 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const previousState = captureHistoryState()
+      const pasteChange = buildScenePasteChange(documentSnapshot.nodes, clipboard, targetParentId)
 
-      if (clipboard.operation === 'copy') {
-        const pastedNode = cloneSceneNodeWithFreshIds(clipboard.node, createSceneNodeId)
-        pastedNode.name = buildUniqueSceneNodeName(
-          getSceneChildNodes(documentSnapshot.nodes, targetParentId),
-          clipboard.node.name
-        )
-
-        const nextNodes = insertSceneNode(documentSnapshot.nodes, targetParentId, pastedNode)
-        const nextState = captureHistoryState({
-          nodes: nextNodes,
-          selectedNodeId: pastedNode.id
-        })
-
-        applyHistoryState(nextState)
-        recordHistoryTransition(previousState, nextState)
+      if (!pasteChange) {
         return
       }
 
-      if (!clipboard.sourceNodeId) {
-        return
-      }
-
-      const removal = removeSceneNodeById(documentSnapshot.nodes, clipboard.sourceNodeId)
-
-      if (
-        !removal ||
-        !canInsertSceneNodeAtParent(removal.nodes, targetParentId, removal.removedNode)
-      ) {
-        return
-      }
-
-      const nextNodes = insertSceneNode(removal.nodes, targetParentId, removal.removedNode)
-      const nextState = captureHistoryState({
-        nodes: nextNodes,
-        selectedNodeId: removal.removedNode.id,
-        clipboard: null
+      commitHistoryValues({
+        nodes: pasteChange.nodes,
+        selectedNodeId: pasteChange.selectedNodeId,
+        clipboard: pasteChange.clipboard
       })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
     },
-    [
-      applyHistoryState,
-      canPasteTo,
-      captureHistoryState,
-      clipboard,
-      documentSnapshot.nodes,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [canPasteTo, clipboard, commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
   const commitRename = useCallback(() => {
@@ -580,39 +406,16 @@ export const useSceneDocumentEditor = ({
       return
     }
 
-    const trimmedName = editingNode.draftName.trim()
+    const renameChange = buildSceneRenameChange(documentSnapshot.nodes, editingNode)
 
-    if (trimmedName.length === 0 || trimmedName === editingNode.originalName) {
+    if (!renameChange) {
       setEditingNode(null)
       return
     }
 
-    const nodeRecord = findSceneNodeRecord(documentSnapshot.nodes, editingNode.nodeId)
-
-    if (!nodeRecord) {
-      setEditingNode(null)
-      return
-    }
-
-    const siblingNodes = getSceneChildNodes(documentSnapshot.nodes, nodeRecord.parentId)
-    const nextName = buildUniqueSceneNodeName(siblingNodes, trimmedName, editingNode.nodeId)
-    const nextNodes = updateSceneNodeById(documentSnapshot.nodes, editingNode.nodeId, (node) => ({
-      ...node,
-      name: nextName
-    }))
-    const previousState = captureHistoryState()
-    const nextState = captureHistoryState({ nodes: nextNodes })
-
-    applyHistoryState(nextState)
-    recordHistoryTransition(previousState, nextState)
-  }, [
-    applyHistoryState,
-    captureHistoryState,
-    documentSnapshot.nodes,
-    editingNode,
-    recordHistoryTransition,
-    scene
-  ])
+    commitHistoryValues({ nodes: renameChange.nodes })
+    setEditingNode(null)
+  }, [commitHistoryValues, documentSnapshot.nodes, editingNode, scene])
 
   const updateActor = useCallback(
     (
@@ -623,60 +426,15 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const actor = findSceneNodeById(documentSnapshot.nodes, nodeId)
+      const actorChange = buildActorUpdateChange(documentSnapshot.nodes, nodeId, nextValues)
 
-      if (!actor || !isSceneActorNode(actor)) {
+      if (!actorChange) {
         return
       }
 
-      const nextActor: SceneAssetActorNode = {
-        ...actor,
-        ...nextValues
-      }
-
-      if (
-        nextActor.x === actor.x &&
-        nextActor.y === actor.y &&
-        nextActor.spritePath === actor.spritePath &&
-        nextActor.scriptPath === actor.scriptPath
-      ) {
-        return
-      }
-
-      const deltaX = nextActor.x - actor.x
-      const deltaY = nextActor.y - actor.y
-      const nextNodes = updateSceneNodeById(documentSnapshot.nodes, nodeId, (node) => {
-        if (!isSceneActorNode(node)) {
-          return node
-        }
-
-        if (deltaX === 0 && deltaY === 0) {
-          return nextActor
-        }
-
-        const translatedNode = translateSceneNodeSubtreeSpatial(node, deltaX, deltaY)
-
-        return {
-          ...(translatedNode as SceneAssetActorNode),
-          spritePath: nextActor.spritePath,
-          scriptPath: nextActor.scriptPath,
-          followCamera: nextActor.followCamera
-        }
-      })
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({ nodes: nextNodes, selectedNodeId: nodeId })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
+      commitHistoryValues(actorChange)
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      documentSnapshot.nodes,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
   const setSceneScriptPath = useCallback(
@@ -685,20 +443,9 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({ scriptPath: nextScriptPath })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
+      commitHistoryValues({ scriptPath: nextScriptPath })
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      documentSnapshot.scriptPath,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [commitHistoryValues, documentSnapshot.scriptPath, editingNode, scene]
   )
 
   const setSceneScriptProperty = useCallback(
@@ -707,33 +454,19 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const nextScriptProperties = mergeScriptPropertyValue(
+      const nextScriptProperties = buildSceneScriptPropertyChange(
         documentSnapshot.scriptProperties,
         propertyName,
         propertyValue
       )
-      const currentPropertyValue = documentSnapshot.scriptProperties?.[propertyName]
 
-      if (currentPropertyValue === propertyValue) {
+      if (nextScriptProperties === null) {
         return
       }
 
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({
-        scriptProperties: nextScriptProperties
-      })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
+      commitHistoryValues({ scriptProperties: nextScriptProperties })
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      documentSnapshot.scriptProperties,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [commitHistoryValues, documentSnapshot.scriptProperties, editingNode, scene]
   )
 
   const setFollowedActor = useCallback(
@@ -742,55 +475,15 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      if (nodeId) {
-        const actor = findSceneNodeById(documentSnapshot.nodes, nodeId)
+      const followChange = buildFollowedActorChange(documentSnapshot.nodes, nodeId, selectedNodeId)
 
-        if (!actor || !isSceneActorNode(actor)) {
-          return
-        }
-      }
-
-      let didChange = false
-      const nextNodes = mapSceneNodes(documentSnapshot.nodes, (node) => {
-        if (!isSceneActorNode(node)) {
-          return node
-        }
-
-        const nextFollowCamera = nodeId !== null && node.id === nodeId
-
-        if (node.followCamera === nextFollowCamera) {
-          return node
-        }
-
-        didChange = true
-        return {
-          ...node,
-          followCamera: nextFollowCamera
-        }
-      })
-
-      if (!didChange) {
+      if (!followChange) {
         return
       }
 
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({
-        nodes: nextNodes,
-        selectedNodeId: nodeId ?? selectedNodeId
-      })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
+      commitHistoryValues(followChange)
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      documentSnapshot.nodes,
-      editingNode,
-      recordHistoryTransition,
-      scene,
-      selectedNodeId
-    ]
+    [commitHistoryValues, documentSnapshot.nodes, editingNode, scene, selectedNodeId]
   )
 
   const setActorResourcePath = useCallback(
@@ -799,15 +492,9 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const actor = findSceneNodeById(documentSnapshot.nodes, nodeId)
+      const nextNodes = buildActorResourcePathChange(documentSnapshot.nodes, nodeId, resourcePath)
 
-      if (!actor || !isSceneActorNode(actor)) {
-        return
-      }
-
-      const nextResourcePath = resourcePath ?? undefined
-
-      if ((actor.resourcePath ?? undefined) === nextResourcePath) {
+      if (!nextNodes) {
         return
       }
 
@@ -816,14 +503,7 @@ export const useSceneDocumentEditor = ({
         scriptProperties: documentSnapshot.scriptProperties,
         tilemapPath: documentSnapshot.tilemapPath,
         windowPath: documentSnapshot.windowPath,
-        nodes: updateSceneNodeById(documentSnapshot.nodes, nodeId, (node) =>
-          isSceneActorNode(node)
-            ? {
-                ...node,
-                resourcePath: nextResourcePath
-              }
-            : node
-        )
+        nodes: nextNodes
       })
     },
     [
@@ -843,44 +523,20 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const actor = findSceneNodeById(documentSnapshot.nodes, nodeId)
-
-      if (!actor || !isSceneActorNode(actor)) {
-        return
-      }
-
-      const currentPropertyValue = actor.scriptProperties?.[propertyName]
-
-      if (currentPropertyValue === propertyValue) {
-        return
-      }
-
-      const nextNodes = updateSceneNodeById(documentSnapshot.nodes, nodeId, (node) =>
-        isSceneActorNode(node)
-          ? {
-              ...node,
-              scriptProperties: mergeScriptPropertyValue(
-                node.scriptProperties,
-                propertyName,
-                propertyValue
-              )
-            }
-          : node
+      const actorPropertyChange = buildActorScriptPropertyChange(
+        documentSnapshot.nodes,
+        nodeId,
+        propertyName,
+        propertyValue
       )
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({ nodes: nextNodes, selectedNodeId: nodeId })
 
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
+      if (!actorPropertyChange) {
+        return
+      }
+
+      commitHistoryValues(actorPropertyChange)
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      documentSnapshot.nodes,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
   const updateCollision = useCallback(
@@ -894,56 +550,15 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const collision = findSceneNodeById(documentSnapshot.nodes, nodeId)
-      const collisionRecord = findSceneNodeRecord(documentSnapshot.nodes, nodeId)
+      const collisionChange = buildCollisionUpdateChange(documentSnapshot.nodes, nodeId, nextValues)
 
-      if (!collision || !isSceneCollisionNode(collision) || !collisionRecord) {
+      if (!collisionChange) {
         return
       }
 
-      const parentNode = collisionRecord.parentId
-        ? findSceneNodeById(documentSnapshot.nodes, collisionRecord.parentId)
-        : null
-      const parentActor = parentNode && isSceneActorNode(parentNode) ? parentNode : null
-
-      const nextCollision: SceneAssetCollisionNode = {
-        ...collision,
-        ...nextValues,
-        ...(nextValues.x !== undefined
-          ? { x: nextValues.x - (parentActor?.x ?? 0) }
-          : {}),
-        ...(nextValues.y !== undefined
-          ? { y: nextValues.y - (parentActor?.y ?? 0) }
-          : {})
-      }
-
-      if (
-        nextCollision.x === collision.x &&
-        nextCollision.y === collision.y &&
-        nextCollision.width === collision.width &&
-        nextCollision.height === collision.height &&
-        nextCollision.isBlocking === collision.isBlocking
-      ) {
-        return
-      }
-
-      const nextNodes = updateSceneNodeById(documentSnapshot.nodes, nodeId, (node) => {
-        return isSceneCollisionNode(node) ? nextCollision : node
-      })
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({ nodes: nextNodes, selectedNodeId: nodeId })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
+      commitHistoryValues(collisionChange)
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      documentSnapshot.nodes,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
   const setCollisionCallbacks = useCallback(
@@ -952,50 +567,19 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const collision = findSceneNodeById(documentSnapshot.nodes, nodeId)
-
-      if (!collision || !isSceneCollisionNode(collision)) {
-        return
-      }
-
-      const nextCallbacks = callbacks.map((callback) => ({ ...callback }))
-      const didChange =
-        nextCallbacks.length !== collision.callbacks.length ||
-        nextCallbacks.some((callback, index) => {
-          const currentCallback = collision.callbacks[index]
-          return (
-            !currentCallback ||
-            currentCallback.scriptPath !== callback.scriptPath ||
-            currentCallback.functionName !== callback.functionName
-          )
-        })
-
-      if (!didChange) {
-        return
-      }
-
-      const nextNodes = updateSceneNodeById(documentSnapshot.nodes, nodeId, (node) =>
-        isSceneCollisionNode(node)
-          ? {
-              ...node,
-              callbacks: nextCallbacks
-            }
-          : node
+      const callbackChange = buildCollisionCallbacksChange(
+        documentSnapshot.nodes,
+        nodeId,
+        callbacks
       )
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({ nodes: nextNodes, selectedNodeId: nodeId })
 
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
+      if (!callbackChange) {
+        return
+      }
+
+      commitHistoryValues(callbackChange)
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      documentSnapshot.nodes,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
   const clampActorsToMap = useCallback(
@@ -1004,7 +588,7 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const clampedNodes = clampNodesToMap(documentSnapshot.nodes, mapSize)
+      const clampedNodes = clampSceneNodesToMap(documentSnapshot.nodes, mapSize)
       const hasChanges = clampedNodes.some((node, index) => node !== documentSnapshot.nodes[index])
 
       if (!hasChanges) {
@@ -1020,7 +604,6 @@ export const useSceneDocumentEditor = ({
       })
     },
     [
-      clampNodesToMap,
       documentSnapshot.nodes,
       documentSnapshot.scriptPath,
       documentSnapshot.scriptProperties,
@@ -1037,29 +620,12 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const previousState = captureHistoryState()
-      const nextNodes =
-        nextTilemapSize !== undefined
-          ? clampNodesToMap(documentSnapshot.nodes, nextTilemapSize)
-          : documentSnapshot.nodes
-      const nextState = captureHistoryState({
+      commitHistoryValues({
         tilemapPath: nextTilemapPath,
-        nodes: nextNodes
+        nodes: buildTilemapPathChange(documentSnapshot.nodes, nextTilemapSize)
       })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
     },
-    [
-      applyHistoryState,
-      clampNodesToMap,
-      captureHistoryState,
-      documentSnapshot.nodes,
-      documentSnapshot.tilemapPath,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [commitHistoryValues, documentSnapshot.nodes, documentSnapshot.tilemapPath, editingNode, scene]
   )
 
   const setWindowPath = useCallback(
@@ -1068,20 +634,9 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({ windowPath: nextWindowPath })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
+      commitHistoryValues({ windowPath: nextWindowPath })
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      documentSnapshot.windowPath,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [commitHistoryValues, documentSnapshot.windowPath, editingNode, scene]
   )
 
   const loadActor = useCallback(
@@ -1095,57 +650,16 @@ export const useSceneDocumentEditor = ({
         return
       }
 
-      let nextActorNode = clearFollowCameraInSceneNodeSubtree(
-        cloneSceneNodeWithFreshIds(actorRoot, createSceneNodeId)
-      ) as SceneAssetActorNode
-
-      if (placement) {
-        nextActorNode = translateSceneNodeSubtreeSpatial(
-          nextActorNode,
-          placement.x - nextActorNode.x,
-          placement.y - nextActorNode.y
-        ) as SceneAssetActorNode
-      }
-
-      nextActorNode.name = buildUniqueSceneNodeName(
-        getSceneChildNodes(documentSnapshot.nodes, parentId),
-        actorRoot.name
+      commitHistoryValues(
+        buildLoadedActorChange(documentSnapshot.nodes, parentId, actorRoot, placement, resourcePath)
       )
-      nextActorNode.resourcePath = resourcePath ?? undefined
-
-      if (!canInsertSceneNodeAtParent(documentSnapshot.nodes, parentId, nextActorNode)) {
-        throw new Error('That actor cannot be inserted at the selected location.')
-      }
-
-      const nextNodes = insertSceneNode(documentSnapshot.nodes, parentId, nextActorNode)
-      const previousState = captureHistoryState()
-      const nextState = captureHistoryState({
-        nodes: nextNodes,
-        selectedNodeId: nextActorNode.id
-      })
-
-      applyHistoryState(nextState)
-      recordHistoryTransition(previousState, nextState)
     },
-    [
-      applyHistoryState,
-      captureHistoryState,
-      documentSnapshot.nodes,
-      editingNode,
-      recordHistoryTransition,
-      scene
-    ]
+    [commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
   const snapshotActor = useCallback(
     (nodeId: string) => {
-      const node = findSceneNodeById(documentSnapshot.nodes, nodeId)
-
-      if (!node || !isSceneActorNode(node)) {
-        return null
-      }
-
-      return cloneSceneNodeSnapshot(node) as SceneAssetActorNode
+      return snapshotSceneActor(documentSnapshot.nodes, nodeId)
     },
     [documentSnapshot.nodes]
   )
