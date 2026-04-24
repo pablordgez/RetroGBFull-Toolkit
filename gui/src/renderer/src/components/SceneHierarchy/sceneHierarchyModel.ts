@@ -332,14 +332,6 @@ export const translateSceneNodeSubtreeSpatial = (
   }
 }
 
-export const translateSceneNodeSubtreeActors = (
-  node: SceneAssetNode,
-  deltaX: number,
-  deltaY: number
-): SceneAssetNode => {
-  return translateSceneNodeSubtreeSpatial(node, deltaX, deltaY)
-}
-
 export const collectSceneActorNodes = (nodes: SceneAssetNode[]): SceneAssetActorNode[] => {
   return nodes.flatMap((node) => {
     const descendants = collectSceneActorNodes(node.children)
@@ -437,10 +429,6 @@ export const clearFollowCameraInSceneNodeSubtree = (node: SceneAssetNode): Scene
     followCamera: false,
     children: node.children.map(clearFollowCameraInSceneNodeSubtree)
   }
-}
-
-export const clearFollowCameraInSceneNodes = (nodes: SceneAssetNode[]): SceneAssetNode[] => {
-  return nodes.map(clearFollowCameraInSceneNodeSubtree)
 }
 
 export const buildDefaultSceneNode = (

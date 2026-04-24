@@ -1,3 +1,4 @@
+// replaces non alphanumeric / underscore characters with underscores, trims leading and trailing underscores, and appends 'resource' if the result is empty or starts with a number
 export const normalizeCodeIdentifier = (value: string): string => {
   const normalized = value
     .trim()

@@ -55,7 +55,6 @@ interface ProjectScriptSavedEventPayload {
 
 // Custom APIs for renderer
 const api = {
-  openSpriteEditorWindow: () => ipcRenderer.send('open-sprite-editor-window'),
   openProjectSaveDataEditor: (projectPath: string) =>
     ipcRenderer.invoke('project:save-data:open-editor', projectPath) as Promise<boolean>,
   openProjectAssetEditor: (assetType: ProjectAssetKind, projectPath: string, assetPath: string) =>
@@ -225,11 +224,6 @@ const api = {
     ipcRenderer.invoke('project:code:read-max-collision-callbacks', projectPath) as Promise<number>,
   buildProjectCode: (projectPath: string) =>
     ipcRenderer.invoke('project:code:build', projectPath) as Promise<BuildProjectCodeResult>,
-  generateProjectResourceFiles: (projectPath: string) =>
-    ipcRenderer.invoke(
-      'project:code:generate-resource-files',
-      projectPath
-    ) as Promise<BuildProjectCodeResult>,
   getProjectCodeSymbolIndex: (projectPath: string) =>
     ipcRenderer.invoke('project:code:symbol-index', projectPath) as Promise<ProjectCodeSymbolIndex>,
   getProjectCodeWorkspaceSnapshot: (projectPath: string) =>

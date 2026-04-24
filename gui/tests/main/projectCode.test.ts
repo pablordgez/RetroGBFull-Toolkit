@@ -5,14 +5,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { loadProjectAssetFile, saveProjectAssetFile } from '../../src/main/projectAssetFiles'
 import { saveProjectSaveDataState } from '../../src/main/projectMetadata'
 import { createProjectStructure } from '../../src/main/projectLauncher'
+import { normalizeCodeIdentifierStem } from '../../src/shared/codeIdentifiers'
 import {
+  buildProjectCode,
   copyBundledEngineCore,
-  generateProjectResourceFiles,
   listProjectScriptCallbackCandidates,
   loadProjectScriptResource,
-  normalizeResourceIdentifierStem,
-  saveProjectScriptResource,
-  setBundledGbdkPathForTests
+  saveProjectScriptResource
 } from '../../src/main/projectCode'
 import {
   createProjectResource,
@@ -30,12 +29,12 @@ const prepareBundledGbdkFixture = async (workspaceDirectory: string): Promise<vo
   const bundledGbdkBinPath = join(bundledGbdkPath, 'bin')
   await mkdir(bundledGbdkBinPath, { recursive: true })
   await writeFile(join(bundledGbdkBinPath, 'lcc'), '', { encoding: 'utf-8', flag: 'w' })
-  setBundledGbdkPathForTests(bundledGbdkPath)
+  process.env['RETROGBFULL_BUNDLED_GBDK_PATH'] = bundledGbdkPath
 }
 
 describe('projectCode collision callback helpers', () => {
   afterEach(async () => {
-    setBundledGbdkPathForTests(null)
+    delete process.env['RETROGBFULL_BUNDLED_GBDK_PATH']
     await Promise.all(
       tempDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
     )
@@ -131,7 +130,7 @@ describe('projectCode collision callback helpers', () => {
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
     await prepareBundledGbdkFixture(workspaceDirectory)
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
-    const spriteIdentifier = normalizeResourceIdentifierStem('Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
     const spriteDirectory = join(project.path, 'res', spriteIdentifier)
     const animationRegistryPath = join(
       project.path,
@@ -148,7 +147,7 @@ describe('projectCode collision callback helpers', () => {
       'AnimationRegistry.c'
     )
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     expect((await stat(join(spriteDirectory, `${spriteIdentifier}.c`))).isFile()).toBe(true)
     expect(await readFile(animationRegistryPath, 'utf-8')).toContain(
@@ -156,7 +155,7 @@ describe('projectCode collision callback helpers', () => {
     )
 
     await deleteProjectResource(project.path, 'sprite', sprite.resourcePath)
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     await expect(stat(spriteDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
     const emptyAnimationRegistryHeader = await readFile(animationRegistryPath, 'utf-8')
@@ -178,7 +177,7 @@ describe('projectCode collision callback helpers', () => {
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
     await prepareBundledGbdkFixture(workspaceDirectory)
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
-    const spriteIdentifier = normalizeResourceIdentifierStem('Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
     const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
     const animationRegistryPath = join(
       project.path,
@@ -195,7 +194,7 @@ describe('projectCode collision callback helpers', () => {
       'AnimationRegistry.c'
     )
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     const initialSpriteSource = await readFile(spriteSourcePath, 'utf-8')
     const initialAnimationRegistry = await readFile(animationRegistryPath, 'utf-8')
@@ -215,7 +214,7 @@ describe('projectCode collision callback helpers', () => {
       frames: [new Array(256).fill(1), new Array(256).fill(2)]
     })
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     const updatedSpriteSource = await readFile(spriteSourcePath, 'utf-8')
     const updatedAnimationRegistry = await readFile(animationRegistryPath, 'utf-8')
@@ -227,12 +226,153 @@ describe('projectCode collision callback helpers', () => {
     )
     expect(updatedAnimationRegistry).toContain(`${spriteIdentifier},`)
     expect(updatedAnimationRegistrySource).not.toBe(initialAnimationRegistrySource)
-    expect(updatedAnimationRegistrySource).toContain(
-      `.frame_duration = 5`
-    )
+    expect(updatedAnimationRegistrySource).toContain(`.frame_duration = 5`)
     expect(updatedAnimationRegistrySource).toContain(
       `.metasprite = ${spriteIdentifier}_metasprite_data`
     )
+  })
+
+  it('generates a shared metasprite layout for sparse sprite frames', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
+    const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
+    const animationRegistrySourcePath = join(
+      project.path,
+      'src',
+      'Assets',
+      'Animations',
+      'AnimationRegistry.c'
+    )
+    const loadedSprite = await loadProjectAssetFile(project.path, sprite.resourcePath)
+
+    if (loadedSprite.document.kind !== 'sprite') {
+      throw new Error('Expected a sprite document.')
+    }
+
+    const leftTileFrame = new Array(128).fill(0)
+    const rightTileFrame = new Array(128).fill(0)
+
+    for (let y = 0; y < 8; y += 1) {
+      for (let x = 0; x < 8; x += 1) {
+        leftTileFrame[y * 16 + x] = 1
+        rightTileFrame[y * 16 + (x + 8)] = 2
+      }
+    }
+
+    await saveProjectAssetFile(project.path, sprite.resourcePath, {
+      ...loadedSprite.document,
+      width: 16,
+      height: 8,
+      fps: 6,
+      currentFrame: 0,
+      frames: [leftTileFrame, rightTileFrame]
+    })
+
+    await buildProjectCode(project.path)
+
+    const spriteSource = await readFile(spriteSourcePath, 'utf-8')
+    const animationRegistrySource = await readFile(animationRegistrySourcePath, 'utf-8')
+
+    expect(spriteSource).toContain(`const metasprite_t ${spriteIdentifier}_metasprite_data[] = {`)
+    expect(spriteSource).toContain('{ .dy=-4, .dx=-8, .dtile=0, .props=0 },')
+    expect(spriteSource).toContain('{ .dy=0, .dx=8, .dtile=1, .props=0 },')
+    expect(animationRegistrySource).toContain(`.metasprite = ${spriteIdentifier}_metasprite_data`)
+  })
+
+  it('generates 8x16 metasprite offsets using 16-pixel sprite rows', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
+    const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
+    const animationRegistrySourcePath = join(
+      project.path,
+      'src',
+      'Assets',
+      'Animations',
+      'AnimationRegistry.c'
+    )
+    const loadedSprite = await loadProjectAssetFile(project.path, sprite.resourcePath)
+
+    if (loadedSprite.document.kind !== 'sprite') {
+      throw new Error('Expected a sprite document.')
+    }
+
+    const frame = new Array(16 * 32).fill(0)
+    for (let y = 16; y < 32; y += 1) {
+      for (let x = 0; x < 16; x += 1) {
+        frame[y * 16 + x] = 1
+      }
+    }
+
+    await saveProjectAssetFile(project.path, sprite.resourcePath, {
+      ...loadedSprite.document,
+      width: 16,
+      height: 32,
+      fps: 6,
+      is8x16Mode: true,
+      currentFrame: 0,
+      frames: [frame]
+    })
+
+    await buildProjectCode(project.path)
+
+    const spriteSource = await readFile(spriteSourcePath, 'utf-8')
+    const animationRegistrySource = await readFile(animationRegistrySourcePath, 'utf-8')
+
+    expect(spriteSource).toContain(`const metasprite_t ${spriteIdentifier}_metasprite_data[] = {`)
+    expect(spriteSource).toContain('{ .dy=0, .dx=-8, .dtile=4, .props=0 },')
+    expect(spriteSource).toContain('{ .dy=0, .dx=8, .dtile=6, .props=0 },')
+    expect(animationRegistrySource).toContain(`.metasprite = ${spriteIdentifier}_metasprite_data`)
+  })
+
+  it('keeps a single 8x16 sprite as a plain sprite without metasprite tables', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
+    const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
+    const spriteHeaderPath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.h`)
+    const animationRegistrySourcePath = join(
+      project.path,
+      'src',
+      'Assets',
+      'Animations',
+      'AnimationRegistry.c'
+    )
+    const loadedSprite = await loadProjectAssetFile(project.path, sprite.resourcePath)
+
+    if (loadedSprite.document.kind !== 'sprite') {
+      throw new Error('Expected a sprite document.')
+    }
+
+    await saveProjectAssetFile(project.path, sprite.resourcePath, {
+      ...loadedSprite.document,
+      width: 8,
+      height: 16,
+      fps: 6,
+      is8x16Mode: true,
+      currentFrame: 0,
+      frames: [new Array(8 * 16).fill(1)]
+    })
+
+    await buildProjectCode(project.path)
+
+    const spriteSource = await readFile(spriteSourcePath, 'utf-8')
+    const spriteHeader = await readFile(spriteHeaderPath, 'utf-8')
+    const animationRegistrySource = await readFile(animationRegistrySourcePath, 'utf-8')
+
+    expect(spriteHeader).not.toContain('metasprite_data')
+    expect(spriteSource).not.toContain('_metasprite_data')
+    expect(animationRegistrySource).toContain('.metasprite = (void*) 0')
   })
 
   it('keeps map registries valid after deleting the last generated map resource', async () => {
@@ -242,7 +382,7 @@ describe('projectCode collision callback helpers', () => {
     await prepareBundledGbdkFixture(workspaceDirectory)
     const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
     const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
-    const mapIdentifier = normalizeResourceIdentifierStem('Dungeon')
+    const mapIdentifier = normalizeCodeIdentifierStem('Dungeon')
     const mapDirectory = join(project.path, 'res', mapIdentifier)
     const mapRegistryHeaderPath = join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.h')
     const mapRegistrySourcePath = join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.c')
@@ -257,13 +397,13 @@ describe('projectCode collision callback helpers', () => {
       tilesetPath: tileset.resourcePath
     })
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     expect((await stat(join(mapDirectory, `${mapIdentifier}.c`))).isFile()).toBe(true)
     expect(await readFile(mapRegistryHeaderPath, 'utf-8')).toContain(`${mapIdentifier},`)
 
     await deleteProjectResource(project.path, 'tilemap', tilemap.resourcePath)
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     await expect(stat(mapDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
 
@@ -300,7 +440,7 @@ describe('projectCode collision callback helpers', () => {
       ]
     })
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     const saveDataHeader = await readFile(join(project.path, 'src', 'Saves', 'SaveData.h'), 'utf-8')
     const saveDataSource = await readFile(join(project.path, 'src', 'Saves', 'SaveData.c'), 'utf-8')
@@ -339,7 +479,7 @@ describe('projectCode collision callback helpers', () => {
     })
     await updateProjectStartingScene(project.path, scene.resourcePath)
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     const mainSource = await readFile(join(project.path, 'src', 'main.c'), 'utf-8')
     const roomLogicSource = await readFile(join(project.path, sceneScript.resourcePath), 'utf-8')
@@ -379,14 +519,14 @@ describe('projectCode collision callback helpers', () => {
     })
     await updateProjectStartingScene(project.path, scene.resourcePath)
 
-    await generateProjectResourceFiles(project.path)
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
+    await buildProjectCode(project.path)
 
     const roomScenePath = join(
       project.path,
       'src',
       'CustomScenes',
-      `${normalizeResourceIdentifierStem('Room')}.c`
+      `${normalizeCodeIdentifierStem('Room')}.c`
     )
     const sampleScenePath = join(project.path, 'src', 'CustomScenes', 'SampleScene.c')
 
@@ -403,7 +543,7 @@ describe('projectCode collision callback helpers', () => {
 
     await expect(stat(siblingGbdkPath)).rejects.toMatchObject({ code: 'ENOENT' })
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     expect((await stat(siblingGbdkPath)).isDirectory()).toBe(true)
     expect((await stat(join(siblingGbdkPath, 'bin'))).isDirectory()).toBe(true)
@@ -435,7 +575,7 @@ describe('projectCode collision callback helpers', () => {
     await prepareBundledGbdkFixture(workspaceDirectory)
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
     const script = await createProjectScriptResource(project.path, 'general', 'Shared')
-    const spriteIdentifier = normalizeResourceIdentifierStem('Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
     const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
     const scriptSourcePath = join(project.path, script.resourcePath)
 
@@ -453,7 +593,7 @@ describe('projectCode collision callback helpers', () => {
       loadedScript.headerContent
     )
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     expect(await readFile(spriteSourcePath, 'utf-8')).toContain('#pragma bank 7')
     expect(await readFile(scriptSourcePath, 'utf-8')).toContain('#pragma bank 23')

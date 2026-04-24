@@ -11,7 +11,6 @@ import { normalizeCodeIdentifier, normalizeCodeIdentifierStem } from '../shared/
 import type {
   BuildProjectCodeResult,
   CopyEngineCoreResult,
-  GenerateProjectResourceFilesResult,
   ProjectScriptCallbackCandidate,
   ProjectScriptResourcePayload,
   ProjectScriptSavePayload
@@ -81,13 +80,6 @@ type SceneNodeEmitter = (
   counters: { actor: number }
 ) => string | null
 
-export const DEFAULT_TRACKED_CODE_FOLDERS = [
-  'src',
-  'src/CustomActors',
-  'src/CustomScenes',
-  'src/Scripts'
-]
-
 const RESERVED_CALLBACK_NAMES = new Set(['AINIT', 'AUPDATE', 'SINIT', 'SUPDATE'])
 const IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES = new Set(['deleted-resources'])
 const INTERNAL_GENERATION_DIRECTORY = '.retrogbfull'
@@ -130,10 +122,8 @@ const getBundledCorePath = (): string => {
   return resolve(__dirname, '../../../core')
 }
 
-let bundledGbdkPathOverride: string | null = null
-
 const getBundledGbdkPath = (): string => {
-  return bundledGbdkPathOverride ?? resolve(__dirname, '../../../gbdk')
+  return process.env['RETROGBFULL_BUNDLED_GBDK_PATH'] ?? resolve(__dirname, '../../../gbdk')
 }
 
 const walkRelativePaths = async (
@@ -704,10 +694,6 @@ export const copyBundledEngineCore = async (projectPath: string): Promise<CopyEn
     copiedPaths,
     skippedPaths
   }
-}
-
-export const setBundledGbdkPathForTests = (path: string | null): void => {
-  bundledGbdkPathOverride = path
 }
 
 const ensureBundledGbdkAvailableForProject = async (
@@ -1393,22 +1379,28 @@ const buildTileBytes = (pixels: number[]): number[] => {
 
 const buildSpriteFrameBytes = (document: SpriteAssetDocument): number[] => {
   const bytes: number[] = []
-  const tilesAcross = Math.max(1, Math.floor(document.width / 8))
-  const tilesDown = Math.max(1, Math.floor(document.height / 8))
+  const tilesAcross = Math.max(1, Math.ceil(document.width / 8))
+  const tilesDown = document.is8x16Mode
+    ? Math.max(1, Math.ceil(document.height / 16))
+    : Math.max(1, Math.ceil(document.height / 8))
 
   for (const frame of document.frames) {
     for (let tileY = 0; tileY < tilesDown; tileY += 1) {
       for (let tileX = 0; tileX < tilesAcross; tileX += 1) {
-        const pixels: number[] = []
+        const tileRows = document.is8x16Mode ? [tileY * 16, tileY * 16 + 8] : [tileY * 8]
 
-        for (let row = 0; row < 8; row += 1) {
-          for (let column = 0; column < 8; column += 1) {
-            const pixelIndex = (tileY * 8 + row) * document.width + (tileX * 8 + column)
-            pixels.push(frame[pixelIndex] ?? 0)
+        for (const startRow of tileRows) {
+          const pixels: number[] = []
+
+          for (let row = 0; row < 8; row += 1) {
+            for (let column = 0; column < 8; column += 1) {
+              const pixelIndex = (startRow + row) * document.width + (tileX * 8 + column)
+              pixels.push(frame[pixelIndex] ?? 0)
+            }
           }
-        }
 
-        bytes.push(...buildTileBytes(pixels))
+          bytes.push(...buildTileBytes(pixels))
+        }
       }
     }
   }
@@ -1420,31 +1412,129 @@ const buildTilesetBytes = (document: TilesetAssetDocument): number[] => {
   return document.tiles.flatMap((tile) => buildTileBytes(tile))
 }
 
-const buildMetaspriteLines = (identifier: string, width: number, height: number): string[] => {
-  const tilesAcross = Math.max(1, Math.floor(width / 8))
-  const tilesDown = Math.max(1, Math.floor(height / 8))
+interface SpriteMetaspriteLayoutEntry {
+  x: number
+  y: number
+  dtile: number
+}
+
+const hasSpriteMetaspriteLayout = (document: SpriteAssetDocument): boolean => {
+  const maxSingleSpriteHeight = document.is8x16Mode ? 16 : 8
+  return document.width > 8 || document.height > maxSingleSpriteHeight
+}
+
+const isSpriteTileBlank = (
+  frame: number[],
+  width: number,
+  height: number,
+  startX: number,
+  startY: number
+): boolean => {
+  for (let row = 0; row < 8; row += 1) {
+    for (let column = 0; column < 8; column += 1) {
+      const pixelX = startX + column
+      const pixelY = startY + row
+
+      if (pixelX >= width || pixelY >= height) {
+        continue
+      }
+
+      if ((frame[pixelY * width + pixelX] ?? 0) !== 0) {
+        return false
+      }
+    }
+  }
+
+  return true
+}
+
+const collectSpriteMetaspriteEntries = (
+  document: SpriteAssetDocument
+): SpriteMetaspriteLayoutEntry[] => {
+  const tilesAcross = Math.max(1, Math.ceil(document.width / 8))
+
+  if (document.is8x16Mode) {
+    const spriteRows = Math.max(1, Math.ceil(document.height / 16))
+    const entries: SpriteMetaspriteLayoutEntry[] = []
+
+    for (let spriteRow = 0; spriteRow < spriteRows; spriteRow += 1) {
+      for (let tileX = 0; tileX < tilesAcross; tileX += 1) {
+        const startX = tileX * 8
+        const startY = spriteRow * 16
+        const upperBlank = document.frames.every((frame) =>
+          isSpriteTileBlank(frame, document.width, document.height, startX, startY)
+        )
+        const lowerBlank = document.frames.every((frame) =>
+          isSpriteTileBlank(frame, document.width, document.height, startX, startY + 8)
+        )
+
+        if (upperBlank && lowerBlank) {
+          continue
+        }
+
+        entries.push({
+          x: startX,
+          y: startY,
+          dtile: (spriteRow * tilesAcross + tileX) * 2
+        })
+      }
+    }
+
+    return entries
+  }
+
+  const tilesDown = Math.max(1, Math.ceil(document.height / 8))
+  const entries: SpriteMetaspriteLayoutEntry[] = []
+
+  for (let tileY = 0; tileY < tilesDown; tileY += 1) {
+    for (let tileX = 0; tileX < tilesAcross; tileX += 1) {
+      const startX = tileX * 8
+      const startY = tileY * 8
+
+      if (
+        document.frames.every((frame) =>
+          isSpriteTileBlank(frame, document.width, document.height, startX, startY)
+        )
+      ) {
+        continue
+      }
+
+      entries.push({
+        x: startX,
+        y: startY,
+        dtile: tileY * tilesAcross + tileX
+      })
+    }
+  }
+
+  return entries
+}
+
+const buildMetaspriteLines = (
+  identifier: string,
+  document: SpriteAssetDocument
+): string[] => {
+  const tilesAcross = Math.max(1, Math.ceil(document.width / 8))
+  const tilesDown = document.is8x16Mode
+    ? Math.max(1, Math.ceil(document.height / 16))
+    : Math.max(1, Math.ceil(document.height / 8))
 
   if (tilesAcross === 1 && tilesDown === 1) {
     return []
   }
 
   const lines: string[] = [`const metasprite_t ${identifier}_metasprite_data[] = {`]
-  let previousX = 0
-  let previousY = 0
-  let tileIndex = 0
+  const entries = collectSpriteMetaspriteEntries(document)
+  let previousX = document.width / 2
+  let previousY = document.height / 2
 
-  for (let tileY = 0; tileY < tilesDown; tileY += 1) {
-    for (let tileX = 0; tileX < tilesAcross; tileX += 1) {
-      const absoluteX = tileX * 8 - Math.floor(width / 2)
-      const absoluteY = tileY * 8 - Math.floor(height / 2)
-      const deltaX = tileIndex === 0 ? absoluteX : absoluteX - previousX
-      const deltaY = tileIndex === 0 ? absoluteY : absoluteY - previousY
+  for (const entry of entries) {
+    const deltaX = entry.x - previousX
+    const deltaY = entry.y - previousY
 
-      lines.push(`{ .dy=${deltaY}, .dx=${deltaX}, .dtile=${tileIndex}, .props=0 },`)
-      previousX = absoluteX
-      previousY = absoluteY
-      tileIndex += 1
-    }
+    lines.push(`{ .dy=${deltaY}, .dx=${deltaX}, .dtile=${entry.dtile}, .props=0 },`)
+    previousX = entry.x
+    previousY = entry.y
   }
 
   lines.push('METASPR_TERM')
@@ -1471,7 +1561,8 @@ const buildSpriteResourceFiles = (
   sprite: ProjectAssetRecordLike
 ): { headerPath: string; sourcePath: string; headerContent: string; sourceContent: string } => {
   const document = sprite.document as SpriteAssetDocument
-  const hasMetasprite = document.width > 8 || document.height > 8
+  const hasMetasprite = hasSpriteMetaspriteLayout(document)
+  const metaspriteLines = hasMetasprite ? buildMetaspriteLines(sprite.identifier, document) : []
   const resourceDirectory = `res/${sprite.identifier}`
   const headerPath = `${resourceDirectory}/${sprite.identifier}.h`
   const sourcePath = `${resourceDirectory}/${sprite.identifier}.c`
@@ -1488,7 +1579,6 @@ const buildSpriteResourceFiles = (
     `#endif /* ${sprite.identifier.toUpperCase()}_H */`,
     ''
   ]
-  const metaspriteLines = buildMetaspriteLines(sprite.identifier, document.width, document.height)
   const sourceLines = [
     `#pragma bank ${sprite.bank}`,
     `#include "${sprite.identifier}.h"`,
@@ -1647,10 +1737,9 @@ const buildAnimationRegistryFiles = (
 
   const animationDefinitionLines = sprites.flatMap((sprite) => {
     const document = sprite.document as SpriteAssetDocument
+    const hasMetasprite = hasSpriteMetaspriteLayout(document)
     const metaspriteExpression =
-      document.width > 8 || document.height > 8
-        ? `${sprite.identifier}_metasprite_data`
-        : '(void*) 0'
+      hasMetasprite ? `${sprite.identifier}_metasprite_data` : '(void*) 0'
 
     return [
       `const Animation _${sprite.identifier} = {`,
@@ -2013,7 +2102,6 @@ export const buildProjectCode = async (
 ): Promise<BuildProjectCodeResult> => {
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
   await ensureBundledGbdkAvailableForProject(normalizedProjectPath)
-  await writeGeneratedScriptEnvironment(normalizedProjectPath)
 
   const [assets, scripts] = await Promise.all([
     loadProjectAssetRecords(normalizedProjectPath),
@@ -2301,14 +2389,4 @@ export const buildProjectCode = async (
     actorScriptCount: actorScripts.length,
     sceneScriptCount: sceneScripts.length
   }
-}
-
-export const generateProjectResourceFiles = async (
-  projectPath: string
-): Promise<GenerateProjectResourceFilesResult> => {
-  return buildProjectCode(projectPath)
-}
-
-export const normalizeResourceIdentifierStem = (resourceName: string): string => {
-  return normalizeCodeIdentifierStem(resourceName)
 }

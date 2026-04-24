@@ -18,7 +18,6 @@ Object.defineProperty(window, 'api', {
   configurable: true,
   writable: true,
   value: {
-    openSpriteEditorWindow: vi.fn(),
     openProjectSaveDataEditor: vi.fn().mockResolvedValue(true),
     openProjectAssetEditor: vi.fn().mockResolvedValue(true),
     openProjectScriptEditor: vi.fn().mockResolvedValue(true),
@@ -65,19 +64,6 @@ Object.defineProperty(window, 'api', {
       actorScriptCount: 0,
       sceneScriptCount: 0,
     }),
-    generateProjectResourceFiles: vi
-      .fn()
-      .mockResolvedValue({
-        writtenFiles: [],
-        saveDataEntryCount: 0,
-        spriteCount: 0,
-        tilesetCount: 0,
-        tilemapCount: 0,
-        windowCount: 0,
-        sceneCount: 0,
-        actorScriptCount: 0,
-        sceneScriptCount: 0,
-      }),
     getProjectCodeSymbolIndex: vi.fn().mockResolvedValue({
       structs: [],
       enums: [],

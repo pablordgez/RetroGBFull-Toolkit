@@ -148,22 +148,6 @@ export const loadProjectStartingScenePath = async (
   return parseStoredStartingScenePath(projectFile.startingScenePath)
 }
 
-export const saveProjectStartingScenePath = async (
-  projectPath: string,
-  scenePath: string | null
-): Promise<string | null> => {
-  const nextStartingScenePath = parseStoredStartingScenePath(scenePath)
-  const { jsonPath, projectFile } = await readStoredProjectFile(projectPath)
-  const nextProjectFile: StoredProjectFile = {
-    ...projectFile,
-    startingScenePath: nextStartingScenePath
-  }
-
-  await writeFile(jsonPath, `${JSON.stringify(nextProjectFile, null, 2)}\n`, 'utf-8')
-
-  return nextStartingScenePath
-}
-
 export const saveProjectSaveDataState = async (
   projectPath: string,
   saveDataState: ProjectSaveDataState

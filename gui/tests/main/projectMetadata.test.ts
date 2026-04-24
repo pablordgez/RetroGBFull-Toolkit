@@ -5,11 +5,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createProjectStructure } from '../../src/main/projectLauncher'
 import {
   loadProjectSaveDataState,
-  loadProjectStartingScenePath,
   readProjectTrackedResourceBank,
   readProjectTrackedResourceBanks,
-  saveProjectSaveDataState,
-  saveProjectStartingScenePath
+  saveProjectSaveDataState
 } from '../../src/main/projectMetadata'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../../src/shared/projectResourceModels'
 
@@ -140,19 +138,5 @@ describe('projectMetadata helpers', () => {
         ]
       })
     ).rejects.toThrow('"signature" is reserved by the toolkit.')
-  })
-
-  it('normalizes the stored starting scene path and clears invalid values', async () => {
-    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-metadata-'))
-    tempDirectories.push(workspaceDirectory)
-    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
-
-    expect(
-      await saveProjectStartingScenePath(project.path, ' scenes\\Intro.rgbscene.json ')
-    ).toBe('scenes/Intro.rgbscene.json')
-    expect(await loadProjectStartingScenePath(project.path)).toBe('scenes/Intro.rgbscene.json')
-
-    expect(await saveProjectStartingScenePath(project.path, 'src/Scripts/Shared.c')).toBeNull()
-    expect(await loadProjectStartingScenePath(project.path)).toBeNull()
   })
 })

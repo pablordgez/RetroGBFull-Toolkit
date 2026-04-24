@@ -17,6 +17,7 @@ export interface ProjectSaveDataValidationIssue {
 
 export const RESERVED_PROJECT_SAVE_DATA_NAMES = new Set(['signature'])
 
+// C identifier pattern: starts with a letter or underscore, followed by letters, digits, or underscores
 const C_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -27,7 +28,9 @@ export const isValidProjectSaveDataIdentifier = (value: string): boolean => {
   return C_IDENTIFIER_PATTERN.test(value.trim())
 }
 
+// parses a raw value into save data entries
 export const parseProjectSaveDataState = (value: unknown): ProjectSaveDataState => {
+  // if the value isn't an object with an entries array, return an empty state
   if (!isRecord(value) || !Array.isArray(value.entries)) {
     return {
       entries: []
@@ -35,6 +38,7 @@ export const parseProjectSaveDataState = (value: unknown): ProjectSaveDataState 
   }
 
   return {
+    // for each entry, check if it has the required fields with the correct types, and if so, include it in the result
     entries: value.entries.flatMap((entry): ProjectSaveDataEntry[] => {
       if (
         !isRecord(entry) ||
@@ -58,6 +62,7 @@ export const parseProjectSaveDataState = (value: unknown): ProjectSaveDataState 
   }
 }
 
+// serializes the ProjectSaveDataState object into a plain object
 export const serializeProjectSaveDataState = (
   state: ProjectSaveDataState
 ): Record<string, unknown> => {
@@ -71,6 +76,8 @@ export const serializeProjectSaveDataState = (
   }
 }
 
+// validates that each entry has non empty values, that the name is a valid identifier, unique and not reserved
+// and returns a list of validation errors
 export const validateProjectSaveDataEntries = (
   entries: ProjectSaveDataEntry[]
 ): ProjectSaveDataValidationIssue[] => {
