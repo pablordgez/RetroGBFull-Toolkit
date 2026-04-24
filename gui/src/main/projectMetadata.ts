@@ -88,6 +88,7 @@ const readStoredProjectFile = async (
   }
 }
 
+// build a map with resources and their bank, if the resource doesn't have a bank assigned it will assign 255
 const buildTrackedResourceBankMap = (projectFile: StoredProjectFile): Map<string, number> => {
   const resourcesSection = isRecord(projectFile.resources) ? projectFile.resources : {}
   const items = Array.isArray(resourcesSection.items) ? resourcesSection.items : []
