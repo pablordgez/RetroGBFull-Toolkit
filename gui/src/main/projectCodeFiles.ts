@@ -1,20 +1,9 @@
 import { readdir } from 'fs/promises'
 import { extname, join } from 'path'
-import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
+import { ensureProjectDirectory } from './projectCodeShared'
 
 export const PROJECT_CODE_FILE_EXTENSIONS = new Set(['.c', '.h'])
-
-export const ensureProjectDirectory = async (projectPath: string): Promise<string> => {
-  const validation = await validateProjectDirectory(projectPath)
-
-  if (!validation.isValid) {
-    throw new ProjectLauncherError(
-      validation.message ?? 'The selected project could not be loaded.'
-    )
-  }
-
-  return validation.path
-}
+export { ensureProjectDirectory }
 
 // recursively searches for all the .c and .h files in the project
 export const walkProjectCodeFiles = async (

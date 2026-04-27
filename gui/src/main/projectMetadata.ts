@@ -1,6 +1,10 @@
 import { readFile, writeFile } from 'fs/promises'
 import { basename } from 'path'
 import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
+import {
+  isValidProjectResourceBank,
+  normalizeResourcePath
+} from './projectResourcePaths'
 import { getProjectAssetKindFromFileName } from '../shared/projectAssets'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 import {
@@ -21,15 +25,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null
 }
 
-const normalizeResourcePath = (resourcePath: string): string => {
-  return resourcePath
-    .replace(/\\/g, '/')
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0 && segment !== '.')
-    .join('/')
-}
-
 const parseStoredStartingScenePath = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null
@@ -42,10 +37,6 @@ const parseStoredStartingScenePath = (value: unknown): string | null => {
   }
 
   return normalizedPath
-}
-
-const isValidBank = (value: unknown): value is number => {
-  return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 255
 }
 
 const isBankableResourcePath = (resourcePath: string): boolean => {
@@ -107,7 +98,7 @@ const buildTrackedResourceBankMap = (projectFile: StoredProjectFile): Map<string
 
     bankMap.set(
       normalizedPath,
-      isValidBank(item.bank) ? Number(item.bank) : DEFAULT_PROJECT_RESOURCE_BANK
+      isValidProjectResourceBank(item.bank) ? Number(item.bank) : DEFAULT_PROJECT_RESOURCE_BANK
     )
   }
 

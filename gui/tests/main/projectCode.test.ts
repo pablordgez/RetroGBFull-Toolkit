@@ -417,6 +417,135 @@ describe('projectCode collision callback helpers', () => {
     expect(emptyMapRegistrySource).toContain('const AssetEntry map_data[NUMBER_OF_MAPS] = {')
   })
 
+  it('reuses same-bank tileset resources from generated map registry entries when the bank is explicit', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
+    const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
+    const mapIdentifier = normalizeCodeIdentifierStem('Dungeon')
+    const tilesetIdentifier = normalizeCodeIdentifierStem('Dungeon Tiles')
+    const loadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+
+    if (loadedTilemap.document.kind !== 'tilemap') {
+      throw new Error('Expected a tilemap document.')
+    }
+
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...loadedTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await updateProjectResourceBank(project.path, 'tilemap', tilemap.resourcePath, 7)
+    await updateProjectResourceBank(project.path, 'tileset', tileset.resourcePath, 7)
+
+    await buildProjectCode(project.path)
+
+    const mapHeader = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.h`),
+      'utf-8'
+    )
+    const mapSource = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.c`),
+      'utf-8'
+    )
+    const mapRegistrySource = await readFile(
+      join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.c'),
+      'utf-8'
+    )
+
+    expect(mapHeader).toContain(`#include "${tilesetIdentifier}/${tilesetIdentifier}.h"`)
+    expect(mapHeader).toContain(`#define ${mapIdentifier}_tileset ${tilesetIdentifier}_tileset`)
+    expect(mapHeader).toContain(`#define ${mapIdentifier}_num_tiles ${tilesetIdentifier}_num_tiles`)
+    expect(mapSource).toContain(`const uint8_t ${mapIdentifier}_map_data[] = {`)
+    expect(mapSource).not.toContain(`const uint8_t ${mapIdentifier}_tileset[] = {`)
+    expect(mapRegistrySource).toContain(`.tileset = ${tilesetIdentifier}_tileset,`)
+    expect(mapRegistrySource).toContain(`.num_tiles = ${tilesetIdentifier}_num_tiles,`)
+  })
+
+  it('keeps per-map tileset copies when the map and tileset are both autobanked', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
+    const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
+    const mapIdentifier = normalizeCodeIdentifierStem('Dungeon')
+    const tilesetIdentifier = normalizeCodeIdentifierStem('Dungeon Tiles')
+    const loadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+
+    if (loadedTilemap.document.kind !== 'tilemap') {
+      throw new Error('Expected a tilemap document.')
+    }
+
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...loadedTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+
+    await buildProjectCode(project.path)
+
+    const mapHeader = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.h`),
+      'utf-8'
+    )
+    const mapSource = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.c`),
+      'utf-8'
+    )
+    const mapRegistrySource = await readFile(
+      join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.c'),
+      'utf-8'
+    )
+
+    expect(mapHeader).not.toContain(`#include "${tilesetIdentifier}/${tilesetIdentifier}.h"`)
+    expect(mapSource).toContain(`const uint8_t ${mapIdentifier}_tileset[] = {`)
+    expect(mapRegistrySource).toContain(`.tileset = ${mapIdentifier}_tileset,`)
+    expect(mapRegistrySource).toContain(`.num_tiles = ${mapIdentifier}_num_tiles,`)
+  })
+
+  it('keeps per-map tileset copies when the map and tileset banks differ', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
+    const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
+    const mapIdentifier = normalizeCodeIdentifierStem('Dungeon')
+    const tilesetIdentifier = normalizeCodeIdentifierStem('Dungeon Tiles')
+    const loadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+
+    if (loadedTilemap.document.kind !== 'tilemap') {
+      throw new Error('Expected a tilemap document.')
+    }
+
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...loadedTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await updateProjectResourceBank(project.path, 'tileset', tileset.resourcePath, 7)
+
+    await buildProjectCode(project.path)
+
+    const mapHeader = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.h`),
+      'utf-8'
+    )
+    const mapSource = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.c`),
+      'utf-8'
+    )
+    const mapRegistrySource = await readFile(
+      join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.c'),
+      'utf-8'
+    )
+
+    expect(mapHeader).not.toContain(`#include "${tilesetIdentifier}/${tilesetIdentifier}.h"`)
+    expect(mapSource).toContain(`const uint8_t ${mapIdentifier}_tileset[] = {`)
+    expect(mapRegistrySource).toContain(`.tileset = ${mapIdentifier}_tileset,`)
+    expect(mapRegistrySource).toContain(`.num_tiles = ${mapIdentifier}_num_tiles,`)
+  })
+
   it('generates save-data blocks from the project save-data state', async () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
@@ -451,7 +580,7 @@ describe('projectCode collision callback helpers', () => {
     expect(saveDataSource).toContain('save_data.last_position = 128;')
   })
 
-  it('injects generated scene initialization into the real scene script and rewrites main.c to the selected starting scene', async () => {
+  it('generates a scripted scene wrapper and rewrites main.c to the selected starting scene', async () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
@@ -483,14 +612,96 @@ describe('projectCode collision callback helpers', () => {
 
     const mainSource = await readFile(join(project.path, 'src', 'main.c'), 'utf-8')
     const roomLogicSource = await readFile(join(project.path, sceneScript.resourcePath), 'utf-8')
+    const roomSceneSource = await readFile(
+      join(project.path, 'src', 'CustomScenes', 'room.c'),
+      'utf-8'
+    )
+    const roomSceneHeader = await readFile(
+      join(project.path, 'src', 'CustomScenes', 'room.h'),
+      'utf-8'
+    )
     const projectBindingsPath = join(project.path, 'src', 'Generated', 'ProjectBindings.c')
 
-    expect(mainSource).toContain('#include "CustomScenes/RoomLogic.h"')
-    expect(mainSource).toContain('RoomLogic ss;')
-    expect(mainSource).toContain('ss.base.type = _RoomLogic;')
-    expect(roomLogicSource).toContain('// BEGIN GENERATED SCENE INITIALIZATION')
-    expect(roomLogicSource).toContain('set_scene_map(maps[dungeon]);')
+    expect(mainSource).toContain('#include "CustomScenes/room.h"')
+    expect(mainSource).toContain('room ss;')
+    expect(mainSource).toContain('ss.base.type = _room;')
+    expect(roomLogicSource).not.toContain('// BEGIN GENERATED SCENE INITIALIZATION')
+    expect(roomSceneHeader).toContain('#include "CustomScenes/RoomLogic.h"')
+    expect(roomSceneHeader).toContain('typedef RoomLogic room;')
+    expect(roomSceneSource).toContain('scene_init_state_RoomLogic();')
+    expect(roomSceneSource).toContain('scene_update_RoomLogic();')
+    expect(roomSceneSource).toContain('// BEGIN GENERATED SCENE INITIALIZATION')
+    expect(roomSceneSource).toContain('set_scene_map(maps[dungeon]);')
     await expect(stat(projectBindingsPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('generates separate CustomScenes entries when multiple scenes share one scene script', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const firstScene = await createProjectResource(project.path, 'scene', '', 'First Room')
+    const secondScene = await createProjectResource(project.path, 'scene', '', 'Second Room')
+    const sceneScript = await createProjectScriptResource(project.path, 'scene', 'SharedRoomLogic')
+    const firstTilemap = await createProjectResource(project.path, 'tilemap', '', 'First Dungeon')
+    const secondTilemap = await createProjectResource(project.path, 'tilemap', '', 'Second Dungeon')
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
+    const loadedFirstScene = await loadProjectAssetFile(project.path, firstScene.resourcePath)
+    const loadedSecondScene = await loadProjectAssetFile(project.path, secondScene.resourcePath)
+    const loadedFirstTilemap = await loadProjectAssetFile(project.path, firstTilemap.resourcePath)
+    const loadedSecondTilemap = await loadProjectAssetFile(project.path, secondTilemap.resourcePath)
+
+    if (
+      loadedFirstScene.document.kind !== 'scene' ||
+      loadedSecondScene.document.kind !== 'scene' ||
+      loadedFirstTilemap.document.kind !== 'tilemap' ||
+      loadedSecondTilemap.document.kind !== 'tilemap'
+    ) {
+      throw new Error('Expected scene and tilemap documents.')
+    }
+
+    await saveProjectAssetFile(project.path, firstTilemap.resourcePath, {
+      ...loadedFirstTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await saveProjectAssetFile(project.path, secondTilemap.resourcePath, {
+      ...loadedSecondTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await saveProjectAssetFile(project.path, firstScene.resourcePath, {
+      ...loadedFirstScene.document,
+      tilemapPath: firstTilemap.resourcePath,
+      scriptPath: sceneScript.resourcePath
+    })
+    await saveProjectAssetFile(project.path, secondScene.resourcePath, {
+      ...loadedSecondScene.document,
+      tilemapPath: secondTilemap.resourcePath,
+      scriptPath: sceneScript.resourcePath
+    })
+
+    await buildProjectCode(project.path)
+
+    const firstSceneSource = await readFile(
+      join(project.path, 'src', 'CustomScenes', 'first_room.c'),
+      'utf-8'
+    )
+    const secondSceneSource = await readFile(
+      join(project.path, 'src', 'CustomScenes', 'second_room.c'),
+      'utf-8'
+    )
+    const sceneRegistry = await readFile(
+      join(project.path, 'src', 'Scene', 'SceneRegistry.h'),
+      'utf-8'
+    )
+    const sharedScriptSource = await readFile(join(project.path, sceneScript.resourcePath), 'utf-8')
+
+    expect(firstSceneSource).toContain('scene_init_state_SharedRoomLogic();')
+    expect(firstSceneSource).toContain('set_scene_map(maps[first_dungeon]);')
+    expect(secondSceneSource).toContain('scene_init_state_SharedRoomLogic();')
+    expect(secondSceneSource).toContain('set_scene_map(maps[second_dungeon]);')
+    expect(sceneRegistry).toContain('_SCENE(first_room)')
+    expect(sceneRegistry).toContain('_SCENE(second_room)')
+    expect(sharedScriptSource).not.toContain('// BEGIN GENERATED SCENE INITIALIZATION')
   })
 
   it('can rebuild scenes without custom scene scripts without treating managed scene files as user scripts', async () => {
@@ -582,7 +793,11 @@ describe('projectCode collision callback helpers', () => {
     await updateProjectResourceBank(project.path, 'sprite', sprite.resourcePath, 7)
     await updateProjectResourceBank(project.path, 'script', script.resourcePath, 23)
 
-    const loadedScript = await loadProjectScriptResource(project.path, script.resourcePath, 'general')
+    const loadedScript = await loadProjectScriptResource(
+      project.path,
+      script.resourcePath,
+      'general'
+    )
     expect(loadedScript.managedSourcePrefix).toContain('#pragma bank 23')
 
     await saveProjectScriptResource(

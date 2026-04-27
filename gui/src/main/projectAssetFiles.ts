@@ -1,7 +1,8 @@
 import { readFile, stat, writeFile } from 'fs/promises'
-import { basename, isAbsolute, relative, resolve } from 'path'
+import { basename } from 'path'
 import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
 import { getTrackedProjectResource, pruneMissingProjectResource } from './projectResources'
+import { normalizeResourcePath, resolvePathWithinProject } from './projectResourcePaths'
 import {
   ProjectAssetDocument,
   ProjectAssetKind,
@@ -10,20 +11,13 @@ import {
   serializeProjectAssetDocument
 } from '../shared/projectAssets'
 
-const normalizeResourcePath = (resourcePath: string): string => {
-  return resourcePath.replace(/\\/g, '/')
-}
-
 // check if resource is within project and return its absolute path
 const resolveAssetPathWithinProject = (projectPath: string, resourcePath: string): string => {
-  const absolutePath = resolve(projectPath, resourcePath || '.')
-  const relativePath = relative(projectPath, absolutePath)
-
-  if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
-    throw new ProjectLauncherError('The selected asset is outside the project directory.')
-  }
-
-  return absolutePath
+  return resolvePathWithinProject(
+    projectPath,
+    resourcePath,
+    'The selected asset is outside the project directory.'
+  )
 }
 
 // checks if the asset file exists and is tracked in the project, and returns it if so
