@@ -125,22 +125,6 @@ export const createDefaultSceneActorNode = (name = 'Actor'): SceneAssetActorNode
   }
 }
 
-export const createDefaultSceneCollisionNode = (name = 'Collision'): SceneAssetCollisionNode => {
-  return {
-    id: 'scene-collision-node',
-    type: 'collision',
-    name,
-    isCollapsed: false,
-    x: 0,
-    y: 0,
-    width: 128,
-    height: 128,
-    isBlocking: true,
-    callbacks: [],
-    children: []
-  }
-}
-
 export const PROJECT_ASSET_EXTENSIONS: Record<ProjectAssetKind, string> = {
   sprite: '.rgbsprite.json',
   tileset: '.rgbtileset.json',
@@ -164,12 +148,15 @@ export interface WindowSplitSettings {
   windowBottomStart: number
 }
 
+
 export const normalizeWindowSplitSettings = (
   windowTopEnd: number,
   windowBottomStart: number,
   height: number
 ): WindowSplitSettings => {
   const clampedHeight = Math.max(0, Math.trunc(height))
+
+  // clamps a value to be between 0 and the clamped height and truncates it
   const clampRow = (value: number): number => {
     if (!Number.isFinite(value)) {
       return 0
@@ -180,6 +167,7 @@ export const normalizeWindowSplitSettings = (
 
   const nextWindowTopEnd = clampRow(windowTopEnd)
 
+  // if the top end is 0, the window is disabled (a bottom only window is a moved top only window)
   if (nextWindowTopEnd === 0) {
     return {
       windowTopEnd: 0,
@@ -189,6 +177,7 @@ export const normalizeWindowSplitSettings = (
 
   const nextWindowBottomStart = clampRow(windowBottomStart)
 
+  // if the bottom start is 0, the window is a top only window
   if (nextWindowBottomStart === 0) {
     return {
       windowTopEnd: nextWindowTopEnd,
@@ -196,6 +185,7 @@ export const normalizeWindowSplitSettings = (
     }
   }
 
+  // if the bottom start is greater than the top end, the window is a valid split window
   if (nextWindowBottomStart > nextWindowTopEnd) {
     return {
       windowTopEnd: nextWindowTopEnd,
@@ -203,6 +193,8 @@ export const normalizeWindowSplitSettings = (
     }
   }
 
+  // otherwise, if the window top end is within bounds, the bottom start is normalized to one row after the top end
+  // if the window top end is out of bounds, the bottom start is normalized to 0
   const normalizedBottomStart =
     nextWindowTopEnd < clampedHeight ? Math.min(clampedHeight, nextWindowTopEnd + 1) : 0
 
@@ -364,6 +356,7 @@ export const isSceneCollisionNode = (node: SceneAssetNode): node is SceneAssetCo
   return node.type === 'collision'
 }
 
+// ensures only one actor is followed by the camera in the scene and that only actors can be followed by the camera
 const normalizeSceneFollowCameraNodes = (nodes: SceneAssetNode[]): SceneAssetNode[] => {
   let hasFollowedActor = false
 
@@ -398,6 +391,7 @@ const normalizeSceneFollowCameraNodes = (nodes: SceneAssetNode[]): SceneAssetNod
   return nodes.map(normalizeNode)
 }
 
+// validates the structure of a scene node and its children and returns the normalized node or null if the structure is invalid
 const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
   if (!isRecord(value)) {
     return null
@@ -498,6 +492,7 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
   }
 }
 
+// serializes a scene node and its children from SceneAssetNode to a plain object
 const serializeSceneAssetNode = (
   node: SceneAssetNode,
   includeResourcePath = false
@@ -561,6 +556,9 @@ const serializeSceneAssetNode = (
   }
 }
 
+
+// validates that the raw document is a valid document kind with the required fields and if so returns the document casted to the
+// specific type
 export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDocument => {
   if (!isRecord(rawDocument) || typeof rawDocument.kind !== 'string' || rawDocument.version !== 1) {
     throw new Error('The asset file is invalid.')
@@ -685,6 +683,7 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
   }
 }
 
+// serializes a project asset to a JSON string
 export const serializeProjectAssetDocument = (assetDocument: ProjectAssetDocument): string => {
   if (assetDocument.kind === 'scene') {
     const sceneNodes = Array.isArray(assetDocument.nodes) ? assetDocument.nodes : []

@@ -722,10 +722,6 @@ ipcMain.handle('project:code:build', async (_, projectPath: string) => {
   return buildProjectCode(projectPath)
 })
 
-ipcMain.handle('project:code:generate-resource-files', async (_, projectPath: string) => {
-  return buildProjectCode(projectPath)
-})
-
 ipcMain.handle('project:code:symbol-index', async (_, projectPath: string) => {
   return getProjectCodeSymbolIndex(projectPath)
 })
@@ -911,14 +907,3 @@ ipcMain.handle(
   }
 )
 
-ipcMain.on('open-sprite-editor-window', () => {
-  createChildWindow('/sprite-editor')
-})
-
-ipcMain.on('open-tileset-editor-window', () => {
-  createChildWindow('/tileset-editor')
-})
-
-ipcMain.on('open-tilemap-editor-window', () => {
-  createChildWindow('/tilemap-editor')
-})

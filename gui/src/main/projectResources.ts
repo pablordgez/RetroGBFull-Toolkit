@@ -1,29 +1,9 @@
 import { randomUUID } from 'crypto'
-import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
-import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
-import {
-  ProjectLauncherError,
-  getProjectLauncherErrorMessage,
-  isValidProjectName,
-  validateProjectDirectory
-} from './projectLauncher'
-import {
-  createProjectScriptFiles,
-  moveProjectScriptFilesToDeletedContainer,
-  renameProjectScriptFiles,
-  restoreProjectScriptFilesFromDeletedContainer,
-  scriptFilesExist,
-  transferProjectScriptFiles
-} from './projectCode'
-import {
-  ProjectAssetKind,
-  buildProjectAssetFileName,
-  createDefaultProjectAssetDocument,
-  getProjectAssetDisplayName,
-  getProjectAssetKindFromFileName,
-  parseProjectAssetDocument,
-  serializeProjectAssetDocument
-} from '../shared/projectAssets'
+import { mkdir, readdir, readFile, rm, stat } from 'fs/promises'
+import { basename } from 'path'
+import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
+import { createProjectScriptFiles, scriptFilesExist } from './projectCode'
+import { getProjectAssetKindFromFileName, parseProjectAssetDocument } from '../shared/projectAssets'
 import { normalizeCodeIdentifier } from '../shared/codeIdentifiers'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 import {
@@ -36,178 +16,82 @@ import {
   getProjectScriptKindFromPath,
   isProjectScriptSourcePath
 } from '../shared/projectScripts'
+import {
+  normalizeParentPath,
+  normalizeProjectResourceBank,
+  normalizeResourcePath,
+  resolvePathWithinProject
+} from './projectResourcePaths'
+import {
+  type CreatableProjectResourceKind,
+  buildResourceFileName,
+  buildStoredAssetRecord,
+  buildStoredFolderRecord,
+  buildStoredResourceRecord,
+  buildStoredScriptRecord,
+  isBankableAssetKind
+} from './projectResourceRecords'
+import {
+  assertFolderName,
+  assertUniqueTrackedFileName,
+  buildUniqueResourceName,
+  buildUniqueTransferredResourceTarget
+} from './projectResourceNames'
+import {
+  type ProjectResourceState,
+  readProjectResourceState,
+  writeProjectResources
+} from './projectResourceRepository'
+import {
+  type StoredDeletedResourceMetadata,
+  getDeletedResourceContainerPath,
+  getDeletedResourceContentPath,
+  getDeletedResourcesDirectoryPath,
+  readDeletedResourceMetadata,
+  writeDeletedResourceMetadata
+} from './projectResourceDeletedStore'
+import { getProjectResourceTypeStrategy } from './projectResourceTypeStrategies'
+import {
+  buildProjectResourceView,
+  getResourceParentPath,
+  getStateStartingScenePath,
+  isSameOrDescendantPath,
+  normalizeStartingScenePath,
+  remapStartingScenePath,
+  setStateStartingScenePath
+} from './projectResourceView'
+import type {
+  ProjectDeletedResourceResult,
+  ProjectDirectoryScanResult,
+  ProjectFolderMutationResult,
+  ProjectResourceKind,
+  ProjectResourceMutationResult,
+  ProjectResourceTransferMode,
+  ProjectResourceView,
+  ProjectScriptRecord,
+  ProjectStoredResourceRecord,
+  ProjectTrackedResource
+} from './projectResourceTypes'
 
-export interface ProjectFolderRecord {
-  type: 'folder'
-  id: string
-  name: string
-  path: string
-  parentPath: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ProjectAssetRecord {
-  type: 'file'
-  id: string
-  name: string
-  path: string
-  parentPath: string | null
-  resourceType: ProjectAssetKind
-  bank: number | null
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ProjectScriptRecord {
-  type: 'file'
-  id: string
-  name: string
-  path: string
-  parentPath: string | null
-  resourceType: 'script'
-  scriptKind: ProjectScriptKind
-  bank: number
-  createdAt: string
-  updatedAt: string
-}
-
-export type ProjectStoredResourceRecord = ProjectFolderRecord | ProjectAssetRecord | ProjectScriptRecord
-
-export interface ProjectFolderMutationResult {
-  view: ProjectResourceView
-  folderPath: string
-}
-
-export type ProjectResourceKind = 'folder' | ProjectAssetKind | 'script'
-type CreatableProjectResourceKind = 'folder' | ProjectAssetKind | 'script'
-
-export interface ProjectResourceMutationResult {
-  view: ProjectResourceView
-  resourceType: ProjectResourceKind
-  resourcePath: string
-  resourceName: string
-  parentPath: string
-  bank?: number | null
-  scriptKind?: ProjectScriptKind | null
-}
-
-export interface ProjectDeletedResourceResult extends ProjectResourceMutationResult {
-  deletionId: string
-}
-
-export interface ProjectResourceView {
-  projectName: string
-  projectPath: string
-  currentPath: string
-  parentPath: string | null
-  startingScenePath?: string | null
-  items: ProjectResourceItem[]
-}
-
-export type ProjectResourceItem =
-  | {
-      type: 'folder'
-      id: string
-      name: string
-      path: string
-      parentPath: string | null
-    }
-  | {
-      type: 'file'
-      id: string
-      name: string
-      fileName: string
-      path: string
-      parentPath: string | null
-      extension: string | null
-      resourceType: ProjectAssetKind | null
-      bank: number | null
-      scriptKind?: ProjectScriptKind | null
-    }
-
-export interface ProjectTrackedResource {
-  type: 'folder' | 'file'
-  name: string
-  path: string
-  parentPath: string | null
-  bank?: number | null
-  resourceType?: ProjectAssetKind
-  scriptKind?: ProjectScriptKind | null
-}
-
-export interface ProjectDirectoryScanResult {
-  trackedCount: number
-  removedCount: number
-}
-
-type ProjectResourceAction = 'load' | 'create' | 'rename' | 'delete' | 'paste' | 'bank'
-export type ProjectResourceTransferMode = 'copy' | 'move'
-
-interface StoredProjectFile extends Record<string, unknown> {
-  name?: string
-  createdAt?: string
-  startingScenePath?: unknown
-  resources?: Record<string, unknown>
-}
-
-interface LegacyStoredFolder extends Record<string, unknown> {
-  id?: string
-  name?: string
-  path?: string
-  parentPath?: string | null
-  createdAt?: string
-  updatedAt?: string
-}
-
-interface StoredDeletedResourceMetadata {
-  deletionId: string
-  resourceType: ProjectResourceKind
-  resourcePath: string
-  resourceName: string
-  parentPath: string
-  startingScenePath?: string | null
-  scriptKind?: ProjectScriptKind | null
-  resources: ProjectStoredResourceRecord[]
-}
-
-interface ProjectResourceState {
-  jsonPath: string
-  projectFile: StoredProjectFile
-  projectName: string
-  projectPath: string
-  resources: ProjectStoredResourceRecord[]
-}
+export { getProjectResourceErrorMessage } from './projectResourceErrors'
+export type {
+  ProjectAssetRecord,
+  ProjectDeletedResourceResult,
+  ProjectDirectoryScanResult,
+  ProjectFolderMutationResult,
+  ProjectFolderRecord,
+  ProjectResourceItem,
+  ProjectResourceKind,
+  ProjectResourceMutationResult,
+  ProjectResourceTransferMode,
+  ProjectResourceView,
+  ProjectScriptRecord,
+  ProjectStoredResourceRecord,
+  ProjectTrackedResource
+} from './projectResourceTypes'
 
 const INTERNAL_HISTORY_DIRECTORY = '.retrogbfull-history'
-const DELETED_RESOURCES_DIRECTORY = 'deleted-resources'
-const DELETED_RESOURCE_METADATA_FILE = 'metadata.json'
-const DELETED_RESOURCE_CONTENT_NAME = 'resource'
 const MANAGED_ENGINE_ROOT_ENTRIES = new Set(['src', 'res', 'Makefile'])
-
-const normalizeResourcePath = (resourcePath: string): string => {
-  return resourcePath
-    .replace(/\\/g, '/')
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0 && segment !== '.')
-    .join('/')
-}
-
-const normalizeParentPath = (resourcePath: string | null | undefined): string | null => {
-  const normalizedPath = normalizeResourcePath(resourcePath ?? '')
-  return normalizedPath.length > 0 ? normalizedPath : null
-}
-
-const normalizeStartingScenePath = (value: unknown): string | null => {
-  const normalizedPath = normalizeResourcePath(typeof value === 'string' ? value : '')
-
-  if (!normalizedPath || getProjectAssetKindFromFileName(basename(normalizedPath)) !== 'scene') {
-    return null
-  }
-
-  return normalizedPath
-}
 
 const isInternalProjectEntry = (entryName: string): boolean => {
   return entryName === INTERNAL_HISTORY_DIRECTORY
@@ -217,636 +101,20 @@ const isManagedEngineRootEntry = (currentPath: string, entryName: string): boole
   return currentPath.length === 0 && MANAGED_ENGINE_ROOT_ENTRIES.has(entryName)
 }
 
-const getResourceParentPath = (resourcePath: string): string | null => {
-  const normalizedPath = normalizeResourcePath(resourcePath)
-
-  if (!normalizedPath) {
-    return null
-  }
-
-  const pathSegments = normalizedPath.split('/')
-  pathSegments.pop()
-
-  return pathSegments.length > 0 ? pathSegments.join('/') : null
-}
-
 const joinResourcePath = (parentPath: string | null, childName: string): string => {
   const normalizedParentPath = normalizeParentPath(parentPath)
   return normalizedParentPath ? `${normalizedParentPath}/${childName}` : childName
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === 'object' && value !== null
-}
-
-const isStoredResourceKind = (value: string): value is 'folder' | 'file' => {
-  return value === 'folder' || value === 'file'
-}
-
-const isTrackedAssetKind = (value: string): value is ProjectAssetKind => {
-  return (
-    value === 'sprite' ||
-    value === 'tileset' ||
-    value === 'tilemap' ||
-    value === 'window' ||
-    value === 'scene' ||
-    value === 'actor'
-  )
-}
-
-const isTrackedScriptKind = (value: string): value is ProjectScriptKind => {
-  return value === 'actor' || value === 'scene' || value === 'general'
-}
-
-const isBankableAssetKind = (
-  value: ProjectAssetKind | 'script'
-): value is 'script' | 'sprite' | 'tileset' | 'tilemap' | 'window' => {
-  return (
-    value === 'script' ||
-    value === 'sprite' ||
-    value === 'tileset' ||
-    value === 'tilemap' ||
-    value === 'window'
-  )
-}
-
-const normalizeBank = (value: unknown): number => {
-  return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 255
-    ? Number(value)
-    : DEFAULT_PROJECT_RESOURCE_BANK
-}
-
-const getDeletedResourceContainerPath = (projectPath: string, deletionId: string): string => {
-  return join(projectPath, INTERNAL_HISTORY_DIRECTORY, DELETED_RESOURCES_DIRECTORY, deletionId)
-}
-
-const getDeletedResourcesDirectoryPath = (projectPath: string): string => {
-  return join(projectPath, INTERNAL_HISTORY_DIRECTORY, DELETED_RESOURCES_DIRECTORY)
-}
-
-const getDeletedResourceMetadataPath = (projectPath: string, deletionId: string): string => {
-  return join(
-    getDeletedResourceContainerPath(projectPath, deletionId),
-    DELETED_RESOURCE_METADATA_FILE
-  )
-}
-
-const getDeletedResourceContentPath = (projectPath: string, deletionId: string): string => {
-  return join(
-    getDeletedResourceContainerPath(projectPath, deletionId),
-    DELETED_RESOURCE_CONTENT_NAME
-  )
-}
-
 const resolveResourceDirectory = (projectPath: string, resourcePath: string): string => {
-  const normalizedPath = normalizeResourcePath(resourcePath)
-  const targetPath = resolve(projectPath, normalizedPath || '.')
-  const relativePath = relative(projectPath, targetPath)
-
-  if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
-    throw new ProjectLauncherError('The selected folder is outside the project directory.')
-  }
-
-  return targetPath
-}
-
-const isSameOrDescendantPath = (resourcePath: string, potentialAncestorPath: string): boolean => {
-  return (
-    resourcePath === potentialAncestorPath || resourcePath.startsWith(`${potentialAncestorPath}/`)
-  )
-}
-
-const sortResources = (resources: ProjectStoredResourceRecord[]): ProjectStoredResourceRecord[] => {
-  return [...resources].sort((left, right) => {
-    if (left.path !== right.path) {
-      return left.path.localeCompare(right.path)
-    }
-
-    return left.type.localeCompare(right.type)
-  })
-}
-
-const buildResourceFileName = (
-  resourceType: CreatableProjectResourceKind,
-  resourceName: string
-): string => {
-  if (resourceType === 'folder') {
-    return resourceName
-  }
-
-  if (resourceType === 'script') {
-    return buildProjectScriptFileName(normalizeCodeIdentifier(resourceName))
-  }
-
-  return buildProjectAssetFileName(resourceType, resourceName)
-}
-
-const buildStoredFolderRecord = (
-  folderPath: string,
-  options?: {
-    id?: string
-    createdAt?: string
-    updatedAt?: string
-  }
-): ProjectFolderRecord => {
-  const normalizedPath = normalizeResourcePath(folderPath)
-  const now = new Date().toISOString()
-
-  return {
-    type: 'folder',
-    id: options?.id ?? randomUUID(),
-    name: basename(normalizedPath),
-    path: normalizedPath,
-    parentPath: getResourceParentPath(normalizedPath),
-    createdAt: options?.createdAt ?? now,
-    updatedAt: options?.updatedAt ?? now
-  }
-}
-
-const buildStoredAssetRecord = (
-  assetPath: string,
-  resourceType: ProjectAssetKind,
-  options?: {
-    id?: string
-    bank?: number | null
-    createdAt?: string
-    updatedAt?: string
-  }
-): ProjectAssetRecord => {
-  const normalizedPath = normalizeResourcePath(assetPath)
-  const now = new Date().toISOString()
-
-  return {
-    type: 'file',
-    id: options?.id ?? randomUUID(),
-    name: getProjectAssetDisplayName(basename(normalizedPath)),
-    path: normalizedPath,
-    parentPath: getResourceParentPath(normalizedPath),
-    resourceType,
-    bank: isBankableAssetKind(resourceType) ? normalizeBank(options?.bank) : null,
-    createdAt: options?.createdAt ?? now,
-    updatedAt: options?.updatedAt ?? now
-  }
-}
-
-const buildStoredScriptRecord = (
-  scriptPath: string,
-  scriptKind: ProjectScriptKind,
-  options?: {
-    id?: string
-    bank?: number | null
-    createdAt?: string
-    updatedAt?: string
-  }
-): ProjectScriptRecord => {
-  const normalizedPath = normalizeResourcePath(scriptPath)
-  const now = new Date().toISOString()
-
-  return {
-    type: 'file',
-    id: options?.id ?? randomUUID(),
-    name: getProjectScriptDisplayName(basename(normalizedPath)),
-    path: normalizedPath,
-    parentPath: getResourceParentPath(normalizedPath),
-    resourceType: 'script',
-    scriptKind,
-    bank: normalizeBank(options?.bank),
-    createdAt: options?.createdAt ?? now,
-    updatedAt: options?.updatedAt ?? now
-  }
-}
-
-const buildStoredResourceRecord = (
-  resourceType: CreatableProjectResourceKind,
-  resourcePath: string,
-  scriptKind?: ProjectScriptKind,
-  options?: {
-    id?: string
-    bank?: number | null
-    createdAt?: string
-    updatedAt?: string
-  }
-): ProjectStoredResourceRecord => {
-  if (resourceType === 'folder') {
-    return buildStoredFolderRecord(resourcePath, options)
-  }
-
-  if (resourceType === 'script') {
-    if (!scriptKind) {
-      throw new Error('A script kind is required when creating script resource records.')
-    }
-
-    return buildStoredScriptRecord(resourcePath, scriptKind, options)
-  }
-
-  return buildStoredAssetRecord(resourcePath, resourceType, options)
-}
-
-const parseLegacyFolders = (value: unknown): ProjectFolderRecord[] => {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return value.flatMap((entry) => {
-    if (!isRecord(entry)) {
-      return []
-    }
-
-    const legacyFolder = entry as LegacyStoredFolder
-    const normalizedPath = normalizeResourcePath(
-      typeof legacyFolder.path === 'string' ? legacyFolder.path : ''
-    )
-
-    if (!normalizedPath) {
-      return []
-    }
-
-    const createdAt =
-      typeof legacyFolder.createdAt === 'string' ? legacyFolder.createdAt : new Date().toISOString()
-    const updatedAt =
-      typeof legacyFolder.updatedAt === 'string' ? legacyFolder.updatedAt : createdAt
-
-    return [
-      {
-        type: 'folder',
-        id:
-          typeof legacyFolder.id === 'string' && legacyFolder.id.length > 0
-            ? legacyFolder.id
-            : randomUUID(),
-        name:
-          typeof legacyFolder.name === 'string' && legacyFolder.name.length > 0
-            ? legacyFolder.name
-            : basename(normalizedPath),
-        path: normalizedPath,
-        parentPath:
-          normalizeParentPath(legacyFolder.parentPath) ?? getResourceParentPath(normalizedPath),
-        createdAt,
-        updatedAt
-      }
-    ]
-  })
-}
-
-const parseStoredResourceRecord = (value: unknown): ProjectStoredResourceRecord | null => {
-  if (!isRecord(value) || typeof value.type !== 'string' || !isStoredResourceKind(value.type)) {
-    return null
-  }
-
-  const normalizedPath = normalizeResourcePath(typeof value.path === 'string' ? value.path : '')
-
-  if (!normalizedPath) {
-    return null
-  }
-
-  const createdAt = typeof value.createdAt === 'string' ? value.createdAt : new Date().toISOString()
-  const updatedAt = typeof value.updatedAt === 'string' ? value.updatedAt : createdAt
-  const id = typeof value.id === 'string' && value.id.length > 0 ? value.id : randomUUID()
-
-  if (value.type === 'folder') {
-    return {
-      type: 'folder',
-      id,
-      name:
-        typeof value.name === 'string' && value.name.length > 0
-          ? value.name
-          : basename(normalizedPath),
-      path: normalizedPath,
-      parentPath:
-        normalizeParentPath(value.parentPath as string | null | undefined) ??
-        getResourceParentPath(normalizedPath),
-      createdAt,
-      updatedAt
-    }
-  }
-
-  const explicitResourceType =
-    typeof value.resourceType === 'string' &&
-    (isTrackedAssetKind(value.resourceType) || value.resourceType === 'script')
-      ? value.resourceType
-      : null
-  const derivedResourceType = getProjectAssetKindFromFileName(basename(normalizedPath))
-  const derivedScriptKind = isProjectScriptSourcePath(normalizedPath)
-    ? getProjectScriptKindFromPath(normalizedPath)
-    : null
-  const resourceType = explicitResourceType ?? derivedResourceType ?? (derivedScriptKind ? 'script' : null)
-
-  if (!resourceType) {
-    return null
-  }
-
-  if (resourceType === 'script') {
-    const scriptKind =
-      typeof value.scriptKind === 'string' && isTrackedScriptKind(value.scriptKind)
-        ? value.scriptKind
-        : derivedScriptKind
-
-    if (!scriptKind) {
-      return null
-    }
-
-    return {
-      type: 'file',
-      id,
-      name:
-        typeof value.name === 'string' && value.name.length > 0
-          ? value.name
-          : getProjectScriptDisplayName(basename(normalizedPath)),
-      path: normalizedPath,
-      parentPath:
-        normalizeParentPath(value.parentPath as string | null | undefined) ??
-        getResourceParentPath(normalizedPath),
-      resourceType: 'script',
-      scriptKind,
-      bank: normalizeBank(value.bank),
-      createdAt,
-      updatedAt
-    }
-  }
-
-  return {
-    type: 'file',
-    id,
-    name:
-      typeof value.name === 'string' && value.name.length > 0
-        ? value.name
-        : getProjectAssetDisplayName(basename(normalizedPath)),
-    path: normalizedPath,
-    parentPath:
-      normalizeParentPath(value.parentPath as string | null | undefined) ??
-      getResourceParentPath(normalizedPath),
-    resourceType,
-    bank: isBankableAssetKind(resourceType) ? normalizeBank(value.bank) : null,
-    createdAt,
-    updatedAt
-  }
-}
-
-const parseStoredResources = (value: unknown): ProjectStoredResourceRecord[] => {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return sortResources(
-    value.flatMap((entry) => {
-      const resource = parseStoredResourceRecord(entry)
-      return resource ? [resource] : []
-    })
-  )
-}
-
-const parseDeletedResourceMetadata = (value: unknown): StoredDeletedResourceMetadata => {
-  if (!isRecord(value)) {
-    throw new ProjectLauncherError('The deleted resource metadata is invalid.')
-  }
-
-  const deletionId = typeof value.deletionId === 'string' ? value.deletionId : ''
-  const resourceType =
-    typeof value.resourceType === 'string' ? (value.resourceType as ProjectResourceKind) : 'folder'
-  const resourcePath = normalizeResourcePath(
-    typeof value.resourcePath === 'string' ? value.resourcePath : ''
-  )
-  const resourceName =
-    typeof value.resourceName === 'string' && value.resourceName.length > 0
-      ? value.resourceName
-      : basename(resourcePath)
-  const parentPath = normalizeResourcePath(
-    typeof value.parentPath === 'string' ? value.parentPath : ''
-  )
-  const parsedResources = parseStoredResources(value.resources)
-
-  if (!deletionId || !resourcePath || !resourceName) {
-    throw new ProjectLauncherError('The deleted resource metadata is incomplete.')
-  }
-
-  return {
-    deletionId,
-    resourceType,
+  return resolvePathWithinProject(
+    projectPath,
     resourcePath,
-    resourceName,
-    parentPath,
-    startingScenePath: normalizeStartingScenePath(value.startingScenePath),
-    scriptKind:
-      typeof value.scriptKind === 'string' && isTrackedScriptKind(value.scriptKind)
-        ? value.scriptKind
-        : null,
-    resources:
-      parsedResources.length > 0
-        ? parsedResources
-        : [
-            buildStoredResourceRecord(
-              resourceType === 'folder'
-                ? 'folder'
-                : isTrackedAssetKind(resourceType)
-                  ? resourceType
-                  : resourceType === 'script'
-                    ? 'script'
-                    : 'folder',
-              resourcePath,
-              typeof value.scriptKind === 'string' && isTrackedScriptKind(value.scriptKind)
-                ? value.scriptKind
-                : undefined
-            )
-          ]
-  }
-}
-
-const readProjectFile = async (
-  projectPath: string
-): Promise<{
-  jsonPath: string
-  projectFile: StoredProjectFile
-  projectName: string
-  projectPath: string
-}> => {
-  const validation = await validateProjectDirectory(projectPath)
-
-  if (!validation.isValid) {
-    throw new ProjectLauncherError(
-      validation.message ?? 'The selected project could not be loaded.'
-    )
-  }
-
-  const rawContent = await readFile(validation.jsonPath, 'utf-8')
-  const parsedContent = JSON.parse(rawContent)
-
-  return {
-    jsonPath: validation.jsonPath,
-    projectFile: isRecord(parsedContent) ? parsedContent : {},
-    projectName: validation.name,
-    projectPath: validation.path
-  }
-}
-
-const writeProjectFile = async (
-  jsonPath: string,
-  projectFile: StoredProjectFile,
-  resources: ProjectStoredResourceRecord[]
-): Promise<void> => {
-  const resourcesSection = isRecord(projectFile.resources) ? projectFile.resources : {}
-  const remainingResourcesSection = { ...resourcesSection }
-  const startingScenePath = normalizeStartingScenePath(projectFile.startingScenePath)
-  delete remainingResourcesSection.folders
-  const nextProjectFile: StoredProjectFile = {
-    ...projectFile,
-    startingScenePath,
-    resources: {
-      ...remainingResourcesSection,
-      items: resources.map((resource) =>
-        resource.type === 'folder'
-          ? {
-              type: 'folder',
-              id: resource.id,
-              name: resource.name,
-              path: resource.path,
-              parentPath: resource.parentPath,
-              createdAt: resource.createdAt,
-              updatedAt: resource.updatedAt
-            }
-          : {
-              type: 'file',
-              id: resource.id,
-              name: resource.name,
-              path: resource.path,
-              parentPath: resource.parentPath,
-              resourceType: resource.resourceType,
-              ...(resource.resourceType === 'script' ? { scriptKind: resource.scriptKind } : {}),
-              ...(resource.bank !== null && resource.bank !== DEFAULT_PROJECT_RESOURCE_BANK
-                ? { bank: resource.bank }
-                : {}),
-              createdAt: resource.createdAt,
-              updatedAt: resource.updatedAt
-            }
-      )
-    }
-  }
-
-  await writeFile(jsonPath, `${JSON.stringify(nextProjectFile, null, 2)}\n`, 'utf-8')
-}
-
-const scanLegacyProjectResources = async (
-  projectPath: string,
-  currentPath = '',
-  legacyFoldersByPath = new Map<string, ProjectFolderRecord>()
-): Promise<ProjectStoredResourceRecord[]> => {
-  const absolutePath = resolveResourceDirectory(projectPath, currentPath)
-  const entries = await readdir(absolutePath, { withFileTypes: true })
-  const resources: ProjectStoredResourceRecord[] = []
-
-  for (const entry of entries) {
-    if (currentPath.length === 0) {
-      if (
-        entry.name === `${basename(projectPath)}.json` ||
-        isInternalProjectEntry(entry.name) ||
-        isManagedEngineRootEntry(currentPath, entry.name)
-      ) {
-        continue
-      }
-    }
-
-    const resourcePath = joinResourcePath(currentPath, entry.name)
-
-    if (entry.isDirectory()) {
-      const legacyFolder = legacyFoldersByPath.get(resourcePath)
-      resources.push(
-        buildStoredFolderRecord(resourcePath, {
-          id: legacyFolder?.id,
-          createdAt: legacyFolder?.createdAt,
-          updatedAt: legacyFolder?.updatedAt
-        })
-      )
-      resources.push(
-        ...(await scanLegacyProjectResources(projectPath, resourcePath, legacyFoldersByPath))
-      )
-      continue
-    }
-
-    const resourceType = getProjectAssetKindFromFileName(entry.name)
-
-    if (resourceType) {
-      resources.push(buildStoredAssetRecord(resourcePath, resourceType))
-      continue
-    }
-
-    if (isProjectScriptSourcePath(resourcePath)) {
-      const scriptKind = getProjectScriptKindFromPath(resourcePath)
-
-      if (scriptKind) {
-        resources.push(buildStoredScriptRecord(resourcePath, scriptKind))
-      }
-    }
-  }
-
-  return resources
-}
-
-const migrateLegacyProjectResources = async (
-  projectPath: string,
-  jsonPath: string,
-  projectFile: StoredProjectFile
-): Promise<ProjectStoredResourceRecord[]> => {
-  const legacyFolders = parseLegacyFolders(projectFile.resources?.folders)
-  const legacyFoldersByPath = new Map(legacyFolders.map((folder) => [folder.path, folder]))
-  const migratedResources = sortResources(
-    await scanLegacyProjectResources(projectPath, '', legacyFoldersByPath)
-  )
-
-  await writeProjectFile(jsonPath, projectFile, migratedResources)
-  return migratedResources
-}
-
-const readProjectResourceState = async (projectPath: string): Promise<ProjectResourceState> => {
-  const projectState = await readProjectFile(projectPath)
-  const resourcesSection = isRecord(projectState.projectFile.resources)
-    ? projectState.projectFile.resources
-    : {}
-  const storedResources = parseStoredResources(resourcesSection.items)
-
-  return {
-    ...projectState,
-    resources:
-      storedResources.length > 0 || Array.isArray(resourcesSection.items)
-        ? storedResources
-        : await migrateLegacyProjectResources(
-            projectState.projectPath,
-            projectState.jsonPath,
-            projectState.projectFile
-          )
-  }
-}
-
-const writeProjectResources = async (
-  state: ProjectResourceState,
-  resources: ProjectStoredResourceRecord[]
-): Promise<ProjectStoredResourceRecord[]> => {
-  const sortedResources = sortResources(resources)
-  await writeProjectFile(state.jsonPath, state.projectFile, sortedResources)
-  return sortedResources
-}
-
-const readDeletedResourceMetadata = async (
-  projectPath: string,
-  deletionId: string
-): Promise<StoredDeletedResourceMetadata> => {
-  const rawContent = await readFile(
-    getDeletedResourceMetadataPath(projectPath, deletionId),
-    'utf-8'
-  )
-  return parseDeletedResourceMetadata(JSON.parse(rawContent))
-}
-
-const writeDeletedResourceMetadata = async (
-  projectPath: string,
-  metadata: StoredDeletedResourceMetadata
-): Promise<void> => {
-  const containerPath = getDeletedResourceContainerPath(projectPath, metadata.deletionId)
-  await mkdir(containerPath, { recursive: true })
-  await writeFile(
-    getDeletedResourceMetadataPath(projectPath, metadata.deletionId),
-    `${JSON.stringify(metadata, null, 2)}\n`,
-    'utf-8'
+    'The selected folder is outside the project directory.'
   )
 }
 
+// scans the project directory for untracked resources and tracks them
 const discoverUntrackedProjectResources = async (
   projectPath: string,
   trackedPaths: Set<string>,
@@ -885,7 +153,10 @@ const discoverUntrackedProjectResources = async (
 
     if (resourceType && !trackedPaths.has(resourcePath)) {
       try {
-        const rawContent = await readFile(resolveResourceDirectory(projectPath, resourcePath), 'utf-8')
+        const rawContent = await readFile(
+          resolveResourceDirectory(projectPath, resourcePath),
+          'utf-8'
+        )
         const document = parseProjectAssetDocument(JSON.parse(rawContent))
 
         if (document.kind !== resourceType) {
@@ -914,7 +185,10 @@ const discoverUntrackedProjectResources = async (
       await stat(
         resolveResourceDirectory(
           projectPath,
-          joinResourcePath(getResourceParentPath(resourcePath), buildProjectScriptHeaderFileName(getProjectScriptDisplayName(entry.name)))
+          joinResourcePath(
+            getResourceParentPath(resourcePath),
+            buildProjectScriptHeaderFileName(getProjectScriptDisplayName(entry.name))
+          )
         )
       )
       trackedPaths.add(resourcePath)
@@ -927,88 +201,7 @@ const discoverUntrackedProjectResources = async (
   return discoveredResources
 }
 
-const buildFolderItem = (resource: ProjectFolderRecord): ProjectResourceItem => {
-  return {
-    type: 'folder',
-    id: resource.id,
-    name: resource.name,
-    path: resource.path,
-    parentPath: resource.parentPath
-  }
-}
-
-const buildFileItem = (resource: ProjectAssetRecord | ProjectScriptRecord): ProjectResourceItem => {
-  const fileName = basename(resource.path)
-
-  return {
-    type: 'file',
-    id: resource.id,
-    name: resource.name,
-    fileName,
-    path: resource.path,
-    parentPath: resource.parentPath,
-    extension: extname(fileName).slice(1) || null,
-    resourceType: resource.resourceType === 'script' ? null : resource.resourceType,
-    bank: resource.bank,
-    ...(resource.resourceType === 'script' ? { scriptKind: resource.scriptKind } : {})
-  }
-}
-
-const getStateStartingScenePath = (state: Pick<ProjectResourceState, 'projectFile'>): string | null => {
-  return normalizeStartingScenePath(state.projectFile.startingScenePath)
-}
-
-const setStateStartingScenePath = (
-  state: Pick<ProjectResourceState, 'projectFile'>,
-  startingScenePath: string | null
-): void => {
-  state.projectFile.startingScenePath = normalizeStartingScenePath(startingScenePath)
-}
-
-const remapStartingScenePath = (
-  currentStartingScenePath: string | null,
-  sourceRootPath: string,
-  targetRootPath: string
-): string | null => {
-  if (!currentStartingScenePath || !isSameOrDescendantPath(currentStartingScenePath, sourceRootPath)) {
-    return currentStartingScenePath
-  }
-
-  return currentStartingScenePath === sourceRootPath
-    ? targetRootPath
-    : `${targetRootPath}${currentStartingScenePath.slice(sourceRootPath.length)}`
-}
-
-const buildProjectResourceView = (
-  state: Pick<ProjectResourceState, 'projectName' | 'projectPath' | 'projectFile'>,
-  resources: ProjectStoredResourceRecord[],
-  currentPath = ''
-): ProjectResourceView => {
-  const normalizedCurrentPath = normalizeResourcePath(currentPath)
-  const expectedParentPath = normalizeParentPath(normalizedCurrentPath)
-  const items = resources
-    .filter((resource) => resource.parentPath === expectedParentPath)
-    .map((resource) =>
-      resource.type === 'folder' ? buildFolderItem(resource) : buildFileItem(resource)
-    )
-    .sort((left, right) => {
-      if (left.type !== right.type) {
-        return left.type === 'folder' ? -1 : 1
-      }
-
-      return left.name.localeCompare(right.name)
-    })
-
-  return {
-    projectName: state.projectName,
-    projectPath: state.projectPath,
-    currentPath: normalizedCurrentPath,
-    parentPath: getResourceParentPath(normalizedCurrentPath),
-    startingScenePath: getStateStartingScenePath(state),
-    items
-  }
-}
-
+// finds a tracked resource record by its path
 const findTrackedResourceRecord = (
   resources: ProjectStoredResourceRecord[],
   resourcePath: string
@@ -1027,6 +220,7 @@ const hasMissingAncestorPath = (resourcePath: string, missingRootPaths: Set<stri
   return false
 }
 
+// untracks a resource and all its descendants, changes the starting scene if it was untracked
 const removeTrackedResourceSubtree = async (
   state: ProjectResourceState,
   resourcePath: string
@@ -1060,6 +254,7 @@ const removeTrackedResourceSubtree = async (
   }
 }
 
+// checks for tracked resources that no longer exist on disk and untracks them, changes the starting scene if it's untracked
 const reconcileTrackedProjectResources = async (
   state: ProjectResourceState
 ): Promise<{ resources: ProjectStoredResourceRecord[]; removedCount: number }> => {
@@ -1187,28 +382,8 @@ const getTrackedResourceSubtree = (
   return resources.filter((resource) => isSameOrDescendantPath(resource.path, normalizedPath))
 }
 
-const assertUniqueTrackedFileName = (
-  resources: ProjectStoredResourceRecord[],
-  resourceName: string,
-  excludedPaths: string[] = []
-): void => {
-  const normalizedName = resourceName.trim().toLowerCase()
-  const excludedPathSet = new Set(excludedPaths.map((path) => normalizeResourcePath(path)))
-  const conflictingResource = resources.find((resource) => {
-    if (resource.type !== 'file' || excludedPathSet.has(resource.path)) {
-      return false
-    }
-
-    return resource.name.trim().toLowerCase() === normalizedName
-  })
-
-  if (conflictingResource) {
-    throw new ProjectLauncherError(
-      `A resource named "${resourceName}" already exists elsewhere in the project.`
-    )
-  }
-}
-
+// ensures that all parent folders exist and are tracked, otherwise creates them and returns a new resource
+// list with the new folders included
 const ensureScriptParentFolders = async (
   state: ProjectResourceState,
   scriptPath: string
@@ -1232,6 +407,7 @@ const ensureScriptParentFolders = async (
   return nextResources
 }
 
+// retracks a resource under a new path
 const relocateTrackedResource = (
   resource: ProjectStoredResourceRecord,
   sourceRootPath: string,
@@ -1263,208 +439,10 @@ const relocateTrackedResource = (
   )
 }
 
-const assertFolderName = (folderName: string): string => {
-  const trimmedFolderName = folderName.trim()
-
-  if (!isValidProjectName(trimmedFolderName)) {
-    throw new ProjectLauncherError(
-      'Please enter a valid folder name. Avoid empty names and reserved filename characters.'
-    )
-  }
-
-  return trimmedFolderName
-}
-
-const normalizeResourceNameForComparison = (
-  resourceType: Exclude<CreatableProjectResourceKind, 'folder'>,
-  resourceName: string
-): string => {
-  const trimmedResourceName = resourceName.trim()
-
-  return resourceType === 'script'
-    ? normalizeCodeIdentifier(trimmedResourceName).toLowerCase()
-    : trimmedResourceName.toLowerCase()
-}
-
-const buildIndexedResourceName = (
-  resourceType: Exclude<CreatableProjectResourceKind, 'folder'>,
-  baseName: string,
-  suffix: number
-): string => {
-  return resourceType === 'script'
-    ? normalizeCodeIdentifier(`${baseName}_${suffix}`)
-    : `${baseName} ${suffix}`
-}
-
-const buildUniqueResourceName = (
-  resources: ProjectStoredResourceRecord[],
-  parentPath: string,
-  resourceType: CreatableProjectResourceKind
-): string => {
-  const normalizedParentPath = normalizeParentPath(parentPath)
-  const siblingNames = new Set(
-    resources
-      .filter((resource) => resource.parentPath === normalizedParentPath)
-      .map((resource) => basename(resource.path))
-  )
-  const baseName =
-    resourceType === 'folder'
-      ? 'New Folder'
-      : resourceType === 'script'
-        ? 'New_Script'
-        : `New ${resourceType[0].toUpperCase()}${resourceType.slice(1)}`
-  const buildTargetName = (candidateName: string): string =>
-    buildResourceFileName(resourceType, candidateName)
-  const hasGlobalFileNameConflict = (candidateName: string): boolean => {
-    const normalizedCandidateName =
-      resourceType === 'folder'
-        ? candidateName.trim().toLowerCase()
-        : normalizeResourceNameForComparison(resourceType, candidateName)
-
-    return resources.some(
-      (resource) =>
-        resource.type === 'file' &&
-        normalizeResourceNameForComparison(resource.resourceType, resource.name) ===
-          normalizedCandidateName
-    )
-  }
-
-  if (
-    !siblingNames.has(buildTargetName(baseName)) &&
-    (resourceType === 'folder' || !hasGlobalFileNameConflict(baseName))
-  ) {
-    return baseName
-  }
-
-  let suffix = 2
-  let nextResourceName =
-    resourceType === 'folder' ? `${baseName} ${suffix}` : buildIndexedResourceName(resourceType, baseName, suffix)
-
-  while (
-    siblingNames.has(buildTargetName(nextResourceName)) ||
-    (resourceType !== 'folder' && hasGlobalFileNameConflict(nextResourceName))
-  ) {
-    suffix += 1
-    nextResourceName =
-      resourceType === 'folder'
-        ? `${baseName} ${suffix}`
-        : buildIndexedResourceName(resourceType, baseName, suffix)
-  }
-
-  return nextResourceName
-}
-
-const buildUniqueTransferredResourceTarget = (
-  resources: ProjectStoredResourceRecord[],
-  parentPath: string,
-  resourceType: CreatableProjectResourceKind,
-  sourcePath: string,
-  excludedPaths: string[] = []
-): { resourceName: string; resourcePath: string } => {
-  const normalizedParentPath = normalizeParentPath(parentPath)
-  const excludedPathSet = new Set(excludedPaths.map((path) => normalizeResourcePath(path)))
-  const siblingNames = new Set(
-    resources
-      .filter((resource) => resource.parentPath === normalizedParentPath)
-      .map((resource) => basename(resource.path))
-  )
-  const sourceEntryName = basename(sourcePath)
-  const baseResourceName =
-    resourceType === 'folder'
-      ? sourceEntryName
-      : resourceType === 'script'
-        ? normalizeCodeIdentifier(getProjectScriptDisplayName(sourceEntryName))
-        : getProjectAssetDisplayName(sourceEntryName)
-  const hasGlobalNameConflict = (candidateName: string): boolean => {
-    const normalizedCandidateName =
-      resourceType === 'folder'
-        ? candidateName.trim().toLowerCase()
-        : normalizeResourceNameForComparison(resourceType, candidateName)
-
-    return resources.some(
-      (resource) =>
-        resource.type === 'file' &&
-        !excludedPathSet.has(resource.path) &&
-        normalizeResourceNameForComparison(resource.resourceType, resource.name) ===
-          normalizedCandidateName
-    )
-  }
-
-  if (
-    !siblingNames.has(sourceEntryName) &&
-    (resourceType === 'folder' || !hasGlobalNameConflict(baseResourceName))
-  ) {
-    return {
-      resourceName: baseResourceName,
-      resourcePath: joinResourcePath(normalizedParentPath, sourceEntryName)
-    }
-  }
-
-  let suffix = 2
-  let nextResourceName =
-    resourceType === 'folder'
-      ? `${baseResourceName} ${suffix}`
-      : buildIndexedResourceName(resourceType, baseResourceName, suffix)
-  let nextEntryName = buildResourceFileName(resourceType, nextResourceName)
-
-  while (siblingNames.has(nextEntryName) || (resourceType !== 'folder' && hasGlobalNameConflict(nextResourceName))) {
-    suffix += 1
-    nextResourceName =
-      resourceType === 'folder'
-        ? `${baseResourceName} ${suffix}`
-        : buildIndexedResourceName(resourceType, baseResourceName, suffix)
-    nextEntryName = buildResourceFileName(resourceType, nextResourceName)
-  }
-
-  return {
-    resourceName: nextResourceName,
-    resourcePath: joinResourcePath(normalizedParentPath, nextEntryName)
-  }
-}
-
 function assertSupportedResourceKind(
   resourceType: ProjectResourceKind
 ): asserts resourceType is CreatableProjectResourceKind {
   void resourceType
-}
-
-export const getProjectResourceErrorMessage = (
-  error: unknown,
-  action: ProjectResourceAction
-): string => {
-  if (error instanceof ProjectLauncherError) {
-    return error.userMessage
-  }
-
-  const genericMessageByAction: Record<ProjectResourceAction, string> = {
-    load: 'Something went wrong while loading project resources. Please try again.',
-    create: 'Something went wrong while creating the resource. Please try again.',
-    rename: 'Something went wrong while renaming the resource. Please try again.',
-    delete: 'Something went wrong while deleting the resource. Please try again.',
-    paste: 'Something went wrong while pasting the resource. Please try again.',
-    bank: 'Something went wrong while updating the resource bank. Please try again.'
-  }
-
-  const errorCode =
-    typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined
-
-  if (errorCode === 'EEXIST') {
-    return action === 'rename'
-      ? 'A resource with that name already exists in this location.'
-      : 'A resource with that name already exists.'
-  }
-
-  if (errorCode === 'ENOENT') {
-    return action === 'load'
-      ? 'The requested resource could not be found.'
-      : 'The selected resource could not be found.'
-  }
-
-  if (errorCode === 'ENOTEMPTY' || errorCode === 'EPERM' || errorCode === 'EACCES') {
-    return getProjectLauncherErrorMessage(error, 'open')
-  }
-
-  return genericMessageByAction[action]
 }
 
 export const getTrackedProjectResource = async (
@@ -1497,6 +475,7 @@ export const getTrackedProjectResource = async (
       }
 }
 
+// updates the bank for a resouce in the project file
 export const updateProjectResourceBank = async (
   projectPath: string,
   resourceType: ProjectResourceKind,
@@ -1515,14 +494,11 @@ export const updateProjectResourceBank = async (
 
   assertTrackedResourceType(trackedResource, resourceType)
 
-  if (
-    trackedResource.type !== 'file' ||
-    !isBankableAssetKind(trackedResource.resourceType)
-  ) {
+  if (trackedResource.type !== 'file' || !isBankableAssetKind(trackedResource.resourceType)) {
     throw new ProjectLauncherError('The selected resource does not support ROM bank overrides.')
   }
 
-  const nextBank = normalizeBank(bank)
+  const nextBank = normalizeProjectResourceBank(bank)
   const now = new Date().toISOString()
   const nextResources = await writeProjectResources(
     state,
@@ -1589,6 +565,7 @@ export const pruneMissingProjectResource = async (
   return result.removedCount > 0
 }
 
+// returns project resource view model for the specified path
 export const listProjectResources = async (
   projectPath: string,
   currentPath = ''
@@ -1658,6 +635,9 @@ export const createProjectFolder = async (
   }
 }
 
+// creates a script resource, ensuring the script parent folders exist, creates both source and header
+// with the template for the type of script, and returns a record with the new resource metadata and the project view
+// for the resource's parent folder
 export const createProjectScriptResource = async (
   projectPath: string,
   scriptKind: ProjectScriptKind,
@@ -1671,7 +651,9 @@ export const createProjectScriptResource = async (
   )
   const safeResourceName = resourceName
     ? normalizeCodeIdentifier(assertFolderName(resourceName))
-    : normalizeCodeIdentifier(buildUniqueResourceName(nextResourcesWithFolders, parentPath, 'script'))
+    : normalizeCodeIdentifier(
+        buildUniqueResourceName(nextResourcesWithFolders, parentPath, 'script')
+      )
   assertUniqueTrackedFileName(nextResourcesWithFolders, safeResourceName)
 
   const { resourcePath } = await createProjectScriptFiles(projectPath, scriptKind, safeResourceName)
@@ -1691,6 +673,9 @@ export const createProjectScriptResource = async (
   }
 }
 
+// creates a project resource, creating the folder on disk if it's a folder, or creating a default asset document
+// otherwise, updates the project JSON and returns a record with the new resource metadata and the project view
+// for the resource's parent folder
 export const createProjectResource = async (
   projectPath: string,
   resourceType: ProjectResourceKind,
@@ -1711,7 +696,8 @@ export const createProjectResource = async (
 
   const parentDirectory = resolveResourceDirectory(state.projectPath, normalizedParentPath)
   const safeResourceName = resourceName
-    ? assertFolderName(resourceName)
+    ? // assertFolderName also validates valid file names
+      assertFolderName(resourceName)
     : buildUniqueResourceName(state.resources, normalizedParentPath, resourceType)
   if (resourceType !== 'folder') {
     assertUniqueTrackedFileName(state.resources, safeResourceName)
@@ -1722,15 +708,12 @@ export const createProjectResource = async (
     targetResourceFileName
   )
 
-  if (resourceType === 'folder') {
-    await mkdir(join(parentDirectory, targetResourceFileName), { recursive: false })
-  } else {
-    await writeFile(
-      join(parentDirectory, targetResourceFileName),
-      serializeProjectAssetDocument(createDefaultProjectAssetDocument(resourceType)),
-      'utf-8'
-    )
-  }
+  await getProjectResourceTypeStrategy(resourceType).create({
+    projectPath: state.projectPath,
+    parentDirectory,
+    resourceType,
+    targetResourceFileName
+  })
 
   const nextResources = await writeProjectResources(state, [
     ...state.resources,
@@ -1762,6 +745,10 @@ export const renameProjectFolder = async (
   }
 }
 
+// renames a project resource on disk and updates the project JSON
+// if renaming a folder, it also changes the paths of all descendants in the project JSON
+// updates the starting scene path if it's the renamed resource or a descendant of it
+// returns a record with the updated resource metadata and the project view for the resource's parent folder
 export const renameProjectResource = async (
   projectPath: string,
   resourceType: ProjectResourceKind,
@@ -1798,14 +785,12 @@ export const renameProjectResource = async (
   )
 
   if (nextResourcePath !== normalizedResourcePath) {
-    if (resourceType === 'script') {
-      await renameProjectScriptFiles(state.projectPath, normalizedResourcePath, nextResourcePath)
-    } else {
-      await rename(
-        resolveResourceDirectory(state.projectPath, normalizedResourcePath),
-        resolveResourceDirectory(state.projectPath, nextResourcePath)
-      )
-    }
+    await getProjectResourceTypeStrategy(resourceType).rename({
+      projectPath: state.projectPath,
+      resourcePath: normalizedResourcePath,
+      nextResourcePath,
+      resolveResourceDirectory
+    })
   }
 
   const relocatedResources = state.resources.map((resource) =>
@@ -1850,6 +835,9 @@ export const deleteProjectFolder = async (
   return deleteProjectResource(projectPath, 'folder', folderPath)
 }
 
+// moves a project resource to the delete container, as well as all its descendants if any
+// and updates the project JSON to remove all the moved resources, including updating the starting scene path
+// if it's the deleted resource or a descendant of it
 export const deleteProjectResource = async (
   projectPath: string,
   resourceType: ProjectResourceKind,
@@ -1900,23 +888,12 @@ export const deleteProjectResource = async (
   }
 
   await writeDeletedResourceMetadata(state.projectPath, metadata)
-  if (resourceType === 'script') {
-    await moveProjectScriptFilesToDeletedContainer(
-      state.projectPath,
-      normalizedResourcePath,
-      normalizeResourcePath(
-        relative(
-          state.projectPath,
-          getDeletedResourceContentPath(state.projectPath, nextDeletionId)
-        ).replace(/\\/g, '/')
-      )
-    )
-  } else {
-    await rename(
-      resolveResourceDirectory(state.projectPath, normalizedResourcePath),
-      getDeletedResourceContentPath(state.projectPath, nextDeletionId)
-    )
-  }
+  await getProjectResourceTypeStrategy(resourceType).moveToDeleted({
+    projectPath: state.projectPath,
+    resourcePath: normalizedResourcePath,
+    deletedContentPath: getDeletedResourceContentPath(state.projectPath, nextDeletionId),
+    resolveResourceDirectory
+  })
 
   if (
     currentStartingScenePath &&
@@ -1944,6 +921,8 @@ export const deleteProjectResource = async (
   }
 }
 
+// moves a deleted resource back to its original location, recreating the path if necessary
+// updates the project JSON to add the restored resources back, updating the starting scene if necessary
 export const restoreDeletedProjectResource = async (
   projectPath: string,
   deletionId: string
@@ -1961,23 +940,12 @@ export const restoreDeletedProjectResource = async (
 
   await mkdir(resolveResourceDirectory(state.projectPath, metadata.parentPath), { recursive: true })
 
-  if (metadata.resourceType === 'script') {
-    await restoreProjectScriptFilesFromDeletedContainer(
-      state.projectPath,
-      metadata.resourcePath,
-      normalizeResourcePath(
-        relative(
-          state.projectPath,
-          getDeletedResourceContentPath(state.projectPath, deletionId)
-        ).replace(/\\/g, '/')
-      )
-    )
-  } else {
-    await rename(
-      getDeletedResourceContentPath(state.projectPath, deletionId),
-      resolveResourceDirectory(state.projectPath, metadata.resourcePath)
-    )
-  }
+  await getProjectResourceTypeStrategy(metadata.resourceType).restoreFromDeleted({
+    projectPath: state.projectPath,
+    resourcePath: metadata.resourcePath,
+    deletedContentPath: getDeletedResourceContentPath(state.projectPath, deletionId),
+    resolveResourceDirectory
+  })
 
   if (metadata.startingScenePath) {
     setStateStartingScenePath(state, metadata.startingScenePath)
@@ -1999,6 +967,8 @@ export const restoreDeletedProjectResource = async (
   }
 }
 
+// moves or copies a resource to a new location, ensuring the destination path is unique and retracks the 
+// resource and its descendants
 export const transferProjectResource = async (
   projectPath: string,
   resourceType: ProjectResourceKind,
@@ -2039,21 +1009,13 @@ export const transferProjectResource = async (
     throw new ProjectLauncherError('The selected resource is already in this folder.')
   }
 
+  const resourceTypeStrategy = getProjectResourceTypeStrategy(resourceType)
   const sourceAbsolutePath = resolveResourceDirectory(state.projectPath, normalizedResourcePath)
-  const sourceStats =
-    resourceType === 'script' ? null : await stat(sourceAbsolutePath)
-
-  if (resourceType === 'folder' && sourceStats && !sourceStats.isDirectory()) {
-    throw new ProjectLauncherError('The selected folder could not be found.')
-  }
-
-  if (resourceType !== 'folder' && resourceType !== 'script' && sourceStats && !sourceStats.isFile()) {
-    throw new ProjectLauncherError('The selected asset could not be found.')
-  }
-
-  if (resourceType === 'script' && !(await scriptFilesExist(state.projectPath, normalizedResourcePath))) {
-    throw new ProjectLauncherError('The selected script could not be found.')
-  }
+  const sourceStats = await resourceTypeStrategy.readTransferSourceStats({
+    projectPath: state.projectPath,
+    resourcePath: normalizedResourcePath,
+    sourceAbsolutePath
+  })
 
   const target = buildUniqueTransferredResourceTarget(
     state.resources,
@@ -2067,22 +1029,15 @@ export const transferProjectResource = async (
   }
   const targetAbsolutePath = resolveResourceDirectory(state.projectPath, target.resourcePath)
 
-  if (resourceType === 'script') {
-    await transferProjectScriptFiles(
-      state.projectPath,
-      normalizedResourcePath,
-      target.resourcePath,
-      mode
-    )
-  } else if (mode === 'copy') {
-    if (sourceStats?.isDirectory()) {
-      await cp(sourceAbsolutePath, targetAbsolutePath, { recursive: true, errorOnExist: true })
-    } else {
-      await cp(sourceAbsolutePath, targetAbsolutePath, { errorOnExist: true })
-    }
-  } else {
-    await rename(sourceAbsolutePath, targetAbsolutePath)
-  }
+  await resourceTypeStrategy.transfer({
+    projectPath: state.projectPath,
+    resourcePath: normalizedResourcePath,
+    targetResourcePath: target.resourcePath,
+    mode,
+    sourceAbsolutePath,
+    targetAbsolutePath,
+    sourceStats
+  })
 
   const subtree = getTrackedResourceSubtree(state.resources, normalizedResourcePath)
   const nextResources =

@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  computeProjectCodeDiagnostics,
-  getActiveFunctionCall,
-  getStructFieldsForExpression,
   mergeProjectCodeSymbolIndexes,
   parseProjectCodeSymbolIndexFromText
 } from '../../src/shared/codeIntelligence'
@@ -86,7 +83,7 @@ typedef enum {
     ])
   })
 
-  it('uses workspace and local declarations to resolve struct member suggestions', () => {
+  it('merges workspace and local declarations without duplicating symbols', () => {
     const workspaceSymbols = parseProjectCodeSymbolIndexFromText(
       `typedef struct {
     uint8_t x;
@@ -114,56 +111,12 @@ void AINIT(void){
     )
     const mergedSymbols = mergeProjectCodeSymbolIndexes([workspaceSymbols, localSymbols])
 
-    expect(getStructFieldsForExpression('self', mergedSymbols).map((field) => field.name)).toEqual([
-      'base',
-      'speed'
-    ])
-    expect(
-      getStructFieldsForExpression('self->base', mergedSymbols).map((field) => field.name)
-    ).toEqual(['x', 'y'])
-  })
-
-  it('reports diagnostics for multi-character literals and unclosed delimiters', () => {
-    const diagnostics = computeProjectCodeDiagnostics(`int test = 'ahauosdhuiahsdi';\nif (test > 0) {\n`)
-
-    expect(diagnostics).toEqual(
+    expect(mergedSymbols.structs.map((entry) => entry.name)).toEqual(['Actor', 'HeroActor'])
+    expect(mergedSymbols.variables).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          message: 'Character literals should contain a single character.'
-        }),
-        expect.objectContaining({
-          message: 'Missing closing delimiter for "{".'
-        })
+        expect.objectContaining({ name: 'THIS_ACTOR', scope: 'workspace' }),
+        expect.objectContaining({ name: 'self', scope: 'local' })
       ])
     )
-  })
-
-  it('reports obvious initializer mismatches for strings and address expressions', () => {
-    const diagnostics = computeProjectCodeDiagnostics(`int score = "oops";\nuint8_t speed = &hero;\n`)
-
-    expect(diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          message: 'Cannot initialize int with a string literal.'
-        }),
-        expect.objectContaining({
-          message: 'Cannot initialize non-pointer uint8_t with an address expression.'
-        })
-      ])
-    )
-  })
-
-  it('detects the active function call and parameter index near the cursor', () => {
-    expect(getActiveFunctionCall('set_actor_position(hero->x, ')).toEqual({
-      functionName: 'set_actor_position',
-      activeParameterIndex: 1
-    })
-
-    expect(getActiveFunctionCall('outer(inner(value, 2), hero')).toEqual({
-      functionName: 'outer',
-      activeParameterIndex: 1
-    })
-
-    expect(getActiveFunctionCall('if (hero->x > 4)')).toBeNull()
   })
 })

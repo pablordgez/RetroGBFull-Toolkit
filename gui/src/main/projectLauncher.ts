@@ -58,6 +58,7 @@ const WINDOWS_RESERVED_NAMES = new Set([
     'LPT9'
 ]);
 
+// not empty, not reserved name, no reserved characters, can't end with space or dot
 export const isValidProjectName = (projectName: string): boolean => {
     const trimmedName = projectName.trim();
 
@@ -142,6 +143,7 @@ const isRecentProject = (value: unknown): value is RecentProject => {
         && typeof project.lastOpenedAt === 'string';
 };
 
+// must be a directory containing a .json file with the same name as the directory
 export const validateProjectDirectory = async (projectPath: string): Promise<ProjectValidationResult> => {
     const resolvedPath = normalizeProjectPath(projectPath);
     const projectName = basename(resolvedPath);
@@ -199,6 +201,7 @@ export const validateProjectDirectory = async (projectPath: string): Promise<Pro
     };
 };
 
+// basic project structure: folder with project name, .json file with basic project info and copy engine core
 export const createProjectStructure = async (parentDirectory: string, projectName: string): Promise<RecentProject> => {
     const trimmedName = projectName.trim();
 
@@ -259,6 +262,7 @@ export const listRecentProjects = async (storePath: string): Promise<RecentProje
         }
     }
 
+    // also checks if any stored projects were invalid and rewrites without them
     if (validProjects.length !== storedProjects.length) {
         await writeRecentProjects(storePath, validProjects);
     }
@@ -282,7 +286,9 @@ export const rememberRecentProject = async (storePath: string, projectPath: stri
     };
 
     const storedProjects = await readRecentProjects(storePath);
+    // takes all projects except the one being added
     const remainingProjects = storedProjects.filter((project) => resolve(project.path) !== recentProject.path);
+    // adds the new project to the start of the list and limits the total number of stored projects
     const nextProjects = [recentProject, ...remainingProjects].slice(0, RECENT_PROJECT_LIMIT);
 
     await writeRecentProjects(storePath, nextProjects);

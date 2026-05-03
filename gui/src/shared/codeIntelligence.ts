@@ -1,5 +1,4 @@
 import type {
-  ProjectCodeDiagnostic,
   ProjectCodeEnumSymbol,
   ProjectCodeFunctionParameter,
   ProjectCodeFunctionSymbol,
@@ -15,20 +14,6 @@ import type {
 interface ParseProjectCodeSymbolIndexOptions {
   declaredIn?: string
   includeLocalVariables?: boolean
-}
-
-interface CursorPosition {
-  line: number
-  column: number
-}
-
-export interface ProjectCodeActiveCall {
-  functionName: string
-  activeParameterIndex: number
-}
-
-interface DelimiterEntry extends CursorPosition {
-  character: '(' | '{' | '['
 }
 
 interface ParsedMacroDefinition {
@@ -79,45 +64,8 @@ const FUNCTION_PATTERN =
   /(^|[;\n}])\s*(?!typedef\b|return\b|if\b|for\b|while\b|switch\b)([A-Za-z_][A-Za-z0-9_\s\*]*?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^;{}()]*)\)\s*(?:BANKED|NONBANKED)?\s*(?=;|\{)/gm
 const EXTERN_VARIABLE_PATTERN =
   /(^|\n)\s*extern\s+([^;()]+?)\s+(\**)\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[[^\]]*\])?\s*;/g
-const MEMBER_ACCESS_PATTERN =
-  /([A-Za-z_][A-Za-z0-9_]*(?:(?:->|\.)[A-Za-z_][A-Za-z0-9_]*)*)(?:->|\.)[A-Za-z0-9_]*$/
-const DECLARATION_WITH_INITIALIZER_PATTERN =
-  /^\s*([A-Za-z_][A-Za-z0-9_\s\*]*?)\s+(\**)\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/
 
-const createPosition = (): CursorPosition => ({
-  line: 1,
-  column: 1
-})
-
-const clonePosition = (position: CursorPosition): CursorPosition => ({
-  line: position.line,
-  column: position.column
-})
-
-const advancePosition = (position: CursorPosition, character: string): void => {
-  if (character === '\n') {
-    position.line += 1
-    position.column = 1
-    return
-  }
-
-  position.column += 1
-}
-
-const buildDiagnostic = (
-  message: string,
-  start: CursorPosition,
-  end: CursorPosition,
-  severity: ProjectCodeDiagnostic['severity'] = 'error'
-): ProjectCodeDiagnostic => ({
-  message,
-  severity,
-  startLineNumber: start.line,
-  startColumn: start.column,
-  endLineNumber: end.line,
-  endColumn: end.column
-})
-
+// changes comments for white spaces
 const sanitizeComments = (content: string): string => {
   let sanitized = ''
   let index = 0
@@ -127,9 +75,12 @@ const sanitizeComments = (content: string): string => {
     const currentCharacter = content[index]
     const nextCharacter = content[index + 1] ?? ''
 
+    // if in a line comment
     if (mode === 'line-comment') {
+      // replace comment with spaces, jump line at line end
       sanitized += currentCharacter === '\n' ? '\n' : ' '
 
+      // at line end, switch back to no comment
       if (currentCharacter === '\n') {
         mode = 'normal'
       }
@@ -138,28 +89,34 @@ const sanitizeComments = (content: string): string => {
       continue
     }
 
+
     if (mode === 'block-comment') {
+      // replace comment end with spaces, switch back to no comment
       if (currentCharacter === '*' && nextCharacter === '/') {
         sanitized += '  '
         index += 2
         mode = 'normal'
         continue
       }
-
+      // replace comment with spaces, jump line at line end
       sanitized += currentCharacter === '\n' ? '\n' : ' '
       index += 1
       continue
     }
 
+    // if in a string
     if (mode === 'string') {
+      // copy the current character
       sanitized += currentCharacter
 
+      // and if it's an escape character, also copy the next one and jump it (to avoid ending the string early on a \" character)
       if (currentCharacter === '\\') {
         sanitized += nextCharacter
         index += 2
         continue
       }
 
+      // at string end, switch back to no comment
       if (currentCharacter === '"') {
         mode = 'normal'
       }
@@ -168,6 +125,7 @@ const sanitizeComments = (content: string): string => {
       continue
     }
 
+    // like string but with ' for end
     if (mode === 'char') {
       sanitized += currentCharacter
 
@@ -185,6 +143,7 @@ const sanitizeComments = (content: string): string => {
       continue
     }
 
+    // comment start
     if (currentCharacter === '/' && nextCharacter === '/') {
       sanitized += '  '
       index += 2
@@ -192,6 +151,7 @@ const sanitizeComments = (content: string): string => {
       continue
     }
 
+    // block comment start
     if (currentCharacter === '/' && nextCharacter === '*') {
       sanitized += '  '
       index += 2
@@ -199,6 +159,7 @@ const sanitizeComments = (content: string): string => {
       continue
     }
 
+    // string start
     if (currentCharacter === '"') {
       sanitized += currentCharacter
       index += 1
@@ -206,6 +167,7 @@ const sanitizeComments = (content: string): string => {
       continue
     }
 
+    // char start
     if (currentCharacter === "'") {
       sanitized += currentCharacter
       index += 1
@@ -224,6 +186,7 @@ const normalizeWhitespace = (content: string): string => {
   return content.replace(/\s+/g, ' ').trim()
 }
 
+// split a string by a separator, unless the separator is inside parentheses, brackets or braces
 const splitTopLevel = (content: string, separator: string): string[] => {
   const parts: string[] = []
   let current = ''
@@ -326,6 +289,7 @@ const parseMacroDefinitions = (content: string): ParsedMacroDefinition[] => {
 
     const bodyLines = [match[3] ?? '']
 
+    // if the line ends with a backslash, the macro body continues on the next line
     while (bodyLines.at(-1)?.trimEnd().endsWith('\\')) {
       bodyLines[bodyLines.length - 1] = bodyLines[bodyLines.length - 1].replace(/\\\s*$/, '')
       index += 1
@@ -354,6 +318,7 @@ const parseMacroDefinitions = (content: string): ParsedMacroDefinition[] => {
   return definitions
 }
 
+// extracts the first argument of a macro invocation (usually a name/identifier)
 const extractValuesFromMacroInvocationList = (macroBody: string): string[] => {
   const values = new Set<string>()
   const invocationPattern = /[A-Za-z_][A-Za-z0-9_]*\(\s*([A-Za-z_][A-Za-z0-9_]*)/g
@@ -371,6 +336,7 @@ const parseEnumValuesWithMacros = (
 ): string[] => {
   const values = new Set<string>()
 
+  // iterate enum values
   const entries = splitTopLevel(content, ',').flatMap((entry) => entry.split('\n'))
 
   for (const entry of entries) {
@@ -383,6 +349,9 @@ const parseEnumValuesWithMacros = (
     if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(normalizedEntry)) {
       const macroDefinition = macroDefinitionsByName.get(normalizedEntry)
 
+      // if it's a macro without parameters, try to extract values from its body
+      // (this is the structure for a macro that expands to a list of macro invocations)
+      // it uses the previous function, so it extracts the first parameter of the macro invocation
       if (macroDefinition && macroDefinition.parameters === null) {
         for (const macroValue of extractValuesFromMacroInvocationList(macroDefinition.body)) {
           values.add(macroValue)
@@ -390,65 +359,12 @@ const parseEnumValuesWithMacros = (
         continue
       }
 
+      // otherwise, it's a normal enum value
       values.add(normalizedEntry)
     }
   }
 
   return [...values]
-}
-
-const INTEGER_LIKE_TYPE_PATTERN =
-  /^(?:u?int(?:8|16|32|64)?_t|char|short|int|long|bool|BOOLEAN|BYTE|WORD|DWORD)$/i
-
-const isIntegerLikeType = (type: ProjectCodeTypeReference | null): boolean => {
-  if (!type || type.pointerDepth > 0) {
-    return false
-  }
-
-  return INTEGER_LIKE_TYPE_PATTERN.test(type.name)
-}
-
-const computeDeclarationDiagnostics = (content: string): ProjectCodeDiagnostic[] => {
-  const diagnostics: ProjectCodeDiagnostic[] = []
-  const lines = content.split('\n')
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]
-    const match = line.match(DECLARATION_WITH_INITIALIZER_PATTERN)
-
-    if (!match) {
-      continue
-    }
-
-    const declaredType = parseTypeReference(`${match[1]} ${match[2]}`.trim())
-    const initializer = match[4].trim()
-    const lineNumber = index + 1
-    const initializerColumn = line.indexOf(initializer) + 1
-
-    if (isIntegerLikeType(declaredType) && initializer.startsWith('"')) {
-      diagnostics.push({
-        message: `Cannot initialize ${declaredType?.name ?? 'this value'} with a string literal.`,
-        severity: 'error',
-        startLineNumber: lineNumber,
-        startColumn: initializerColumn,
-        endLineNumber: lineNumber,
-        endColumn: initializerColumn + initializer.length
-      })
-    }
-
-    if (declaredType && declaredType.pointerDepth === 0 && initializer.startsWith('&')) {
-      diagnostics.push({
-        message: `Cannot initialize non-pointer ${declaredType.name} with an address expression.`,
-        severity: 'error',
-        startLineNumber: lineNumber,
-        startColumn: initializerColumn,
-        endLineNumber: lineNumber,
-        endColumn: initializerColumn + initializer.length
-      })
-    }
-  }
-
-  return diagnostics
 }
 
 const parseFunctionParameters = (content: string): ProjectCodeFunctionParameter[] => {
@@ -477,6 +393,7 @@ const parseFunctionParameters = (content: string): ProjectCodeFunctionParameter[
     })
 }
 
+// parses variable declarations into name, declaredIn (comes as parameter), type and scope (comes as parameter)
 const parseDeclarationStatement = (
   statement: string,
   scope: ProjectCodeVariableSymbol['scope'],
@@ -532,6 +449,7 @@ const parseDeclarationStatement = (
   return variables
 }
 
+// split code into statements and parse variable declarations
 const parseLocalVariables = (sanitizedContent: string, declaredIn?: string): ProjectCodeVariableSymbol[] => {
   return sanitizedContent
     .replace(/[{}]/g, ';')
@@ -539,6 +457,8 @@ const parseLocalVariables = (sanitizedContent: string, declaredIn?: string): Pro
     .flatMap((statement) => parseDeclarationStatement(statement, 'local', declaredIn))
 }
 
+// searches through a list of symbols (objects with name), adds them to a map and if it finds a duplicate, merges using
+// a function passed as a parameter, or keeps the old one if there is no function
 const dedupeSymbols = <TSymbol extends { name: string }>(
   symbols: TSymbol[],
   merge?: (current: TSymbol, next: TSymbol) => TSymbol
@@ -577,47 +497,6 @@ const mergeEnums = (
   values: [...new Set([...current.values, ...next.values])]
 })
 
-const findStruct = (
-  symbolIndex: ProjectCodeSymbolIndex,
-  typeName: string
-): ProjectCodeStructSymbol | null => {
-  return symbolIndex.structs.find((entry) => entry.name === typeName) ?? null
-}
-
-const resolveTypeAlias = (
-  typeName: string,
-  symbolIndex: ProjectCodeSymbolIndex
-): ProjectCodeTypeReference | null => {
-  const visitedTypes = new Set<string>()
-  let nextTypeName = typeName
-
-  while (!visitedTypes.has(nextTypeName)) {
-    visitedTypes.add(nextTypeName)
-
-    if (findStruct(symbolIndex, nextTypeName)) {
-      return {
-        name: nextTypeName,
-        pointerDepth: 0
-      }
-    }
-
-    const alias = symbolIndex.typeAliases.find((entry) => entry.name === nextTypeName)
-
-    if (!alias?.targetType) {
-      break
-    }
-
-    nextTypeName = alias.targetType.name
-  }
-
-  return findStruct(symbolIndex, nextTypeName)
-    ? {
-        name: nextTypeName,
-        pointerDepth: 0
-      }
-    : null
-}
-
 export const createEmptyProjectCodeSymbolIndex = (): ProjectCodeSymbolIndex => ({
   structs: [],
   enums: [],
@@ -643,6 +522,8 @@ export const mergeProjectCodeSymbolIndexes = (
   sourceFilesScanned: symbolIndexes.reduce((total, index) => total + index.sourceFilesScanned, 0)
 })
 
+// parses a C code string, extracts different types of symbols, and returns a ProjectCodeSymbolIndex with
+// the deduped symbols
 export const parseProjectCodeSymbolIndexFromText = (
   content: string,
   options?: ParseProjectCodeSymbolIndexOptions
@@ -746,366 +627,3 @@ export const parseProjectCodeSymbolIndexFromText = (
   }
 }
 
-export const getStructFieldsForExpression = (
-  expression: string,
-  symbolIndex: ProjectCodeSymbolIndex
-): ProjectCodeStructField[] => {
-  const trimmedExpression = expression.trim()
-
-  if (!trimmedExpression) {
-    return []
-  }
-
-  const segments = trimmedExpression.split(/->|\./).filter(Boolean)
-
-  if (segments.length === 0) {
-    return []
-  }
-
-  const rootVariable = symbolIndex.variables.find((entry) => entry.name === segments[0])
-  let currentType = rootVariable?.type ?? resolveTypeAlias(segments[0], symbolIndex)
-
-  if (!currentType) {
-    return []
-  }
-
-  for (const fieldName of segments.slice(1)) {
-    const resolvedTypeName = resolveTypeAlias(currentType.name, symbolIndex)?.name ?? currentType.name
-    const structSymbol = findStruct(symbolIndex, resolvedTypeName)
-
-    if (!structSymbol) {
-      return []
-    }
-
-    const field = structSymbol.fields.find((entry) => entry.name === fieldName)
-
-    if (!field?.type) {
-      return []
-    }
-
-    currentType = field.type
-  }
-
-  const resolvedTypeName = resolveTypeAlias(currentType.name, symbolIndex)?.name ?? currentType.name
-  const structSymbol = findStruct(symbolIndex, resolvedTypeName)
-  return structSymbol?.fields ?? []
-}
-
-export const getMemberAccessExpression = (textBeforeCursor: string): string | null => {
-  const match = textBeforeCursor.match(MEMBER_ACCESS_PATTERN)
-  return match?.[1] ?? null
-}
-
-export const getActiveFunctionCall = (textBeforeCursor: string): ProjectCodeActiveCall | null => {
-  const stack: Array<{ functionName: string; activeParameterIndex: number }> = []
-  let mode: 'normal' | 'line-comment' | 'block-comment' | 'string' | 'char' = 'normal'
-  let index = 0
-  let escapePending = false
-
-  while (index < textBeforeCursor.length) {
-    const currentCharacter = textBeforeCursor[index]
-    const nextCharacter = textBeforeCursor[index + 1] ?? ''
-
-    if (mode === 'line-comment') {
-      if (currentCharacter === '\n') {
-        mode = 'normal'
-      }
-
-      index += 1
-      continue
-    }
-
-    if (mode === 'block-comment') {
-      if (currentCharacter === '*' && nextCharacter === '/') {
-        index += 2
-        mode = 'normal'
-        continue
-      }
-
-      index += 1
-      continue
-    }
-
-    if (mode === 'string') {
-      if (!escapePending && currentCharacter === '\\') {
-        escapePending = true
-      } else if (!escapePending && currentCharacter === '"') {
-        mode = 'normal'
-      } else {
-        escapePending = false
-      }
-
-      index += 1
-      continue
-    }
-
-    if (mode === 'char') {
-      if (!escapePending && currentCharacter === '\\') {
-        escapePending = true
-      } else if (!escapePending && currentCharacter === "'") {
-        mode = 'normal'
-      } else {
-        escapePending = false
-      }
-
-      index += 1
-      continue
-    }
-
-    if (currentCharacter === '/' && nextCharacter === '/') {
-      mode = 'line-comment'
-      index += 2
-      continue
-    }
-
-    if (currentCharacter === '/' && nextCharacter === '*') {
-      mode = 'block-comment'
-      index += 2
-      continue
-    }
-
-    if (currentCharacter === '"') {
-      mode = 'string'
-      escapePending = false
-      index += 1
-      continue
-    }
-
-    if (currentCharacter === "'") {
-      mode = 'char'
-      escapePending = false
-      index += 1
-      continue
-    }
-
-    if (currentCharacter === '(') {
-      const beforeParenthesis = textBeforeCursor.slice(0, index)
-      const functionNameMatch = beforeParenthesis.match(/([A-Za-z_][A-Za-z0-9_]*)\s*$/)
-
-      if (functionNameMatch) {
-        stack.push({
-          functionName: functionNameMatch[1],
-          activeParameterIndex: 0
-        })
-      } else {
-        stack.push({
-          functionName: '',
-          activeParameterIndex: 0
-        })
-      }
-
-      index += 1
-      continue
-    }
-
-    if (currentCharacter === ',') {
-      const activeCall = stack.at(-1)
-
-      if (activeCall) {
-        activeCall.activeParameterIndex += 1
-      }
-
-      index += 1
-      continue
-    }
-
-    if (currentCharacter === ')') {
-      stack.pop()
-      index += 1
-      continue
-    }
-
-    index += 1
-  }
-
-  const activeCall = [...stack].reverse().find((entry) => entry.functionName.length > 0)
-
-  if (!activeCall) {
-    return null
-  }
-
-  return {
-    functionName: activeCall.functionName,
-    activeParameterIndex: activeCall.activeParameterIndex
-  }
-}
-
-export const computeProjectCodeDiagnostics = (content: string): ProjectCodeDiagnostic[] => {
-  const diagnostics: ProjectCodeDiagnostic[] = []
-  const stack: DelimiterEntry[] = []
-  const position = createPosition()
-  let index = 0
-  let mode: 'normal' | 'line-comment' | 'block-comment' | 'string' | 'char' = 'normal'
-  let tokenStart = clonePosition(position)
-  let charLiteralLength = 0
-  let escapePending = false
-
-  while (index < content.length) {
-    const currentCharacter = content[index]
-    const nextCharacter = content[index + 1] ?? ''
-    const currentPosition = clonePosition(position)
-
-    if (mode === 'line-comment') {
-      if (currentCharacter === '\n') {
-        mode = 'normal'
-      }
-
-      advancePosition(position, currentCharacter)
-      index += 1
-      continue
-    }
-
-    if (mode === 'block-comment') {
-      if (currentCharacter === '*' && nextCharacter === '/') {
-        advancePosition(position, currentCharacter)
-        advancePosition(position, nextCharacter)
-        index += 2
-        mode = 'normal'
-        continue
-      }
-
-      advancePosition(position, currentCharacter)
-      index += 1
-      continue
-    }
-
-    if (mode === 'string') {
-      if (!escapePending && currentCharacter === '\\') {
-        escapePending = true
-      } else if (!escapePending && currentCharacter === '"') {
-        mode = 'normal'
-      } else if (currentCharacter === '\n') {
-        diagnostics.push(buildDiagnostic('Unterminated string literal.', tokenStart, currentPosition))
-        mode = 'normal'
-      } else {
-        escapePending = false
-      }
-
-      advancePosition(position, currentCharacter)
-      index += 1
-      continue
-    }
-
-    if (mode === 'char') {
-      if (!escapePending && currentCharacter === '\\') {
-        escapePending = true
-      } else if (!escapePending && currentCharacter === "'") {
-        if (charLiteralLength > 1) {
-          diagnostics.push(
-            buildDiagnostic(
-              'Character literals should contain a single character.',
-              tokenStart,
-              clonePosition(position)
-            )
-          )
-        }
-
-        mode = 'normal'
-      } else if (currentCharacter === '\n') {
-        diagnostics.push(buildDiagnostic('Unterminated character literal.', tokenStart, currentPosition))
-        mode = 'normal'
-      } else {
-        charLiteralLength += 1
-        escapePending = false
-      }
-
-      advancePosition(position, currentCharacter)
-      index += 1
-      continue
-    }
-
-    if (currentCharacter === '/' && nextCharacter === '/') {
-      mode = 'line-comment'
-      advancePosition(position, currentCharacter)
-      advancePosition(position, nextCharacter)
-      index += 2
-      continue
-    }
-
-    if (currentCharacter === '/' && nextCharacter === '*') {
-      mode = 'block-comment'
-      tokenStart = currentPosition
-      advancePosition(position, currentCharacter)
-      advancePosition(position, nextCharacter)
-      index += 2
-      continue
-    }
-
-    if (currentCharacter === '"') {
-      mode = 'string'
-      tokenStart = currentPosition
-      escapePending = false
-      advancePosition(position, currentCharacter)
-      index += 1
-      continue
-    }
-
-    if (currentCharacter === "'") {
-      mode = 'char'
-      tokenStart = currentPosition
-      charLiteralLength = 0
-      escapePending = false
-      advancePosition(position, currentCharacter)
-      index += 1
-      continue
-    }
-
-    if (currentCharacter === '(' || currentCharacter === '{' || currentCharacter === '[') {
-      stack.push({
-        character: currentCharacter,
-        ...currentPosition
-      })
-    } else if (currentCharacter === ')' || currentCharacter === '}' || currentCharacter === ']') {
-      const expectedOpening =
-        currentCharacter === ')' ? '(' : currentCharacter === '}' ? '{' : '['
-      const lastOpening = stack.at(-1)
-
-      if (!lastOpening || lastOpening.character !== expectedOpening) {
-        diagnostics.push(
-          buildDiagnostic(
-            `Unexpected "${currentCharacter}".`,
-            currentPosition,
-            {
-              line: currentPosition.line,
-              column: currentPosition.column + 1
-            }
-          )
-        )
-      } else {
-        stack.pop()
-      }
-    }
-
-    advancePosition(position, currentCharacter)
-    index += 1
-  }
-
-  if (mode === 'block-comment') {
-    diagnostics.push(buildDiagnostic('Unterminated block comment.', tokenStart, clonePosition(position)))
-  }
-
-  if (mode === 'string') {
-    diagnostics.push(buildDiagnostic('Unterminated string literal.', tokenStart, clonePosition(position)))
-  }
-
-  if (mode === 'char') {
-    diagnostics.push(
-      buildDiagnostic('Unterminated character literal.', tokenStart, clonePosition(position))
-    )
-  }
-
-  for (const delimiter of stack) {
-    diagnostics.push(
-      buildDiagnostic(
-        `Missing closing delimiter for "${delimiter.character}".`,
-        delimiter,
-        {
-          line: delimiter.line,
-          column: delimiter.column + 1
-        }
-      )
-    )
-  }
-
-  return [...diagnostics, ...computeDeclarationDiagnostics(content)]
-}

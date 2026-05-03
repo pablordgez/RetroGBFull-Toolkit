@@ -56,7 +56,6 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
-      openSpriteEditorWindow: () => void
       openProjectSaveDataEditor: (projectPath: string) => Promise<boolean>
       openProjectScriptEditor: (
         projectPath: string,
@@ -151,7 +150,6 @@ declare global {
       copyProjectEngineCore: (projectPath: string) => Promise<CopyEngineCoreResult>
       readMaxCollisionCallbacks: (projectPath: string) => Promise<number>
       buildProjectCode: (projectPath: string) => Promise<BuildProjectCodeResult>
-      generateProjectResourceFiles: (projectPath: string) => Promise<BuildProjectCodeResult>
       getProjectCodeSymbolIndex: (projectPath: string) => Promise<ProjectCodeSymbolIndex>
       getProjectCodeWorkspaceSnapshot: (projectPath: string) => Promise<ProjectCodeWorkspaceSnapshot>
       restoreDeletedProjectResource: (

@@ -1,13 +1,13 @@
 import type { ProjectScriptKind } from '../../../../shared/projectScripts'
 
-export const shouldDeferRuntimeForBlankScript = (
+const shouldDeferRuntimeForBlankScript = (
   scriptKind: ProjectScriptKind,
   editableSourceContent: string
 ): boolean => {
   return scriptKind === 'general' && editableSourceContent.trim().length === 0
 }
 
-export const shouldEnableRuntimeForScript = (scriptKind: ProjectScriptKind): boolean => {
+const shouldEnableRuntimeForScript = (scriptKind: ProjectScriptKind): boolean => {
   return scriptKind === 'actor' || scriptKind === 'scene' || scriptKind === 'general'
 }
 

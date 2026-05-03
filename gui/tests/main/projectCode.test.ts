@@ -5,14 +5,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { loadProjectAssetFile, saveProjectAssetFile } from '../../src/main/projectAssetFiles'
 import { saveProjectSaveDataState } from '../../src/main/projectMetadata'
 import { createProjectStructure } from '../../src/main/projectLauncher'
+import { normalizeCodeIdentifierStem } from '../../src/shared/codeIdentifiers'
 import {
+  buildProjectCode,
   copyBundledEngineCore,
-  generateProjectResourceFiles,
   listProjectScriptCallbackCandidates,
   loadProjectScriptResource,
-  normalizeResourceIdentifierStem,
-  saveProjectScriptResource,
-  setBundledGbdkPathForTests
+  saveProjectScriptResource
 } from '../../src/main/projectCode'
 import {
   createProjectResource,
@@ -30,84 +29,100 @@ const prepareBundledGbdkFixture = async (workspaceDirectory: string): Promise<vo
   const bundledGbdkBinPath = join(bundledGbdkPath, 'bin')
   await mkdir(bundledGbdkBinPath, { recursive: true })
   await writeFile(join(bundledGbdkBinPath, 'lcc'), '', { encoding: 'utf-8', flag: 'w' })
-  setBundledGbdkPathForTests(bundledGbdkPath)
+  process.env['RETROGBFULL_BUNDLED_GBDK_PATH'] = bundledGbdkPath
 }
 
 describe('projectCode collision callback helpers', () => {
   afterEach(async () => {
-    setBundledGbdkPathForTests(null)
+    delete process.env['RETROGBFULL_BUNDLED_GBDK_PATH']
     await Promise.all(
       tempDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
     )
   })
 
-  it('collects compatible callbacks from general, actor, and scene scripts while excluding reserved entry points', async () => {
-    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
-    tempDirectories.push(workspaceDirectory)
-    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+  it(
+    'collects compatible callbacks from general, actor, and scene scripts while excluding reserved entry points',
+    async () => {
+      const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+      tempDirectories.push(workspaceDirectory)
+      const project = await createProjectStructure(workspaceDirectory, 'MyProject')
 
-    const generalScript = await createProjectScriptResource(project.path, 'general', 'Shared')
-    const actorScript = await createProjectScriptResource(project.path, 'actor', 'Hero')
-    const sceneScript = await createProjectScriptResource(project.path, 'scene', 'Room')
+      const generalScript = await createProjectScriptResource(project.path, 'general', 'Shared')
+      const actorScript = await createProjectScriptResource(project.path, 'actor', 'Hero')
+      const sceneScript = await createProjectScriptResource(project.path, 'scene', 'Room')
 
-    const loadedGeneral = await loadProjectScriptResource(project.path, generalScript.resourcePath, 'general')
-    const loadedActor = await loadProjectScriptResource(project.path, actorScript.resourcePath, 'actor')
-    const loadedScene = await loadProjectScriptResource(project.path, sceneScript.resourcePath, 'scene')
+      const loadedGeneral = await loadProjectScriptResource(
+        project.path,
+        generalScript.resourcePath,
+        'general'
+      )
+      const loadedActor = await loadProjectScriptResource(
+        project.path,
+        actorScript.resourcePath,
+        'actor'
+      )
+      const loadedScene = await loadProjectScriptResource(
+        project.path,
+        sceneScript.resourcePath,
+        'scene'
+      )
 
-    await saveProjectScriptResource(
-      project.path,
-      generalScript.resourcePath,
-      'general',
-      'void OnSharedCollision(void){\n}\n\nstatic void HiddenShared(void){\n}\n\nvoid SharedNeedsArgs(uint8_t value){\n    value = value;\n}\n',
-      loadedGeneral.headerContent
-    )
-    await saveProjectScriptResource(
-      project.path,
-      actorScript.resourcePath,
-      'actor',
-      'void AINIT(void){\n}\n\nvoid AUPDATE(void){\n}\n\nvoid OnHeroCollision(void){\n}\n',
-      loadedActor.headerContent
-    )
-    await saveProjectScriptResource(
-      project.path,
-      sceneScript.resourcePath,
-      'scene',
-      'void SINIT(void) BANKED{\n}\n\nvoid SUPDATE(void){\n}\n\nvoid OnRoomCollision(void){\n}\n',
-      loadedScene.headerContent
-    )
+      await saveProjectScriptResource(
+        project.path,
+        generalScript.resourcePath,
+        'general',
+        'void OnSharedCollision(void){\n}\n\nstatic void HiddenShared(void){\n}\n\nvoid SharedNeedsArgs(uint8_t value){\n    value = value;\n}\n',
+        loadedGeneral.headerContent
+      )
+      await saveProjectScriptResource(
+        project.path,
+        actorScript.resourcePath,
+        'actor',
+        'void AINIT(void){\n}\n\nvoid AUPDATE(void){\n}\n\nvoid OnHeroCollision(void){\n}\n',
+        loadedActor.headerContent
+      )
+      await saveProjectScriptResource(
+        project.path,
+        sceneScript.resourcePath,
+        'scene',
+        'void SINIT(void) BANKED{\n}\n\nvoid SUPDATE(void){\n}\n\nvoid OnRoomCollision(void){\n}\n',
+        loadedScene.headerContent
+      )
 
-    const scripts = await listProjectScriptResources(project.path)
-    const candidates = await listProjectScriptCallbackCandidates(project.path, scripts)
+      const scripts = await listProjectScriptResources(project.path)
+      const candidates = await listProjectScriptCallbackCandidates(project.path, scripts)
 
-    expect(candidates).toEqual(
-      expect.arrayContaining([
-        {
-          scriptPath: generalScript.resourcePath,
-          scriptKind: 'general',
-          scriptName: 'Shared',
-          functionName: 'OnSharedCollision'
-        },
-        {
-          scriptPath: actorScript.resourcePath,
-          scriptKind: 'actor',
-          scriptName: 'Hero',
-          functionName: 'OnHeroCollision'
-        },
-        {
-          scriptPath: sceneScript.resourcePath,
-          scriptKind: 'scene',
-          scriptName: 'Room',
-          functionName: 'OnRoomCollision'
-        }
-      ])
-    )
-    expect(candidates.some((candidate) => candidate.functionName === 'AINIT')).toBe(false)
-    expect(candidates.some((candidate) => candidate.functionName === 'AUPDATE')).toBe(false)
-    expect(candidates.some((candidate) => candidate.functionName === 'SINIT')).toBe(false)
-    expect(candidates.some((candidate) => candidate.functionName === 'SUPDATE')).toBe(false)
-    expect(candidates.some((candidate) => candidate.functionName === 'HiddenShared')).toBe(false)
-    expect(candidates.some((candidate) => candidate.functionName === 'SharedNeedsArgs')).toBe(false)
-  })
+      expect(candidates).toEqual(
+        expect.arrayContaining([
+          {
+            scriptPath: generalScript.resourcePath,
+            scriptKind: 'general',
+            scriptName: 'Shared',
+            functionName: 'OnSharedCollision'
+          },
+          {
+            scriptPath: actorScript.resourcePath,
+            scriptKind: 'actor',
+            scriptName: 'Hero',
+            functionName: 'OnHeroCollision'
+          },
+          {
+            scriptPath: sceneScript.resourcePath,
+            scriptKind: 'scene',
+            scriptName: 'Room',
+            functionName: 'OnRoomCollision'
+          }
+        ])
+      )
+      expect(candidates.some((candidate) => candidate.functionName === 'AINIT')).toBe(false)
+      expect(candidates.some((candidate) => candidate.functionName === 'AUPDATE')).toBe(false)
+      expect(candidates.some((candidate) => candidate.functionName === 'SINIT')).toBe(false)
+      expect(candidates.some((candidate) => candidate.functionName === 'SUPDATE')).toBe(false)
+      expect(candidates.some((candidate) => candidate.functionName === 'HiddenShared')).toBe(false)
+      expect(candidates.some((candidate) => candidate.functionName === 'SharedNeedsArgs')).toBe(false)
+    },
+    60_000
+  )
 
   it('removes stale generated resource directories and registry entries after deleting a tracked asset', async () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
@@ -115,7 +130,7 @@ describe('projectCode collision callback helpers', () => {
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
     await prepareBundledGbdkFixture(workspaceDirectory)
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
-    const spriteIdentifier = normalizeResourceIdentifierStem('Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
     const spriteDirectory = join(project.path, 'res', spriteIdentifier)
     const animationRegistryPath = join(
       project.path,
@@ -132,7 +147,7 @@ describe('projectCode collision callback helpers', () => {
       'AnimationRegistry.c'
     )
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     expect((await stat(join(spriteDirectory, `${spriteIdentifier}.c`))).isFile()).toBe(true)
     expect(await readFile(animationRegistryPath, 'utf-8')).toContain(
@@ -140,7 +155,7 @@ describe('projectCode collision callback helpers', () => {
     )
 
     await deleteProjectResource(project.path, 'sprite', sprite.resourcePath)
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     await expect(stat(spriteDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
     const emptyAnimationRegistryHeader = await readFile(animationRegistryPath, 'utf-8')
@@ -162,7 +177,7 @@ describe('projectCode collision callback helpers', () => {
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
     await prepareBundledGbdkFixture(workspaceDirectory)
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
-    const spriteIdentifier = normalizeResourceIdentifierStem('Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
     const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
     const animationRegistryPath = join(
       project.path,
@@ -179,7 +194,7 @@ describe('projectCode collision callback helpers', () => {
       'AnimationRegistry.c'
     )
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     const initialSpriteSource = await readFile(spriteSourcePath, 'utf-8')
     const initialAnimationRegistry = await readFile(animationRegistryPath, 'utf-8')
@@ -199,7 +214,7 @@ describe('projectCode collision callback helpers', () => {
       frames: [new Array(256).fill(1), new Array(256).fill(2)]
     })
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     const updatedSpriteSource = await readFile(spriteSourcePath, 'utf-8')
     const updatedAnimationRegistry = await readFile(animationRegistryPath, 'utf-8')
@@ -211,12 +226,153 @@ describe('projectCode collision callback helpers', () => {
     )
     expect(updatedAnimationRegistry).toContain(`${spriteIdentifier},`)
     expect(updatedAnimationRegistrySource).not.toBe(initialAnimationRegistrySource)
-    expect(updatedAnimationRegistrySource).toContain(
-      `.frame_duration = 5`
-    )
+    expect(updatedAnimationRegistrySource).toContain(`.frame_duration = 5`)
     expect(updatedAnimationRegistrySource).toContain(
       `.metasprite = ${spriteIdentifier}_metasprite_data`
     )
+  })
+
+  it('generates a shared metasprite layout for sparse sprite frames', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
+    const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
+    const animationRegistrySourcePath = join(
+      project.path,
+      'src',
+      'Assets',
+      'Animations',
+      'AnimationRegistry.c'
+    )
+    const loadedSprite = await loadProjectAssetFile(project.path, sprite.resourcePath)
+
+    if (loadedSprite.document.kind !== 'sprite') {
+      throw new Error('Expected a sprite document.')
+    }
+
+    const leftTileFrame = new Array(128).fill(0)
+    const rightTileFrame = new Array(128).fill(0)
+
+    for (let y = 0; y < 8; y += 1) {
+      for (let x = 0; x < 8; x += 1) {
+        leftTileFrame[y * 16 + x] = 1
+        rightTileFrame[y * 16 + (x + 8)] = 2
+      }
+    }
+
+    await saveProjectAssetFile(project.path, sprite.resourcePath, {
+      ...loadedSprite.document,
+      width: 16,
+      height: 8,
+      fps: 6,
+      currentFrame: 0,
+      frames: [leftTileFrame, rightTileFrame]
+    })
+
+    await buildProjectCode(project.path)
+
+    const spriteSource = await readFile(spriteSourcePath, 'utf-8')
+    const animationRegistrySource = await readFile(animationRegistrySourcePath, 'utf-8')
+
+    expect(spriteSource).toContain(`const metasprite_t ${spriteIdentifier}_metasprite_data[] = {`)
+    expect(spriteSource).toContain('{ .dy=-4, .dx=-8, .dtile=0, .props=0 },')
+    expect(spriteSource).toContain('{ .dy=0, .dx=8, .dtile=1, .props=0 },')
+    expect(animationRegistrySource).toContain(`.metasprite = ${spriteIdentifier}_metasprite_data`)
+  })
+
+  it('generates 8x16 metasprite offsets using 16-pixel sprite rows', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
+    const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
+    const animationRegistrySourcePath = join(
+      project.path,
+      'src',
+      'Assets',
+      'Animations',
+      'AnimationRegistry.c'
+    )
+    const loadedSprite = await loadProjectAssetFile(project.path, sprite.resourcePath)
+
+    if (loadedSprite.document.kind !== 'sprite') {
+      throw new Error('Expected a sprite document.')
+    }
+
+    const frame = new Array(16 * 32).fill(0)
+    for (let y = 16; y < 32; y += 1) {
+      for (let x = 0; x < 16; x += 1) {
+        frame[y * 16 + x] = 1
+      }
+    }
+
+    await saveProjectAssetFile(project.path, sprite.resourcePath, {
+      ...loadedSprite.document,
+      width: 16,
+      height: 32,
+      fps: 6,
+      is8x16Mode: true,
+      currentFrame: 0,
+      frames: [frame]
+    })
+
+    await buildProjectCode(project.path)
+
+    const spriteSource = await readFile(spriteSourcePath, 'utf-8')
+    const animationRegistrySource = await readFile(animationRegistrySourcePath, 'utf-8')
+
+    expect(spriteSource).toContain(`const metasprite_t ${spriteIdentifier}_metasprite_data[] = {`)
+    expect(spriteSource).toContain('{ .dy=0, .dx=-8, .dtile=4, .props=0 },')
+    expect(spriteSource).toContain('{ .dy=0, .dx=8, .dtile=6, .props=0 },')
+    expect(animationRegistrySource).toContain(`.metasprite = ${spriteIdentifier}_metasprite_data`)
+  })
+
+  it('keeps a single 8x16 sprite as a plain sprite without metasprite tables', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
+    const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
+    const spriteHeaderPath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.h`)
+    const animationRegistrySourcePath = join(
+      project.path,
+      'src',
+      'Assets',
+      'Animations',
+      'AnimationRegistry.c'
+    )
+    const loadedSprite = await loadProjectAssetFile(project.path, sprite.resourcePath)
+
+    if (loadedSprite.document.kind !== 'sprite') {
+      throw new Error('Expected a sprite document.')
+    }
+
+    await saveProjectAssetFile(project.path, sprite.resourcePath, {
+      ...loadedSprite.document,
+      width: 8,
+      height: 16,
+      fps: 6,
+      is8x16Mode: true,
+      currentFrame: 0,
+      frames: [new Array(8 * 16).fill(1)]
+    })
+
+    await buildProjectCode(project.path)
+
+    const spriteSource = await readFile(spriteSourcePath, 'utf-8')
+    const spriteHeader = await readFile(spriteHeaderPath, 'utf-8')
+    const animationRegistrySource = await readFile(animationRegistrySourcePath, 'utf-8')
+
+    expect(spriteHeader).not.toContain('metasprite_data')
+    expect(spriteSource).not.toContain('_metasprite_data')
+    expect(animationRegistrySource).toContain('.metasprite = (void*) 0')
   })
 
   it('keeps map registries valid after deleting the last generated map resource', async () => {
@@ -226,7 +382,7 @@ describe('projectCode collision callback helpers', () => {
     await prepareBundledGbdkFixture(workspaceDirectory)
     const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
     const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
-    const mapIdentifier = normalizeResourceIdentifierStem('Dungeon')
+    const mapIdentifier = normalizeCodeIdentifierStem('Dungeon')
     const mapDirectory = join(project.path, 'res', mapIdentifier)
     const mapRegistryHeaderPath = join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.h')
     const mapRegistrySourcePath = join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.c')
@@ -241,13 +397,13 @@ describe('projectCode collision callback helpers', () => {
       tilesetPath: tileset.resourcePath
     })
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     expect((await stat(join(mapDirectory, `${mapIdentifier}.c`))).isFile()).toBe(true)
     expect(await readFile(mapRegistryHeaderPath, 'utf-8')).toContain(`${mapIdentifier},`)
 
     await deleteProjectResource(project.path, 'tilemap', tilemap.resourcePath)
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     await expect(stat(mapDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
 
@@ -259,6 +415,135 @@ describe('projectCode collision callback helpers', () => {
     expect(emptyMapRegistrySource).not.toContain('empty_map')
     expect(emptyMapRegistrySource).toContain('Map* maps[NUMBER_OF_MAPS] = {')
     expect(emptyMapRegistrySource).toContain('const AssetEntry map_data[NUMBER_OF_MAPS] = {')
+  })
+
+  it('reuses same-bank tileset resources from generated map registry entries when the bank is explicit', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
+    const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
+    const mapIdentifier = normalizeCodeIdentifierStem('Dungeon')
+    const tilesetIdentifier = normalizeCodeIdentifierStem('Dungeon Tiles')
+    const loadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+
+    if (loadedTilemap.document.kind !== 'tilemap') {
+      throw new Error('Expected a tilemap document.')
+    }
+
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...loadedTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await updateProjectResourceBank(project.path, 'tilemap', tilemap.resourcePath, 7)
+    await updateProjectResourceBank(project.path, 'tileset', tileset.resourcePath, 7)
+
+    await buildProjectCode(project.path)
+
+    const mapHeader = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.h`),
+      'utf-8'
+    )
+    const mapSource = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.c`),
+      'utf-8'
+    )
+    const mapRegistrySource = await readFile(
+      join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.c'),
+      'utf-8'
+    )
+
+    expect(mapHeader).toContain(`#include "${tilesetIdentifier}/${tilesetIdentifier}.h"`)
+    expect(mapHeader).toContain(`#define ${mapIdentifier}_tileset ${tilesetIdentifier}_tileset`)
+    expect(mapHeader).toContain(`#define ${mapIdentifier}_num_tiles ${tilesetIdentifier}_num_tiles`)
+    expect(mapSource).toContain(`const uint8_t ${mapIdentifier}_map_data[] = {`)
+    expect(mapSource).not.toContain(`const uint8_t ${mapIdentifier}_tileset[] = {`)
+    expect(mapRegistrySource).toContain(`.tileset = ${tilesetIdentifier}_tileset,`)
+    expect(mapRegistrySource).toContain(`.num_tiles = ${tilesetIdentifier}_num_tiles,`)
+  })
+
+  it('keeps per-map tileset copies when the map and tileset are both autobanked', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
+    const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
+    const mapIdentifier = normalizeCodeIdentifierStem('Dungeon')
+    const tilesetIdentifier = normalizeCodeIdentifierStem('Dungeon Tiles')
+    const loadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+
+    if (loadedTilemap.document.kind !== 'tilemap') {
+      throw new Error('Expected a tilemap document.')
+    }
+
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...loadedTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+
+    await buildProjectCode(project.path)
+
+    const mapHeader = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.h`),
+      'utf-8'
+    )
+    const mapSource = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.c`),
+      'utf-8'
+    )
+    const mapRegistrySource = await readFile(
+      join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.c'),
+      'utf-8'
+    )
+
+    expect(mapHeader).not.toContain(`#include "${tilesetIdentifier}/${tilesetIdentifier}.h"`)
+    expect(mapSource).toContain(`const uint8_t ${mapIdentifier}_tileset[] = {`)
+    expect(mapRegistrySource).toContain(`.tileset = ${mapIdentifier}_tileset,`)
+    expect(mapRegistrySource).toContain(`.num_tiles = ${mapIdentifier}_num_tiles,`)
+  })
+
+  it('keeps per-map tileset copies when the map and tileset banks differ', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
+    const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Dungeon')
+    const mapIdentifier = normalizeCodeIdentifierStem('Dungeon')
+    const tilesetIdentifier = normalizeCodeIdentifierStem('Dungeon Tiles')
+    const loadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+
+    if (loadedTilemap.document.kind !== 'tilemap') {
+      throw new Error('Expected a tilemap document.')
+    }
+
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...loadedTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await updateProjectResourceBank(project.path, 'tileset', tileset.resourcePath, 7)
+
+    await buildProjectCode(project.path)
+
+    const mapHeader = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.h`),
+      'utf-8'
+    )
+    const mapSource = await readFile(
+      join(project.path, 'res', mapIdentifier, `${mapIdentifier}.c`),
+      'utf-8'
+    )
+    const mapRegistrySource = await readFile(
+      join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.c'),
+      'utf-8'
+    )
+
+    expect(mapHeader).not.toContain(`#include "${tilesetIdentifier}/${tilesetIdentifier}.h"`)
+    expect(mapSource).toContain(`const uint8_t ${mapIdentifier}_tileset[] = {`)
+    expect(mapRegistrySource).toContain(`.tileset = ${mapIdentifier}_tileset,`)
+    expect(mapRegistrySource).toContain(`.num_tiles = ${mapIdentifier}_num_tiles,`)
   })
 
   it('generates save-data blocks from the project save-data state', async () => {
@@ -284,7 +569,7 @@ describe('projectCode collision callback helpers', () => {
       ]
     })
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     const saveDataHeader = await readFile(join(project.path, 'src', 'Saves', 'SaveData.h'), 'utf-8')
     const saveDataSource = await readFile(join(project.path, 'src', 'Saves', 'SaveData.c'), 'utf-8')
@@ -295,7 +580,7 @@ describe('projectCode collision callback helpers', () => {
     expect(saveDataSource).toContain('save_data.last_position = 128;')
   })
 
-  it('injects generated scene initialization into the real scene script and rewrites main.c to the selected starting scene', async () => {
+  it('generates a scripted scene wrapper and rewrites main.c to the selected starting scene', async () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
@@ -323,18 +608,100 @@ describe('projectCode collision callback helpers', () => {
     })
     await updateProjectStartingScene(project.path, scene.resourcePath)
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     const mainSource = await readFile(join(project.path, 'src', 'main.c'), 'utf-8')
     const roomLogicSource = await readFile(join(project.path, sceneScript.resourcePath), 'utf-8')
+    const roomSceneSource = await readFile(
+      join(project.path, 'src', 'CustomScenes', 'room.c'),
+      'utf-8'
+    )
+    const roomSceneHeader = await readFile(
+      join(project.path, 'src', 'CustomScenes', 'room.h'),
+      'utf-8'
+    )
     const projectBindingsPath = join(project.path, 'src', 'Generated', 'ProjectBindings.c')
 
-    expect(mainSource).toContain('#include "CustomScenes/RoomLogic.h"')
-    expect(mainSource).toContain('RoomLogic ss;')
-    expect(mainSource).toContain('ss.base.type = _RoomLogic;')
-    expect(roomLogicSource).toContain('// BEGIN GENERATED SCENE INITIALIZATION')
-    expect(roomLogicSource).toContain('set_scene_map(maps[dungeon]);')
+    expect(mainSource).toContain('#include "CustomScenes/room.h"')
+    expect(mainSource).toContain('room ss;')
+    expect(mainSource).toContain('ss.base.type = _room;')
+    expect(roomLogicSource).not.toContain('// BEGIN GENERATED SCENE INITIALIZATION')
+    expect(roomSceneHeader).toContain('#include "CustomScenes/RoomLogic.h"')
+    expect(roomSceneHeader).toContain('typedef RoomLogic room;')
+    expect(roomSceneSource).toContain('scene_init_state_RoomLogic();')
+    expect(roomSceneSource).toContain('scene_update_RoomLogic();')
+    expect(roomSceneSource).toContain('// BEGIN GENERATED SCENE INITIALIZATION')
+    expect(roomSceneSource).toContain('set_scene_map(maps[dungeon]);')
     await expect(stat(projectBindingsPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('generates separate CustomScenes entries when multiple scenes share one scene script', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const firstScene = await createProjectResource(project.path, 'scene', '', 'First Room')
+    const secondScene = await createProjectResource(project.path, 'scene', '', 'Second Room')
+    const sceneScript = await createProjectScriptResource(project.path, 'scene', 'SharedRoomLogic')
+    const firstTilemap = await createProjectResource(project.path, 'tilemap', '', 'First Dungeon')
+    const secondTilemap = await createProjectResource(project.path, 'tilemap', '', 'Second Dungeon')
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Dungeon Tiles')
+    const loadedFirstScene = await loadProjectAssetFile(project.path, firstScene.resourcePath)
+    const loadedSecondScene = await loadProjectAssetFile(project.path, secondScene.resourcePath)
+    const loadedFirstTilemap = await loadProjectAssetFile(project.path, firstTilemap.resourcePath)
+    const loadedSecondTilemap = await loadProjectAssetFile(project.path, secondTilemap.resourcePath)
+
+    if (
+      loadedFirstScene.document.kind !== 'scene' ||
+      loadedSecondScene.document.kind !== 'scene' ||
+      loadedFirstTilemap.document.kind !== 'tilemap' ||
+      loadedSecondTilemap.document.kind !== 'tilemap'
+    ) {
+      throw new Error('Expected scene and tilemap documents.')
+    }
+
+    await saveProjectAssetFile(project.path, firstTilemap.resourcePath, {
+      ...loadedFirstTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await saveProjectAssetFile(project.path, secondTilemap.resourcePath, {
+      ...loadedSecondTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await saveProjectAssetFile(project.path, firstScene.resourcePath, {
+      ...loadedFirstScene.document,
+      tilemapPath: firstTilemap.resourcePath,
+      scriptPath: sceneScript.resourcePath
+    })
+    await saveProjectAssetFile(project.path, secondScene.resourcePath, {
+      ...loadedSecondScene.document,
+      tilemapPath: secondTilemap.resourcePath,
+      scriptPath: sceneScript.resourcePath
+    })
+
+    await buildProjectCode(project.path)
+
+    const firstSceneSource = await readFile(
+      join(project.path, 'src', 'CustomScenes', 'first_room.c'),
+      'utf-8'
+    )
+    const secondSceneSource = await readFile(
+      join(project.path, 'src', 'CustomScenes', 'second_room.c'),
+      'utf-8'
+    )
+    const sceneRegistry = await readFile(
+      join(project.path, 'src', 'Scene', 'SceneRegistry.h'),
+      'utf-8'
+    )
+    const sharedScriptSource = await readFile(join(project.path, sceneScript.resourcePath), 'utf-8')
+
+    expect(firstSceneSource).toContain('scene_init_state_SharedRoomLogic();')
+    expect(firstSceneSource).toContain('set_scene_map(maps[first_dungeon]);')
+    expect(secondSceneSource).toContain('scene_init_state_SharedRoomLogic();')
+    expect(secondSceneSource).toContain('set_scene_map(maps[second_dungeon]);')
+    expect(sceneRegistry).toContain('_SCENE(first_room)')
+    expect(sceneRegistry).toContain('_SCENE(second_room)')
+    expect(sharedScriptSource).not.toContain('// BEGIN GENERATED SCENE INITIALIZATION')
   })
 
   it('can rebuild scenes without custom scene scripts without treating managed scene files as user scripts', async () => {
@@ -363,14 +730,14 @@ describe('projectCode collision callback helpers', () => {
     })
     await updateProjectStartingScene(project.path, scene.resourcePath)
 
-    await generateProjectResourceFiles(project.path)
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
+    await buildProjectCode(project.path)
 
     const roomScenePath = join(
       project.path,
       'src',
       'CustomScenes',
-      `${normalizeResourceIdentifierStem('Room')}.c`
+      `${normalizeCodeIdentifierStem('Room')}.c`
     )
     const sampleScenePath = join(project.path, 'src', 'CustomScenes', 'SampleScene.c')
 
@@ -387,7 +754,7 @@ describe('projectCode collision callback helpers', () => {
 
     await expect(stat(siblingGbdkPath)).rejects.toMatchObject({ code: 'ENOENT' })
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     expect((await stat(siblingGbdkPath)).isDirectory()).toBe(true)
     expect((await stat(join(siblingGbdkPath, 'bin'))).isDirectory()).toBe(true)
@@ -419,14 +786,18 @@ describe('projectCode collision callback helpers', () => {
     await prepareBundledGbdkFixture(workspaceDirectory)
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
     const script = await createProjectScriptResource(project.path, 'general', 'Shared')
-    const spriteIdentifier = normalizeResourceIdentifierStem('Hero')
+    const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
     const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
     const scriptSourcePath = join(project.path, script.resourcePath)
 
     await updateProjectResourceBank(project.path, 'sprite', sprite.resourcePath, 7)
     await updateProjectResourceBank(project.path, 'script', script.resourcePath, 23)
 
-    const loadedScript = await loadProjectScriptResource(project.path, script.resourcePath, 'general')
+    const loadedScript = await loadProjectScriptResource(
+      project.path,
+      script.resourcePath,
+      'general'
+    )
     expect(loadedScript.managedSourcePrefix).toContain('#pragma bank 23')
 
     await saveProjectScriptResource(
@@ -437,7 +808,7 @@ describe('projectCode collision callback helpers', () => {
       loadedScript.headerContent
     )
 
-    await generateProjectResourceFiles(project.path)
+    await buildProjectCode(project.path)
 
     expect(await readFile(spriteSourcePath, 'utf-8')).toContain('#pragma bank 7')
     expect(await readFile(scriptSourcePath, 'utf-8')).toContain('#pragma bank 23')

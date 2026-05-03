@@ -1,6 +1,10 @@
 import { readFile, writeFile } from 'fs/promises'
 import { basename } from 'path'
 import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
+import {
+  isValidProjectResourceBank,
+  normalizeResourcePath
+} from './projectResourcePaths'
 import { getProjectAssetKindFromFileName } from '../shared/projectAssets'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 import {
@@ -21,15 +25,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null
 }
 
-const normalizeResourcePath = (resourcePath: string): string => {
-  return resourcePath
-    .replace(/\\/g, '/')
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0 && segment !== '.')
-    .join('/')
-}
-
 const parseStoredStartingScenePath = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null
@@ -42,10 +37,6 @@ const parseStoredStartingScenePath = (value: unknown): string | null => {
   }
 
   return normalizedPath
-}
-
-const isValidBank = (value: unknown): value is number => {
-  return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 255
 }
 
 const isBankableResourcePath = (resourcePath: string): boolean => {
@@ -88,6 +79,7 @@ const readStoredProjectFile = async (
   }
 }
 
+// build a map with resources and their bank, if the resource doesn't have a bank assigned it will assign 255
 const buildTrackedResourceBankMap = (projectFile: StoredProjectFile): Map<string, number> => {
   const resourcesSection = isRecord(projectFile.resources) ? projectFile.resources : {}
   const items = Array.isArray(resourcesSection.items) ? resourcesSection.items : []
@@ -106,7 +98,7 @@ const buildTrackedResourceBankMap = (projectFile: StoredProjectFile): Map<string
 
     bankMap.set(
       normalizedPath,
-      isValidBank(item.bank) ? Number(item.bank) : DEFAULT_PROJECT_RESOURCE_BANK
+      isValidProjectResourceBank(item.bank) ? Number(item.bank) : DEFAULT_PROJECT_RESOURCE_BANK
     )
   }
 
@@ -146,22 +138,6 @@ export const loadProjectStartingScenePath = async (
 ): Promise<string | null> => {
   const { projectFile } = await readStoredProjectFile(projectPath)
   return parseStoredStartingScenePath(projectFile.startingScenePath)
-}
-
-export const saveProjectStartingScenePath = async (
-  projectPath: string,
-  scenePath: string | null
-): Promise<string | null> => {
-  const nextStartingScenePath = parseStoredStartingScenePath(scenePath)
-  const { jsonPath, projectFile } = await readStoredProjectFile(projectPath)
-  const nextProjectFile: StoredProjectFile = {
-    ...projectFile,
-    startingScenePath: nextStartingScenePath
-  }
-
-  await writeFile(jsonPath, `${JSON.stringify(nextProjectFile, null, 2)}\n`, 'utf-8')
-
-  return nextStartingScenePath
 }
 
 export const saveProjectSaveDataState = async (

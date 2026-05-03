@@ -2,29 +2,28 @@ import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } 
 import { ContextMenuOption, ContextMenuRegion } from '../ContextMenu/ContextMenuRegion'
 import { useHistory } from '../hooks/history/useHistory'
 import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts'
-import { canDragProjectAsset, writeProjectAssetDragPayload } from '../ProjectAssets/projectAssetDrag'
 import { getCommandShortcutLabelPrefix, isEditableElementTarget } from '../utils/keyboardShortcuts'
-import { PROJECT_ASSET_LABELS } from '../../../../shared/projectAssets'
 import { PROJECT_SCRIPT_LABELS, type ProjectScriptKind } from '../../../../shared/projectScripts'
 import type {
   ProjectDeletedResourceResult,
-  ProjectResourceFileItem,
   ProjectResourceItem,
   ProjectResourceKind,
   ProjectResourceMutationResult,
   ProjectResourceView
 } from '../../../../shared/projectResourceModels'
 import { type ResourceMutationEvent } from './projectResourceEvents'
+import { ResourceManagementGridItem } from './ResourceManagementGridItem'
 import {
-  RetroActorIcon,
-  RetroFileIcon,
-  RetroSceneIcon,
-  RetroFolderIcon,
-  RetroSpriteIcon,
-  RetroTilemapIcon,
-  RetroTilesetIcon,
-  RetroWindowIcon
-} from './ResourceIcons'
+  buildClassName,
+  formatLocationLabel,
+  getFriendlyErrorMessage,
+  getParentResourcePath,
+  getResourceTypeLabel,
+  getTrackedResourceKind,
+  isResourceNameConflictMessage,
+  isSceneResource,
+  supportsBankOverride
+} from './resourceManagementShared'
 import './ResourceManagementPane.css'
 
 interface ResourceManagementPaneProps {
@@ -69,102 +68,6 @@ interface ResourceClipboardState {
 }
 
 type ResourceStatusTone = 'error' | 'info'
-
-const buildClassName = (extraClassName?: string): string => {
-  return extraClassName ? `resource-management-pane ${extraClassName}` : 'resource-management-pane'
-}
-
-const formatLocationLabel = (currentPath: string): string => {
-  return currentPath ? `/${currentPath}` : '/'
-}
-
-const formatFileBadge = (resource: ProjectResourceItem): string => {
-  return resource.type === 'file' && resource.extension ? resource.extension.toUpperCase() : 'FILE'
-}
-
-const getResourceTypeLabel = (
-  resourceType: ProjectResourceKind,
-  scriptKind?: ProjectScriptKind | null
-): string => {
-  if (resourceType === 'folder') {
-    return 'Folder'
-  }
-
-  if (resourceType === 'script') {
-    return scriptKind ? PROJECT_SCRIPT_LABELS[scriptKind] : 'Script'
-  }
-
-  return PROJECT_ASSET_LABELS[resourceType]
-}
-
-const getParentResourcePath = (resourcePath: string): string => {
-  const segments = resourcePath.split('/').filter((segment) => segment.length > 0)
-  segments.pop()
-  return segments.join('/')
-}
-
-const getFriendlyErrorMessage = (error: unknown, fallbackMessage: string): string => {
-  if (!(error instanceof Error)) {
-    return fallbackMessage
-  }
-
-  const electronInvokeErrorMatch = error.message.match(
-    /^Error invoking remote method '[^']+':(?: Error:)?\s*(.+)$/s
-  )
-
-  if (electronInvokeErrorMatch?.[1]) {
-    return electronInvokeErrorMatch[1].trim()
-  }
-
-  return error.message
-}
-
-const isResourceNameConflictMessage = (message: string): boolean => {
-  return message.toLowerCase().includes('already exists')
-}
-
-const getTrackedResourceKind = (resource: ProjectResourceItem): ProjectResourceKind | null => {
-  if (resource.type === 'folder') {
-    return 'folder'
-  }
-
-  if (resource.scriptKind) {
-    return 'script'
-  }
-
-  return resource.resourceType ?? null
-}
-
-const supportsBankOverride = (resource: ProjectResourceItem): resource is ProjectResourceFileItem => {
-  return resource.type === 'file' && resource.bank != null
-}
-
-const isSceneResource = (resource: ProjectResourceItem): resource is ProjectResourceFileItem => {
-  return resource.type === 'file' && resource.resourceType === 'scene'
-}
-
-const getResourceIcon = (resource: ProjectResourceItem): ReactElement => {
-  if (resource.type === 'folder') {
-    return <RetroFolderIcon className="resource-management-pane__folder-icon" />
-  }
-
-  switch (resource.resourceType) {
-    case 'actor':
-      return <RetroActorIcon className="resource-management-pane__folder-icon" />
-    case 'sprite':
-      return <RetroSpriteIcon className="resource-management-pane__folder-icon" />
-    case 'tileset':
-      return <RetroTilesetIcon className="resource-management-pane__folder-icon" />
-    case 'tilemap':
-      return <RetroTilemapIcon className="resource-management-pane__folder-icon" />
-    case 'window':
-      return <RetroWindowIcon className="resource-management-pane__folder-icon" />
-    case 'scene':
-      return <RetroSceneIcon className="resource-management-pane__folder-icon" />
-    default:
-      return <RetroFileIcon className="resource-management-pane__folder-icon" />
-  }
-}
 
 export const ResourceManagementPane = ({
   className,
@@ -878,11 +781,7 @@ export const ResourceManagementPane = ({
           resourceType: result.resourceType,
           resourcePath: result.resourcePath
         })
-        beginResourceEditing(
-          result.resourcePath,
-          result.resourceName,
-          result.resourceType
-        )
+        beginResourceEditing(result.resourcePath, result.resourceName, result.resourceType)
       } catch (error) {
         console.error('[resource-management-pane] createProjectResource failed', error)
         showErrorStatus(
@@ -1320,8 +1219,6 @@ export const ResourceManagementPane = ({
               const isPendingCut =
                 clipboardResource?.operation === 'cut' &&
                 clipboardResource.resourcePath === resource.path
-              const isDraggableAsset =
-                resource.type === 'file' && canDragProjectAsset(resource.resourceType)
 
               if (resourceType) {
                 const resourceMenuOptions: ContextMenuOption[] = [
@@ -1397,127 +1294,64 @@ export const ResourceManagementPane = ({
                         path: resource.path,
                         name: resource.name,
                         resourceType,
-                        scriptKind: resource.type === 'file' ? resource.scriptKind ?? null : null
+                        scriptKind: resource.type === 'file' ? (resource.scriptKind ?? null) : null
                       })
                     }
                   }
                 ]
 
                 return (
-                  <ContextMenuRegion
+                  <ResourceManagementGridItem
                     key={resource.path}
-                    options={resourceMenuOptions}
-                    className="resource-management-pane__item-menu"
-                  >
-                    {isEditing ? (
-                      <div
-                        className={`resource-management-pane__item ${
-                          resource.type === 'folder'
-                            ? 'resource-management-pane__item--folder'
-                            : 'resource-management-pane__item--asset'
-                        } ${isSelected ? 'resource-management-pane__item--selected' : ''} ${
-                          isPendingCut ? 'resource-management-pane__item--cut' : ''
-                        }`}
-                        role="listitem"
-                        onContextMenuCapture={() => setSelectedResourcePath(resource.path)}
-                      >
-                        {getResourceIcon(resource)}
-                        <input
-                          ref={renameInputRef}
-                          type="text"
-                          aria-label={`${getResourceTypeLabel(resourceType, resource.type === 'file' ? resource.scriptKind : null)} name for ${resource.name}`}
-                          value={editingResource?.draftName ?? ''}
-                          onChange={(event) => {
-                            const nextName = event.target.value
-                            setEditingResource((currentResource) => {
-                              if (!currentResource || currentResource.path !== resource.path) {
-                                return currentResource
-                              }
+                    resource={resource}
+                    menuOptions={resourceMenuOptions}
+                    isEditing={isEditing}
+                    isInteractionDisabled={isInteractionDisabled}
+                    isPendingCut={Boolean(isPendingCut)}
+                    isSelected={isSelected}
+                    editingDraftName={editingResource?.draftName ?? ''}
+                    renameInputRef={renameInputRef}
+                    startingScenePath={startingScenePath}
+                    onSelect={setSelectedResourcePath}
+                    onOpen={handleOpenResource}
+                    onCommitRename={commitResourceRename}
+                    onCancelRename={() => {
+                      setEditingResource(null)
+                      setStatusMessage(null)
+                    }}
+                    onDraftNameChange={(nextName) => {
+                      setEditingResource((currentResource) => {
+                        if (!currentResource || currentResource.path !== resource.path) {
+                          return currentResource
+                        }
 
-                              return {
-                                ...currentResource,
-                                draftName: nextName
-                              }
-                            })
-                          }}
-                          onBlur={() => {
-                            void commitResourceRename()
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault()
-                              void commitResourceRename()
-                            }
-
-                            if (event.key === 'Escape') {
-                              event.preventDefault()
-                              setEditingResource(null)
-                              setStatusMessage(null)
-                            }
-                          }}
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                        {isSceneResource(resource) && startingScenePath === resource.path && (
-                          <span className="resource-management-pane__item-badge">START</span>
-                        )}
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className={`resource-management-pane__item ${
-                          resource.type === 'folder'
-                            ? 'resource-management-pane__item--folder'
-                            : 'resource-management-pane__item--asset'
-                        } ${isSelected ? 'resource-management-pane__item--selected' : ''} ${
-                          isPendingCut ? 'resource-management-pane__item--cut' : ''
-                        }`}
-                        role="listitem"
-                        onClick={() => setSelectedResourcePath(resource.path)}
-                        onContextMenuCapture={() => setSelectedResourcePath(resource.path)}
-                        onDoubleClick={() => {
-                          void handleOpenResource(resource)
-                        }}
-                        draggable={isDraggableAsset}
-                        onDragStart={(event) => {
-                          if (resource.type !== 'file' || !canDragProjectAsset(resource.resourceType)) {
-                            return
-                          }
-
-                          const dragKind = resource.resourceType
-
-                          setSelectedResourcePath(resource.path)
-                          writeProjectAssetDragPayload(event.dataTransfer, {
-                            kind: dragKind,
-                            path: resource.path
-                          })
-                        }}
-                        disabled={isInteractionDisabled}
-                      >
-                        {getResourceIcon(resource)}
-                        <span className="resource-management-pane__item-name">{resource.name}</span>
-                        {isSceneResource(resource) && startingScenePath === resource.path && (
-                          <span className="resource-management-pane__item-badge">START</span>
-                        )}
-                      </button>
-                    )}
-                  </ContextMenuRegion>
+                        return {
+                          ...currentResource,
+                          draftName: nextName
+                        }
+                      })
+                    }}
+                  />
                 )
               }
 
               return (
-                <div
+                <ResourceManagementGridItem
                   key={resource.path}
-                  className="resource-management-pane__item resource-management-pane__item--file"
-                  role="listitem"
-                >
-                  <span className="resource-management-pane__file-chip" aria-hidden="true">
-                    {formatFileBadge(resource)}
-                  </span>
-                  <span className="resource-management-pane__item-name">{resource.name}</span>
-                  <span className="resource-management-pane__item-badge">
-                    {formatFileBadge(resource)}
-                  </span>
-                </div>
+                  resource={resource}
+                  isEditing={false}
+                  isInteractionDisabled={isInteractionDisabled}
+                  isPendingCut={false}
+                  isSelected={isSelected}
+                  editingDraftName=""
+                  renameInputRef={renameInputRef}
+                  startingScenePath={startingScenePath}
+                  onSelect={setSelectedResourcePath}
+                  onOpen={handleOpenResource}
+                  onCommitRename={commitResourceRename}
+                  onCancelRename={() => undefined}
+                  onDraftNameChange={() => undefined}
+                />
               )
             })}
           </div>
@@ -1532,7 +1366,8 @@ export const ResourceManagementPane = ({
                 {getResourceTypeLabel(
                   pendingDeleteResource.resourceType,
                   pendingDeleteResource.scriptKind
-                ).toLowerCase()}.
+                ).toLowerCase()}
+                .
               </p>
 
               <div className="resource-management-pane__modal-actions">

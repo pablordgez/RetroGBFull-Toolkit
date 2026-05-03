@@ -7,6 +7,8 @@ import type {
 } from './projectCodeWorkspace'
 import { getProjectScriptDisplayName } from './projectScripts'
 
+// handles script properties on right pane of scene editor
+
 export type ScriptPropertyValue = number | boolean | string | null
 export type ScriptPropertyMap = Record<string, ScriptPropertyValue>
 
@@ -29,6 +31,7 @@ const INTEGER_TYPE_RANGES: Record<
 
 const BOOLEAN_TYPES = new Set(['bool', 'BOOLEAN'])
 
+// gets the script name from the path and searches for a struct with the same name in the symbol index
 const findStructForScript = (
   scriptPath: string,
   symbolIndex: ProjectCodeSymbolIndex
@@ -39,6 +42,7 @@ const findStructForScript = (
   return symbolIndex.structs.find((entry) => entry.name === structName) ?? null
 }
 
+// checks if the type is an enum, if so returns the enum symbol
 const findEnumSymbol = (
   typeName: string,
   symbolIndex: ProjectCodeSymbolIndex
@@ -49,24 +53,29 @@ const findEnumSymbol = (
   while (!visitedTypeNames.has(currentTypeName)) {
     visitedTypeNames.add(currentTypeName)
 
+    // check if the type name corresponds directly to an enum
     const enumSymbol = symbolIndex.enums.find((entry) => entry.name === currentTypeName)
 
     if (enumSymbol) {
       return enumSymbol
     }
 
+    // if not, check if it's an alias to an enum
     const typeAlias = symbolIndex.typeAliases.find((entry) => entry.name === currentTypeName)
 
+    // if it's not an alias, the alias doesn't point to a type or it points to a pointer type, stop the search
     if (!typeAlias?.targetType || typeAlias.targetType.pointerDepth > 0) {
       break
     }
 
+    // if the type was an alias, continue the search with the target type
     currentTypeName = typeAlias.targetType.name
   }
 
   return null
 }
 
+// build the list of editable properties for a script
 export const getParsedScriptPropertyDefinitions = (
   scriptPath: string | null,
   symbolIndex: ProjectCodeSymbolIndex | null
@@ -75,6 +84,7 @@ export const getParsedScriptPropertyDefinitions = (
     return []
   }
 
+  // find the struct for the script
   const structSymbol = findStructForScript(scriptPath, symbolIndex)
 
   if (!structSymbol) {
@@ -82,12 +92,14 @@ export const getParsedScriptPropertyDefinitions = (
   }
 
   return structSymbol.fields.flatMap((field): ParsedScriptPropertyDefinition[] => {
+    // ignore the 'base' field, array fields, and fields without a type
     if (field.name === 'base' || field.isArray || !field.type) {
       return []
     }
 
     const typeName = field.type.name
 
+    // allow pointers to animations
     if (field.type.pointerDepth === 1 && typeName === 'Animation') {
       return [
         {
@@ -98,12 +110,14 @@ export const getParsedScriptPropertyDefinitions = (
       ]
     }
 
+    // don't allow any other pointers
     if (field.type.pointerDepth > 0) {
       return []
     }
 
     const integerRange = INTEGER_TYPE_RANGES[typeName]
 
+    // allow integer types and build with the specific integer specs
     if (integerRange) {
       return [
         {
@@ -117,6 +131,7 @@ export const getParsedScriptPropertyDefinitions = (
       ]
     }
 
+    // allow boolean types
     if (BOOLEAN_TYPES.has(typeName)) {
       return [
         {
@@ -127,6 +142,8 @@ export const getParsedScriptPropertyDefinitions = (
       ]
     }
 
+
+    // allow enums, check if it's an enum or an alias to an enum and build with the enum values
     const enumSymbol = findEnumSymbol(typeName, symbolIndex)
 
     if (enumSymbol && enumSymbol.values.length > 0) {
@@ -144,6 +161,8 @@ export const getParsedScriptPropertyDefinitions = (
   })
 }
 
+// gets the stored value for one of the script properties
+// returns undefined if there is no value or the value is invalid
 export const getStoredScriptPropertyValue = (
   definition: ParsedScriptPropertyDefinition,
   properties: ScriptPropertyMap | null | undefined
@@ -174,6 +193,7 @@ export const getStoredScriptPropertyValue = (
   }
 }
 
+// validates the editor input, returning either an object with null value and an error message or an object with the value and null error
 export const validateScriptPropertyDraft = (
   definition: ParsedScriptPropertyDefinition,
   draftValue: string | boolean | null

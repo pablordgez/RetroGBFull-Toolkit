@@ -130,8 +130,6 @@ export interface BuildProjectCodeResult {
   sceneScriptCount: number
 }
 
-export type GenerateProjectResourceFilesResult = BuildProjectCodeResult
-
 export type ParsedScriptPropertyKind = 'integer' | 'boolean' | 'animation' | 'enum'
 
 export interface ParsedScriptPropertyDefinition {

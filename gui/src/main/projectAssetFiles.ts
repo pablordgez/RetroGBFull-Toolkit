@@ -1,7 +1,8 @@
 import { readFile, stat, writeFile } from 'fs/promises'
-import { basename, isAbsolute, relative, resolve } from 'path'
+import { basename } from 'path'
 import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
 import { getTrackedProjectResource, pruneMissingProjectResource } from './projectResources'
+import { normalizeResourcePath, resolvePathWithinProject } from './projectResourcePaths'
 import {
   ProjectAssetDocument,
   ProjectAssetKind,
@@ -10,21 +11,16 @@ import {
   serializeProjectAssetDocument
 } from '../shared/projectAssets'
 
-const normalizeResourcePath = (resourcePath: string): string => {
-  return resourcePath.replace(/\\/g, '/')
-}
-
+// check if resource is within project and return its absolute path
 const resolveAssetPathWithinProject = (projectPath: string, resourcePath: string): string => {
-  const absolutePath = resolve(projectPath, resourcePath || '.')
-  const relativePath = relative(projectPath, absolutePath)
-
-  if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
-    throw new ProjectLauncherError('The selected asset is outside the project directory.')
-  }
-
-  return absolutePath
+  return resolvePathWithinProject(
+    projectPath,
+    resourcePath,
+    'The selected asset is outside the project directory.'
+  )
 }
 
+// checks if the asset file exists and is tracked in the project, and returns it if so
 const resolveProjectAssetPath = async (
   projectPath: string,
   resourcePath: string
@@ -68,6 +64,7 @@ const resolveProjectAssetPath = async (
   }
 }
 
+// checks if an asset file exists at the given path, if not, removes it from project tracking
 export const ensureProjectAssetFileAvailable = async (
   projectPath: string,
   resourcePath: string
@@ -115,6 +112,7 @@ export interface ProjectAssetFilePayload {
   document: ProjectAssetDocument
 }
 
+// reads the content of the asset file, casts it to a document type and if its type matches the expected type, returns it
 export const loadProjectAssetFile = async (
   projectPath: string,
   resourcePath: string
@@ -134,6 +132,7 @@ export const loadProjectAssetFile = async (
   }
 }
 
+// if the asset file already exists, checks if its type matches the document type and if so, overwrites it with the new version
 export const saveProjectAssetFile = async (
   projectPath: string,
   resourcePath: string,
