@@ -105,6 +105,57 @@ describe('projectAssets scene parsing', () => {
     })
   })
 
+  it('round-trips actor and collision tags in scene and actor resources', () => {
+    const sceneDocument = parseProjectAssetDocument({
+      kind: 'scene',
+      version: 1,
+      tilemapPath: null,
+      windowPath: null,
+      scriptPath: null,
+      nodes: [
+        {
+          id: 'hero',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          spritePath: null,
+          tags: ['player', 'spawn'],
+          x: 0,
+          y: 0,
+          followCamera: false,
+          children: [
+            {
+              id: 'hero-collision',
+              type: 'collision',
+              name: 'Hitbox',
+              isCollapsed: false,
+              x: 0,
+              y: 0,
+              width: 128,
+              height: 128,
+              isBlocking: true,
+              tags: ['hurtbox'],
+              children: []
+            }
+          ]
+        }
+      ]
+    }) as SceneAssetDocument
+    const actorDocument = parseProjectAssetDocument({
+      kind: 'actor',
+      version: 1,
+      root: sceneDocument.nodes[0]
+    }) as ActorAssetDocument
+
+    expect(sceneDocument.nodes[0]).toMatchObject({ type: 'actor', tags: ['player', 'spawn'] })
+    expect(actorDocument.root.children[0]).toMatchObject({
+      type: 'collision',
+      tags: ['hurtbox']
+    })
+    expect(serializeProjectAssetDocument(sceneDocument)).toContain('"tags"')
+    expect(serializeProjectAssetDocument(actorDocument)).toContain('"tags"')
+  })
+
   it('round-trips scene and actor script properties without breaking older assets', () => {
     const sceneDocument = parseProjectAssetDocument({
       kind: 'scene',

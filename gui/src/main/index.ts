@@ -42,7 +42,9 @@ import {
 import { ensureProjectAssetFileAvailable, loadProjectAssetFile, saveProjectAssetFile } from './projectAssetFiles'
 import {
   loadProjectSaveDataState,
-  saveProjectSaveDataState
+  loadProjectTagState,
+  saveProjectSaveDataState,
+  saveProjectTagState
 } from './projectMetadata'
 import { PROJECT_ASSET_LABELS, ProjectAssetKind } from '../shared/projectAssets'
 import {
@@ -51,6 +53,7 @@ import {
   listProjectScriptCallbackCandidates,
   loadProjectScriptResource,
   readMaxCollisionCallbacks,
+  readMaxTagSlots,
   saveProjectScriptResource
 } from './projectCode'
 import { getProjectCodeWorkspaceSnapshot } from './projectCodeLanguageService'
@@ -87,6 +90,10 @@ interface ProjectScriptSavedEventPayload {
   projectPath: string
   resourcePath: string
   scriptKind: ProjectScriptKind
+}
+
+interface ProjectTagsSavedEventPayload {
+  projectPath: string
 }
 
 const ELECTRON_APP_SCHEME = 'app'
@@ -606,6 +613,21 @@ ipcMain.handle('project:save-data:open-editor', async (_, projectPath: string) =
   return true
 })
 
+ipcMain.handle('project:tags:open-editor', async (_, projectPath: string) => {
+  const searchParams = new URLSearchParams({
+    projectPath
+  })
+
+  createChildWindow(`/tag-editor?${searchParams.toString()}`, {
+    width: 1200,
+    height: 860,
+    title: 'Tag Editor',
+    interceptClose: true
+  })
+
+  return true
+})
+
 ipcMain.handle('project:assets:load', async (_, projectPath: string, assetPath: string) => {
   return loadProjectAssetFile(projectPath, assetPath)
 })
@@ -639,6 +661,24 @@ ipcMain.handle(
     return saveProjectSaveDataState(projectPath, saveDataState)
   }
 )
+
+ipcMain.handle('project:tags:load', async (_, projectPath: string) => {
+  return loadProjectTagState(projectPath)
+})
+
+ipcMain.handle('project:tags:save', async (_, projectPath: string, tagState) => {
+  const payload = await saveProjectTagState(projectPath, tagState)
+
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) {
+      window.webContents.send('project:tags-saved', {
+        projectPath
+      } satisfies ProjectTagsSavedEventPayload)
+    }
+  })
+
+  return payload
+})
 
 ipcMain.handle(
   'project:scripts:create',
@@ -716,6 +756,10 @@ ipcMain.handle('project:code:copy-engine-core', async (_, projectPath: string) =
 
 ipcMain.handle('project:code:read-max-collision-callbacks', async (_, projectPath: string) => {
   return readMaxCollisionCallbacks(projectPath)
+})
+
+ipcMain.handle('project:code:read-max-tag-slots', async (_, projectPath: string) => {
+  return readMaxTagSlots(projectPath)
 })
 
 ipcMain.handle('project:code:build', async (_, projectPath: string) => {

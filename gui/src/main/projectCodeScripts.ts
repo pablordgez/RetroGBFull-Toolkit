@@ -904,6 +904,25 @@ export const readMaxCollisionCallbacks = async (projectPath: string): Promise<nu
   return match ? Number(match[1]) : 4
 }
 
+// looks for the tags array in Actor.h and Collider.h and returns the smallest size found or a default of 5
+export const readMaxTagSlots = async (projectPath: string): Promise<number> => {
+  const normalizedProjectPath = await ensureProjectDirectory(projectPath)
+  const headerPaths = ['src/Actor/Actor.h', 'src/Collisions/Collider.h']
+  const slotCounts: number[] = []
+
+  for (const headerPath of headerPaths) {
+    const absolutePath = resolvePathWithinProject(normalizedProjectPath, headerPath)
+    const headerContent = await readFile(absolutePath, 'utf-8')
+    const match = headerContent.match(/Tags\s+tags\[(\d+)\]/)
+
+    if (match) {
+      slotCounts.push(Number(match[1]))
+    }
+  }
+
+  return slotCounts.length > 0 ? Math.min(...slotCounts) : 5
+}
+
 const isCanonicalProjectScriptPath = (resourcePath: string): boolean => {
   return (
     isProjectScriptSourcePath(resourcePath) && getProjectScriptKindFromPath(resourcePath) !== null

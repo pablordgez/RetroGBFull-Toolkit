@@ -1362,7 +1362,7 @@ export const ResourceManagementPane = ({
             <div className="resource-management-pane__modal" role="dialog" aria-modal="true">
               <h2>Delete &quot;{pendingDeleteResource.name}&quot;?</h2>
               <p className="resource-management-pane__modal-copy">
-                This action cannot be reversed and will remove everything inside that{' '}
+                This will remove everything inside that{' '}
                 {getResourceTypeLabel(
                   pendingDeleteResource.resourceType,
                   pendingDeleteResource.scriptKind
@@ -1395,8 +1395,7 @@ export const ResourceManagementPane = ({
             <div className="resource-management-pane__modal" role="dialog" aria-modal="true">
               <h2>Set Bank For &quot;{pendingBankResource.name}&quot;</h2>
               <p className="resource-management-pane__modal-copy">
-                Choose the ROM bank that should be emitted for this generated source file or script
-                preamble.
+                Choose the emitted ROM bank.
               </p>
 
               <label

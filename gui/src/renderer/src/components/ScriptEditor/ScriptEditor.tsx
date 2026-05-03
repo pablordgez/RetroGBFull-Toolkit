@@ -454,8 +454,7 @@ export const ScriptEditor = (): ReactElement => {
               <details className="script-editor__preamble">
                 <summary>Injected engine preamble</summary>
                 <p className="script-editor__preamble-copy">
-                  These engine includes and `#pragma bank 255` stay managed by the toolkit. Add any
-                  extra includes in the editable source.
+                  Managed includes and `#pragma bank 255`.
                 </p>
                 <pre>{managedSourcePrefix}</pre>
               </details>

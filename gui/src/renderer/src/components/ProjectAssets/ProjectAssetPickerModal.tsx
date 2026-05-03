@@ -83,7 +83,7 @@ export const ProjectAssetPickerModal = ({
               disabled={isBusy}
             >
               <span>{noneLabel ?? 'None'}</span>
-              <span className="tilemap-editor__tileset-path">Clear the current reference.</span>
+              <span className="tilemap-editor__tileset-path">Clear reference.</span>
             </button>
           )}
 

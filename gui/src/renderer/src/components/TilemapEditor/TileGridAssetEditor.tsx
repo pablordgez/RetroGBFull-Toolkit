@@ -861,10 +861,9 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
               </label>
             </div>
             <p className="tilemap-editor__split-hint">
-              Top rows count from the top edge. Bottom rows count from the bottom edge. A zero
-              top split still means a full window in the saved engine data.
+              Top and bottom rows count from their nearest edge. Zero top rows saves a full window.
             </p>
-            <p className="tilemap-editor__split-hint">Window size is fixed to the 20x18 screen.</p>
+            <p className="tilemap-editor__split-hint">Fixed to 20x18.</p>
           </div>
         )}
 
@@ -1032,8 +1031,8 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
             <h2>{isTilesetSelectionRequired ? 'Choose A Tileset' : 'Select Tileset'}</h2>
             <p className="editor-modal-copy">
               {isTilesetSelectionRequired
-                ? `This ${assetKind} needs a tileset before you can edit it.`
-                : `Choose which tileset this ${assetKind} should use.`}
+                ? `Choose a tileset to edit this ${assetKind}.`
+                : `Choose a tileset for this ${assetKind}.`}
             </p>
 
             {tilesetPickerError && (
@@ -1051,7 +1050,7 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
 
               {!isTilesetPickerLoading && tilesetOptions.length === 0 && (
                 <div className="tilemap-editor__tileset-option tilemap-editor__tileset-option--empty">
-                  No tilesets were found in this project yet.
+                  No tilesets found.
                 </div>
               )}
 

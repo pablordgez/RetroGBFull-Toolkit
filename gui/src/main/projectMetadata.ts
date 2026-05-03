@@ -13,11 +13,18 @@ import {
   validateProjectSaveDataEntries,
   type ProjectSaveDataState
 } from '../shared/projectSaveData'
+import {
+  parseProjectTagState,
+  serializeProjectTagState,
+  validateProjectTags,
+  type ProjectTagState
+} from '../shared/projectTags'
 import { getProjectScriptKindFromPath, isProjectScriptSourcePath } from '../shared/projectScripts'
 
 interface StoredProjectFile extends Record<string, unknown> {
   resources?: Record<string, unknown>
   saveData?: unknown
+  tags?: unknown
   startingScenePath?: unknown
 }
 
@@ -133,6 +140,12 @@ export const loadProjectSaveDataState = async (
   return parseProjectSaveDataState(projectFile.saveData)
 }
 
+// returns the list of tags from the project file
+export const loadProjectTagState = async (projectPath: string): Promise<ProjectTagState> => {
+  const { projectFile } = await readStoredProjectFile(projectPath)
+  return parseProjectTagState(projectFile.tags)
+}
+
 export const loadProjectStartingScenePath = async (
   projectPath: string
 ): Promise<string | null> => {
@@ -164,6 +177,33 @@ export const saveProjectSaveDataState = async (
       name: entry.name,
       type: entry.type,
       defaultValue: entry.defaultValue
+    }))
+  }
+}
+
+// writes the project file with the tags section updated with the passed tags
+export const saveProjectTagState = async (
+  projectPath: string,
+  tagState: ProjectTagState
+): Promise<ProjectTagState> => {
+  const validationIssues = validateProjectTags(tagState.entries)
+
+  if (validationIssues.length > 0) {
+    throw new ProjectLauncherError(validationIssues[0].message)
+  }
+
+  const { jsonPath, projectFile } = await readStoredProjectFile(projectPath)
+  const nextProjectFile: StoredProjectFile = {
+    ...projectFile,
+    tags: serializeProjectTagState(tagState)
+  }
+
+  await writeFile(jsonPath, `${JSON.stringify(nextProjectFile, null, 2)}\n`, 'utf-8')
+
+  return {
+    entries: tagState.entries.map((entry) => ({
+      id: entry.id,
+      name: entry.name
     }))
   }
 }

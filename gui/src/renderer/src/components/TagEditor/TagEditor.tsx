@@ -2,44 +2,43 @@ import { type ReactElement, useCallback, useEffect, useMemo, useState } from 're
 import { useSearchParams } from 'react-router-dom'
 import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt'
 import {
-  validateProjectSaveDataEntries,
-  type ProjectSaveDataEntry
-} from '../../../../shared/projectSaveData'
-import './SaveDataEditor.css'
+  buildProjectTagEnumName,
+  validateProjectTags,
+  type ProjectTagEntry
+} from '../../../../shared/projectTags'
+import '../SaveDataEditor/SaveDataEditor.css'
 
-type SaveDataStatusTone = 'info' | 'error'
+type TagStatusTone = 'info' | 'error'
 
 const buildEntryId = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
 
-  return `save-entry-${Date.now()}-${Math.round(Math.random() * 100_000)}`
+  return `tag-entry-${Date.now()}-${Math.round(Math.random() * 100_000)}`
 }
 
-const buildSnapshot = (entries: ProjectSaveDataEntry[]): string => {
+const buildSnapshot = (entries: ProjectTagEntry[]): string => {
   return JSON.stringify(entries)
 }
 
-const createEmptyEntry = (): ProjectSaveDataEntry => ({
+const createEmptyEntry = (): ProjectTagEntry => ({
   id: buildEntryId(),
-  type: 'uint8_t',
-  name: '',
-  defaultValue: '0'
+  name: ''
 })
 
-export const SaveDataEditor = (): ReactElement => {
+export const TagEditor = (): ReactElement => {
   const [searchParams] = useSearchParams()
   const projectPath = searchParams.get('projectPath') ?? ''
-  const [entries, setEntries] = useState<ProjectSaveDataEntry[]>([])
+  const [entries, setEntries] = useState<ProjectTagEntry[]>([])
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [statusTone, setStatusTone] = useState<SaveDataStatusTone>('info')
+  const [statusTone, setStatusTone] = useState<TagStatusTone>('info')
   const [isClosePromptOpen, setIsClosePromptOpen] = useState(false)
   const isDirty = savedSnapshot !== null && buildSnapshot(entries) !== savedSnapshot
-  const validationIssues = useMemo(() => validateProjectSaveDataEntries(entries), [entries])
+  const validationIssues = useMemo(() => validateProjectTags(entries), [entries])
   const validationByField = useMemo(() => {
     const nextMap = new Map<string, string>()
 
@@ -57,7 +56,7 @@ export const SaveDataEditor = (): ReactElement => {
   useEffect(() => {
     let isCancelled = false
 
-    const loadSaveData = async (): Promise<void> => {
+    const loadTags = async (): Promise<void> => {
       if (!projectPath) {
         setStatusTone('error')
         setStatusMessage('This window was opened without a project path.')
@@ -66,7 +65,7 @@ export const SaveDataEditor = (): ReactElement => {
       }
 
       try {
-        const payload = await window.api.loadProjectSaveData(projectPath)
+        const payload = await window.api.loadProjectTags(projectPath)
 
         if (isCancelled) {
           return
@@ -77,13 +76,9 @@ export const SaveDataEditor = (): ReactElement => {
         setStatusMessage(null)
         setStatusTone('info')
       } catch (error) {
-        console.error('[save-data-editor] loadProjectSaveData failed', error)
+        console.error('[tag-editor] loadProjectTags failed', error)
         setStatusTone('error')
-        setStatusMessage(
-          error instanceof Error
-            ? error.message
-            : 'Something went wrong while loading save data.'
-        )
+        setStatusMessage(error instanceof Error ? error.message : 'Something went wrong while loading tags.')
       } finally {
         if (!isCancelled) {
           setIsLoaded(true)
@@ -91,7 +86,7 @@ export const SaveDataEditor = (): ReactElement => {
       }
     }
 
-    void loadSaveData()
+    void loadTags()
 
     return () => {
       isCancelled = true
@@ -113,7 +108,7 @@ export const SaveDataEditor = (): ReactElement => {
     })
   }, [isDirty, projectPath])
 
-  const saveEntries = useCallback(async (): Promise<boolean> => {
+  const saveTags = useCallback(async (): Promise<boolean> => {
     if (!projectPath) {
       return false
     }
@@ -127,20 +122,16 @@ export const SaveDataEditor = (): ReactElement => {
     setIsSaving(true)
 
     try {
-      const payload = await window.api.saveProjectSaveData(projectPath, { entries })
+      const payload = await window.api.saveProjectTags(projectPath, { entries })
       setEntries(payload.entries)
       setSavedSnapshot(buildSnapshot(payload.entries))
       setStatusTone('info')
-      setStatusMessage(
-        `Saved ${payload.entries.length} save-data entr${payload.entries.length === 1 ? 'y' : 'ies'}.`
-      )
+      setStatusMessage(`Saved ${payload.entries.length} tag${payload.entries.length === 1 ? '' : 's'}.`)
       return true
     } catch (error) {
-      console.error('[save-data-editor] saveProjectSaveData failed', error)
+      console.error('[tag-editor] saveProjectTags failed', error)
       setStatusTone('error')
-      setStatusMessage(
-        error instanceof Error ? error.message : 'Something went wrong while saving save data.'
-      )
+      setStatusMessage(error instanceof Error ? error.message : 'Something went wrong while saving tags.')
       return false
     } finally {
       setIsSaving(false)
@@ -154,12 +145,12 @@ export const SaveDataEditor = (): ReactElement => {
       }
 
       event.preventDefault()
-      void saveEntries()
+      void saveTags()
     }
 
     window.addEventListener('keydown', handleSaveShortcut)
     return () => window.removeEventListener('keydown', handleSaveShortcut)
-  }, [saveEntries])
+  }, [saveTags])
 
   const handleCloseDecision = useCallback(
     async (decision: 'save' | 'discard' | 'cancel') => {
@@ -169,7 +160,7 @@ export const SaveDataEditor = (): ReactElement => {
       }
 
       if (decision === 'save') {
-        const didSave = await saveEntries()
+        const didSave = await saveTags()
 
         if (!didSave) {
           return
@@ -179,23 +170,14 @@ export const SaveDataEditor = (): ReactElement => {
       setIsClosePromptOpen(false)
       await window.api.confirmEditorClose()
     },
-    [saveEntries]
+    [saveTags]
   )
 
-  const updateEntry = useCallback(
-    (
-      entryId: string,
-      field: keyof Omit<ProjectSaveDataEntry, 'id'>,
-      value: string
-    ): void => {
-      setEntries((currentEntries) =>
-        currentEntries.map((entry) =>
-          entry.id === entryId ? { ...entry, [field]: value } : entry
-        )
-      )
-    },
-    []
-  )
+  const updateEntryName = useCallback((entryId: string, name: string): void => {
+    setEntries((currentEntries) =>
+      currentEntries.map((entry) => (entry.id === entryId ? { ...entry, name } : entry))
+    )
+  }, [])
 
   const moveEntry = useCallback((entryId: string, direction: -1 | 1): void => {
     setEntries((currentEntries) => {
@@ -222,8 +204,8 @@ export const SaveDataEditor = (): ReactElement => {
     <div className="save-data-editor">
       <header className="save-data-editor__toolbar">
         <div className="save-data-editor__summary">
-          <span className="save-data-editor__eyebrow">Project Save State</span>
-          <h1>Save Data Editor</h1>
+          <span className="save-data-editor__eyebrow">Project Tags</span>
+          <h1>Tag Editor</h1>
         </div>
 
         <div className="save-data-editor__actions">
@@ -234,13 +216,13 @@ export const SaveDataEditor = (): ReactElement => {
             }}
             disabled={isSaving}
           >
-            Add Entry
+            Add Tag
           </button>
           <button
             type="button"
             className="save-data-editor__save"
             onClick={() => {
-              void saveEntries()
+              void saveTags()
             }}
             disabled={!isLoaded || isSaving}
           >
@@ -258,16 +240,14 @@ export const SaveDataEditor = (): ReactElement => {
       <div className="save-data-editor__body">
         <section className="save-data-editor__panel">
           <div className="save-data-editor__panel-header">
-            <h2>Entries</h2>
-            <p>Written in order.</p>
+            <h2>Tags</h2>
+            <p>Written to `ActorRegistry.h` in order.</p>
           </div>
 
-          {!isLoaded && <div className="save-data-editor__empty">Loading save data...</div>}
+          {!isLoaded && <div className="save-data-editor__empty">Loading tags...</div>}
 
           {isLoaded && entries.length === 0 && (
-            <div className="save-data-editor__empty">
-              No save-data entries yet.
-            </div>
+            <div className="save-data-editor__empty">No tags yet.</div>
           )}
 
           {isLoaded && entries.length > 0 && (
@@ -275,22 +255,18 @@ export const SaveDataEditor = (): ReactElement => {
               {entries.map((entry, index) => (
                 <article key={entry.id} className="save-data-editor__row">
                   <div className="save-data-editor__row-header">
-                    <span className="save-data-editor__row-title">Entry {index + 1}</span>
+                    <span className="save-data-editor__row-title">Tag {index + 1}</span>
                     <div className="save-data-editor__row-actions">
                       <button
                         type="button"
-                        onClick={() => {
-                          moveEntry(entry.id, -1)
-                        }}
+                        onClick={() => moveEntry(entry.id, -1)}
                         disabled={index === 0 || isSaving}
                       >
                         Up
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          moveEntry(entry.id, 1)
-                        }}
+                        onClick={() => moveEntry(entry.id, 1)}
                         disabled={index === entries.length - 1 || isSaving}
                       >
                         Down
@@ -310,30 +286,12 @@ export const SaveDataEditor = (): ReactElement => {
                   </div>
 
                   <div className="save-data-editor__row-fields">
-                    <label className="save-data-editor__field save-data-editor__field--type">
-                      <span>Type</span>
-                      <input
-                        data-mono="true"
-                        type="text"
-                        value={entry.type}
-                        onChange={(event) => {
-                          updateEntry(entry.id, 'type', event.target.value)
-                        }}
-                      />
-                      <small className="save-data-editor__field-error">
-                        {validationByField.get(`${entry.id}:type`) ?? ''}
-                      </small>
-                    </label>
-
                     <label className="save-data-editor__field save-data-editor__field--name">
                       <span>Name</span>
                       <input
-                        data-mono="true"
                         type="text"
                         value={entry.name}
-                        onChange={(event) => {
-                          updateEntry(entry.id, 'name', event.target.value)
-                        }}
+                        onChange={(event) => updateEntryName(entry.id, event.target.value)}
                       />
                       <small className="save-data-editor__field-error">
                         {validationByField.get(`${entry.id}:name`) ?? ''}
@@ -341,18 +299,14 @@ export const SaveDataEditor = (): ReactElement => {
                     </label>
 
                     <label className="save-data-editor__field save-data-editor__field--default">
-                      <span>Default Value</span>
+                      <span>Generated Enum</span>
                       <input
                         data-mono="true"
                         type="text"
-                        value={entry.defaultValue}
-                        onChange={(event) => {
-                          updateEntry(entry.id, 'defaultValue', event.target.value)
-                        }}
+                        value={entry.name.trim() ? buildProjectTagEnumName(entry.name) : ''}
+                        readOnly
                       />
-                      <small className="save-data-editor__field-error">
-                        {validationByField.get(`${entry.id}:defaultValue`) ?? ''}
-                      </small>
+                      <small className="save-data-editor__field-error" />
                     </label>
                   </div>
                 </article>
@@ -390,8 +344,8 @@ export const SaveDataEditor = (): ReactElement => {
           <div className="save-data-editor__notes">
             <h2>Notes</h2>
             <ul>
-              <li>`signature` is reserved.</li>
-              <li>Defaults accept C expressions.</li>
+              <li>`TAG_NONE` is reserved.</li>
+              <li>Actors and collisions share the engine tag slot limit.</li>
             </ul>
           </div>
         </aside>
@@ -399,7 +353,7 @@ export const SaveDataEditor = (): ReactElement => {
 
       {isClosePromptOpen && (
         <EditorClosePrompt
-          assetLabel="Save Data"
+          assetLabel="Tags"
           isBusy={isSaving}
           onCloseDecision={(decision) => {
             void handleCloseDecision(decision)

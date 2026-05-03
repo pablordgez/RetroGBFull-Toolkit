@@ -35,7 +35,8 @@ const GENERIC_WORKSPACE_ERRORS = {
   scan: 'Something went wrong while scanning the project directory.',
   copyCore: 'Something went wrong while copying the engine core.',
   buildCode: 'Something went wrong while building project code.',
-  openSaveData: 'Something went wrong while opening the save-data editor.'
+  openSaveData: 'Something went wrong while opening the save-data editor.',
+  openTags: 'Something went wrong while opening the tag editor.'
 } as const
 
 const formatScanStatusMessage = (result: ProjectDirectoryScanResult): string => {
@@ -262,6 +263,23 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [projectPath])
 
+  const handleOpenTagEditor = useCallback(async () => {
+    if (!projectPath) {
+      return
+    }
+
+    setIsBusy(true)
+
+    try {
+      await window.api.openProjectTagEditor(projectPath)
+    } catch (error) {
+      console.error('[project-workspace] openProjectTagEditor failed', error)
+      showStatus('error', error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openTags)
+    } finally {
+      setIsBusy(false)
+    }
+  }, [projectPath])
+
   useEffect(() => {
     if (!activeScenePath || !activeSceneDocument) {
       return
@@ -345,6 +363,12 @@ export const ProjectWorkspace = (): ReactElement => {
             onSelect: () => void handleOpenSaveDataEditor()
           },
           {
+            id: 'edit-tags',
+            label: 'Edit Tags...',
+            disabled: isBusy || !projectPath,
+            onSelect: () => void handleOpenTagEditor()
+          },
+          {
             id: 'copy-engine-core',
             label: 'Copy Engine Core',
             disabled: isBusy || !projectPath,
@@ -364,6 +388,7 @@ export const ProjectWorkspace = (): ReactElement => {
     handleCloseProject,
     handleCopyEngineCore,
     handleOpenSaveDataEditor,
+    handleOpenTagEditor,
     handleOpenProject,
     handleOpenProjectInExplorer,
     handleScanProjectDirectory,

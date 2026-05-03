@@ -19,6 +19,7 @@ Object.defineProperty(window, 'api', {
   writable: true,
   value: {
     openProjectSaveDataEditor: vi.fn().mockResolvedValue(true),
+    openProjectTagEditor: vi.fn().mockResolvedValue(true),
     openProjectAssetEditor: vi.fn().mockResolvedValue(true),
     openProjectScriptEditor: vi.fn().mockResolvedValue(true),
     pickProjectParentDirectory: vi.fn().mockResolvedValue(null),
@@ -30,6 +31,8 @@ Object.defineProperty(window, 'api', {
     getRecentProjects: vi.fn().mockResolvedValue([]),
     loadProjectSaveData: vi.fn().mockResolvedValue({ entries: [] }),
     saveProjectSaveData: vi.fn().mockResolvedValue({ entries: [] }),
+    loadProjectTags: vi.fn().mockResolvedValue({ entries: [] }),
+    saveProjectTags: vi.fn().mockResolvedValue({ entries: [] }),
     loadProjectAssetFile: vi.fn(),
     saveProjectAssetFile: vi.fn(),
     createProjectScriptResource: vi.fn(),
@@ -53,6 +56,7 @@ Object.defineProperty(window, 'api', {
     scanProjectDirectory: vi.fn().mockResolvedValue({ trackedCount: 0, removedCount: 0 }),
     copyProjectEngineCore: vi.fn().mockResolvedValue({ copiedPaths: [], skippedPaths: [] }),
     readMaxCollisionCallbacks: vi.fn().mockResolvedValue(4),
+    readMaxTagSlots: vi.fn().mockResolvedValue(5),
     buildProjectCode: vi.fn().mockResolvedValue({
       writtenFiles: [],
       saveDataEntryCount: 0,
@@ -82,6 +86,7 @@ Object.defineProperty(window, 'api', {
     finalizeDeletedProjectResource: vi.fn().mockResolvedValue(true),
     onProjectAssetSaved: vi.fn(() => () => undefined),
     onProjectScriptSaved: vi.fn(() => () => undefined),
+    onProjectTagsSaved: vi.fn(() => () => undefined),
     createProjectFolder: vi.fn(),
     renameProjectFolder: vi.fn(),
     deleteProjectFolder: vi.fn(),

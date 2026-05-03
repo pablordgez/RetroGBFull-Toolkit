@@ -1,6 +1,10 @@
 import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { basename, dirname } from 'path'
-import { loadProjectStartingScenePath, readProjectTrackedResourceBanks } from './projectMetadata'
+import {
+  loadProjectStartingScenePath,
+  loadProjectTagState,
+  readProjectTrackedResourceBanks
+} from './projectMetadata'
 import { ProjectLauncherError } from './projectLauncher'
 import { normalizeCodeIdentifierStem } from '../shared/codeIdentifiers'
 import type { BuildProjectCodeResult } from '../shared/projectCodeWorkspace'
@@ -29,6 +33,7 @@ import {
   buildManagedScriptedSceneFileContents,
   getProjectScriptHeaderPath,
   loadProjectScriptRecords,
+  readMaxTagSlots,
   removeLegacyGeneratedFiles,
   rewriteManagedProjectScriptSource,
   rewriteStartingSceneInMain,
@@ -351,10 +356,12 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
   await ensureBundledGbdkAvailableForProject(normalizedProjectPath)
 
-  // load all project resources and scripts
-  const [assets, scripts] = await Promise.all([
+  // load all project resources, scripts and tags
+  const [assets, scripts, projectTagState, maxTagSlots] = await Promise.all([
     loadProjectAssetRecords(normalizedProjectPath),
-    loadProjectScriptRecords(normalizedProjectPath)
+    loadProjectScriptRecords(normalizedProjectPath),
+    loadProjectTagState(normalizedProjectPath),
+    readMaxTagSlots(normalizedProjectPath)
   ])
 
   // stop if names/identifiers would collide in generated code
@@ -384,7 +391,9 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
   // create a scene node emitter and shared accumulators for generated output
   const emitSceneNode = createNodeEmitter(
     spriteAssetsByPath,
-    new Map(actorScripts.map((script) => [script.path, script]))
+    new Map(actorScripts.map((script) => [script.path, script])),
+    projectTagState.entries,
+    maxTagSlots
   )
   const writtenFiles: string[] = []
   const managedResourceDirectories = new Set<string>()
@@ -593,7 +602,7 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
     await writeManagedTextFile(
       normalizedProjectPath,
       'src/Actor/ActorRegistry.h',
-      buildActorRegistryHeader(actorScripts)
+      buildActorRegistryHeader(actorScripts, projectTagState.entries)
     )
   )
   writtenFiles.push(

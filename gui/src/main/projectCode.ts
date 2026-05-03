@@ -7,6 +7,7 @@ export {
   loadProjectScriptResource,
   moveProjectScriptFilesToDeletedContainer,
   readMaxCollisionCallbacks,
+  readMaxTagSlots,
   renameProjectScriptFiles,
   restoreProjectScriptFilesFromDeletedContainer,
   saveProjectScriptResource,

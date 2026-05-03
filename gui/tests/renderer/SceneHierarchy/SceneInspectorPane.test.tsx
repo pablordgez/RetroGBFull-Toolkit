@@ -167,6 +167,12 @@ const renderInspector = () => {
           actorScriptPropertyDefinitions={actorScriptPropertyDefinitions}
           collisionCallbackCandidates={collisionCallbackCandidates}
           maxCollisionCallbacks={4}
+          maxTagSlots={2}
+          projectTags={[
+            { id: 'player', name: 'Player' },
+            { id: 'friendly', name: 'Friendly' },
+            { id: 'enemy', name: 'Enemy' }
+          ]}
           onRequestActorScriptSelection={onRequestActorScriptSelection}
           onRequestSpriteSelection={onRequestSpriteSelection}
           onRequestSceneAnimationPropertySelection={onRequestSceneAnimationPropertySelection}
@@ -231,6 +237,12 @@ describe('SceneInspectorPane', () => {
       'hero-node',
       'idle_animation'
     )
+
+    fireEvent.click(screen.getByLabelText('Player'))
+    fireEvent.click(screen.getByLabelText('Friendly'))
+    expect(screen.getByLabelText('Player')).toBeChecked()
+    expect(screen.getByLabelText('Friendly')).toBeChecked()
+    expect(screen.getByLabelText('Enemy')).toBeDisabled()
 
     const followCameraCheckbox = screen.getByLabelText('Follow camera')
     fireEvent.click(followCameraCheckbox)

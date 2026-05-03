@@ -3,6 +3,7 @@ import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 import { MANAGED_DEFAULT_ACTOR_IDENTIFIER } from './projectSceneCodeEmitter'
 import type { ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
+import { buildProjectTagEnumName, type ProjectTagEntry } from '../shared/projectTags'
 import type {
   SpriteAssetDocument,
   TilemapAssetDocument,
@@ -681,7 +682,10 @@ export const buildMapRegistryFiles = (
 }
 
 // build the actor registry header
-export const buildActorRegistryHeader = (actorScripts: ProjectScriptRecordResolved[]): string => {
+export const buildActorRegistryHeader = (
+  actorScripts: ProjectScriptRecordResolved[],
+  projectTags: ProjectTagEntry[] = []
+): string => {
   const actors = [
     { identifier: MANAGED_DEFAULT_ACTOR_IDENTIFIER },
     ...actorScripts.map((script) => ({ identifier: script.identifier }))
@@ -723,6 +727,7 @@ export const buildActorRegistryHeader = (actorScripts: ProjectScriptRecordResolv
     '',
     'typedef enum {',
     '    TAG_NONE,',
+    ...projectTags.map((tag) => `    ${buildProjectTagEnumName(tag.name)},`),
     '} Tags;',
     '',
     '#endif // ACTOR_REGISTRY_H',

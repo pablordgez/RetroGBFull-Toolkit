@@ -34,6 +34,7 @@ import {
   buildSceneClipboardChange,
   buildSceneNodeCreationChange,
   buildSceneNodeDeletionChange,
+  buildSceneNodeTagsChange,
   buildScenePasteChange,
   buildSceneRenameChange,
   buildSceneScriptPropertyChange,
@@ -89,6 +90,7 @@ export interface SceneDocumentEditor {
   setSceneScriptPath: (nextScriptPath: string | null) => void
   setActorResourcePath: (nodeId: string, resourcePath: string | null) => void
   setFollowedActor: (nodeId: string | null) => void
+  setNodeTags: (nodeId: string, tags: string[]) => void
   updateCollision: (
     nodeId: string,
     nextValues: Partial<
@@ -539,6 +541,23 @@ export const useSceneDocumentEditor = ({
     [commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
+  const setNodeTags = useCallback(
+    (nodeId: string, tags: string[]) => {
+      if (!scene || editingNode) {
+        return
+      }
+
+      const tagChange = buildSceneNodeTagsChange(documentSnapshot.nodes, nodeId, tags)
+
+      if (!tagChange) {
+        return
+      }
+
+      commitHistoryValues(tagChange)
+    },
+    [commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
+  )
+
   const updateCollision = useCallback(
     (
       nodeId: string,
@@ -699,6 +718,7 @@ export const useSceneDocumentEditor = ({
     setSceneScriptPath,
     setActorResourcePath,
     setFollowedActor,
+    setNodeTags,
     updateCollision,
     setCollisionCallbacks,
     clampActorsToMap,

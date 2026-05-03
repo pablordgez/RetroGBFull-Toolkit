@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
 import type { ProjectSaveDataState } from '../shared/projectSaveData'
+import type { ProjectTagState } from '../shared/projectTags'
 import type {
   BuildProjectCodeResult,
   CopyEngineCoreResult,
@@ -53,10 +54,16 @@ interface ProjectScriptSavedEventPayload {
   scriptKind: ProjectScriptKind
 }
 
+interface ProjectTagsSavedEventPayload {
+  projectPath: string
+}
+
 // Custom APIs for renderer
 const api = {
   openProjectSaveDataEditor: (projectPath: string) =>
     ipcRenderer.invoke('project:save-data:open-editor', projectPath) as Promise<boolean>,
+  openProjectTagEditor: (projectPath: string) =>
+    ipcRenderer.invoke('project:tags:open-editor', projectPath) as Promise<boolean>,
   openProjectAssetEditor: (assetType: ProjectAssetKind, projectPath: string, assetPath: string) =>
     ipcRenderer.invoke('project:assets:open-editor', assetType, projectPath, assetPath) as Promise<boolean>,
   openProjectScriptEditor: (
@@ -88,6 +95,10 @@ const api = {
       projectPath,
       saveDataState
     ) as Promise<ProjectSaveDataState>,
+  loadProjectTags: (projectPath: string) =>
+    ipcRenderer.invoke('project:tags:load', projectPath) as Promise<ProjectTagState>,
+  saveProjectTags: (projectPath: string, tagState: ProjectTagState) =>
+    ipcRenderer.invoke('project:tags:save', projectPath, tagState) as Promise<ProjectTagState>,
   loadProjectAssetFile: (projectPath: string, assetPath: string) =>
     ipcRenderer.invoke('project:assets:load', projectPath, assetPath) as Promise<ProjectAssetFilePayload>,
   saveProjectAssetFile: (projectPath: string, assetPath: string, document: ProjectAssetDocument) =>
@@ -222,6 +233,8 @@ const api = {
     ipcRenderer.invoke('project:code:copy-engine-core', projectPath) as Promise<CopyEngineCoreResult>,
   readMaxCollisionCallbacks: (projectPath: string) =>
     ipcRenderer.invoke('project:code:read-max-collision-callbacks', projectPath) as Promise<number>,
+  readMaxTagSlots: (projectPath: string) =>
+    ipcRenderer.invoke('project:code:read-max-tag-slots', projectPath) as Promise<number>,
   buildProjectCode: (projectPath: string) =>
     ipcRenderer.invoke('project:code:build', projectPath) as Promise<BuildProjectCodeResult>,
   getProjectCodeSymbolIndex: (projectPath: string) =>
@@ -278,6 +291,16 @@ const api = {
     ): void => listener(payload)
     ipcRenderer.on('project:script-saved', wrappedListener)
     return () => ipcRenderer.removeListener('project:script-saved', wrappedListener)
+  },
+  onProjectTagsSaved: (
+    listener: (payload: ProjectTagsSavedEventPayload) => void
+  ): (() => void) => {
+    const wrappedListener = (
+      _event: Electron.IpcRendererEvent,
+      payload: ProjectTagsSavedEventPayload
+    ): void => listener(payload)
+    ipcRenderer.on('project:tags-saved', wrappedListener)
+    return () => ipcRenderer.removeListener('project:tags-saved', wrappedListener)
   },
   confirmEditorClose: () => ipcRenderer.invoke('editor:confirm-close') as Promise<boolean>
 }

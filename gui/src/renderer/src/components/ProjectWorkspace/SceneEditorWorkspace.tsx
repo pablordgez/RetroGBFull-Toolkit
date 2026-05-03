@@ -1,9 +1,10 @@
-import { type ReactElement, useCallback, useEffect, useMemo, useRef } from 'react'
+import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ActorAssetDocument,
   SceneAssetDocument,
   TilemapAssetDocument
 } from '../../../../shared/projectAssets'
+import type { ProjectTagEntry } from '../../../../shared/projectTags'
 import { ProjectAssetPickerModal } from '../ProjectAssets/ProjectAssetPickerModal'
 import { ProjectScriptPickerModal } from '../ProjectAssets/ProjectScriptPickerModal'
 import type { ProjectAssetDragPayload } from '../ProjectAssets/projectAssetDrag'
@@ -49,6 +50,8 @@ export const SceneEditorWorkspace = ({
 }: SceneEditorWorkspaceProps): ReactElement => {
   const editor = useSceneDocumentEditor({ scene, onSceneChange })
   const workspaceRef = useRef<HTMLDivElement>(null)
+  const [projectTags, setProjectTags] = useState<ProjectTagEntry[]>([])
+  const [maxTagSlots, setMaxTagSlots] = useState(5)
   const {
     tilemapDocument,
     tilemapTilesetDocument,
@@ -134,6 +137,69 @@ export const SceneEditorWorkspace = ({
     [tilemapDocument]
   )
   const clampActorsToMap = editor.clampActorsToMap
+
+  const applyProjectTags = useCallback((nextTags: ProjectTagEntry[]): void => {
+    setProjectTags((currentTags) => {
+      const tagsChanged =
+        currentTags.length !== nextTags.length ||
+        nextTags.some((tag, index) => {
+          const currentTag = currentTags[index]
+          return !currentTag || currentTag.id !== tag.id || currentTag.name !== tag.name
+        })
+
+      return tagsChanged ? nextTags : currentTags
+    })
+  }, [])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadTags = async (): Promise<void> => {
+      if (!projectPath) {
+        setProjectTags([])
+        setMaxTagSlots(5)
+        return
+      }
+
+      try {
+        const [tagState, tagSlots] = await Promise.all([
+          window.api.loadProjectTags(projectPath),
+          window.api.readMaxTagSlots(projectPath)
+        ])
+
+        if (isCancelled) {
+          return
+        }
+
+        applyProjectTags(tagState.entries)
+        setMaxTagSlots((currentTagSlots) => (currentTagSlots === tagSlots ? currentTagSlots : tagSlots))
+      } catch (error) {
+        console.error('[scene-editor] load tags failed', error)
+      }
+    }
+
+    void loadTags()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [applyProjectTags, projectPath])
+
+  useEffect(() => {
+    if (!projectPath) {
+      return
+    }
+
+    return window.api.onProjectTagsSaved((payload) => {
+      if (payload.projectPath !== projectPath) {
+        return
+      }
+
+      void window.api.loadProjectTags(projectPath).then((tagState) => {
+        applyProjectTags(tagState.entries)
+      })
+    })
+  }, [applyProjectTags, projectPath])
 
   useEffect(() => {
     clampActorsToMap(tilemapSize)
@@ -277,6 +343,8 @@ export const SceneEditorWorkspace = ({
               isCollisionCallbackPickerLoading={isCollisionCallbackPickerLoading}
               collisionCallbackPickerErrorMessage={collisionCallbackPickerErrorMessage}
               maxCollisionCallbacks={maxCollisionCallbacks}
+              maxTagSlots={maxTagSlots}
+              projectTags={projectTags}
               onRequestTilemapSelection={() => {
                 openPicker({ mode: 'tilemap' })
               }}
@@ -445,8 +513,7 @@ export const SceneEditorWorkspace = ({
           <div className="editor-modal" role="dialog" aria-modal="true">
             <h2>Save &quot;{pendingActorSaveChoice.actorName}&quot;?</h2>
             <p className="editor-modal-copy">
-              This actor came from &quot;{pendingActorSaveChoice.existingResourcePath}&quot;. You
-              can overwrite that actor resource or save a new one in /
+              Overwrite &quot;{pendingActorSaveChoice.existingResourcePath}&quot; or save a new actor in /
               {resourceManagerCurrentPath || ''}.
             </p>
 

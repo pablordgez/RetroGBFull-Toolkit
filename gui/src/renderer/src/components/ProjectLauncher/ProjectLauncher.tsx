@@ -205,10 +205,7 @@ export const ProjectLauncher = () => {
             <section className="launcher-panel launcher-panel--hero">
                 <div className="launcher-brand">
                     <p className="launcher-eyebrow">RetroGBFull Toolkit</p>
-                    <h1 className="launcher-title">Project Startup</h1>
-                    <p className="launcher-copy">
-                        Start a new workspace, browse to an existing one, or jump back into a recent project.
-                    </p>
+                    <h1 className="launcher-title">PROJECTS</h1>
                 </div>
 
                 {statusMessage && (
@@ -276,7 +273,7 @@ export const ProjectLauncher = () => {
                             <span>{selectedProject.path}</span>
                         </>
                     ) : (
-                        'Select a recent project to enable Load.'
+                        'No project selected.'
                     )}
                 </div>
             </section>

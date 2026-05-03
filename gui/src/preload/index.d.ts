@@ -1,6 +1,7 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
 import type { ProjectSaveDataState } from '../shared/projectSaveData'
+import type { ProjectTagState } from '../shared/projectTags'
 import type {
   BuildProjectCodeResult,
   CopyEngineCoreResult,
@@ -52,11 +53,16 @@ interface ProjectScriptSavedEventPayload {
   scriptKind: ProjectScriptKind
 }
 
+interface ProjectTagsSavedEventPayload {
+  projectPath: string
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
     api: {
       openProjectSaveDataEditor: (projectPath: string) => Promise<boolean>
+      openProjectTagEditor: (projectPath: string) => Promise<boolean>
       openProjectScriptEditor: (
         projectPath: string,
         resourcePath: string,
@@ -79,6 +85,11 @@ declare global {
         projectPath: string,
         saveDataState: ProjectSaveDataState
       ) => Promise<ProjectSaveDataState>
+      loadProjectTags: (projectPath: string) => Promise<ProjectTagState>
+      saveProjectTags: (
+        projectPath: string,
+        tagState: ProjectTagState
+      ) => Promise<ProjectTagState>
       loadProjectAssetFile: (projectPath: string, assetPath: string) => Promise<ProjectAssetFilePayload>
       saveProjectAssetFile: (
         projectPath: string,
@@ -149,6 +160,7 @@ declare global {
       scanProjectDirectory: (projectPath: string) => Promise<ProjectDirectoryScanResult>
       copyProjectEngineCore: (projectPath: string) => Promise<CopyEngineCoreResult>
       readMaxCollisionCallbacks: (projectPath: string) => Promise<number>
+      readMaxTagSlots: (projectPath: string) => Promise<number>
       buildProjectCode: (projectPath: string) => Promise<BuildProjectCodeResult>
       getProjectCodeSymbolIndex: (projectPath: string) => Promise<ProjectCodeSymbolIndex>
       getProjectCodeWorkspaceSnapshot: (projectPath: string) => Promise<ProjectCodeWorkspaceSnapshot>
@@ -170,6 +182,9 @@ declare global {
       ) => () => void
       onProjectScriptSaved: (
         listener: (payload: ProjectScriptSavedEventPayload) => void
+      ) => () => void
+      onProjectTagsSaved: (
+        listener: (payload: ProjectTagsSavedEventPayload) => void
       ) => () => void
       confirmEditorClose: () => Promise<boolean>
     }

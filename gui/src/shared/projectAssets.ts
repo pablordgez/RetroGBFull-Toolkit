@@ -24,6 +24,7 @@ export interface SceneAssetActorNode extends BaseSceneAssetNode {
   resourcePath?: string | null
   scriptPath?: string | null
   scriptProperties?: ScriptPropertyMap
+  tags?: string[]
   x: number
   y: number
   followCamera: boolean
@@ -36,6 +37,7 @@ export interface SceneAssetCollisionNode extends BaseSceneAssetNode {
   width: number
   height: number
   isBlocking: boolean
+  tags?: string[]
   callbacks: SceneAssetCollisionCallback[]
 }
 
@@ -315,6 +317,15 @@ const isStringArray = (value: unknown): value is string[] => {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
 }
 
+const normalizeSceneNodeTags = (value: unknown): string[] | undefined => {
+  if (!isStringArray(value)) {
+    return undefined
+  }
+
+  const tags = [...new Set(value.filter((entry) => entry.trim().length > 0))]
+  return tags.length > 0 ? tags : undefined
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null
 }
@@ -445,6 +456,7 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
       width: Number(value.width),
       height: Number(value.height),
       isBlocking: value.isBlocking,
+      ...(normalizeSceneNodeTags(value.tags) ? { tags: normalizeSceneNodeTags(value.tags) } : {}),
       callbacks: Array.isArray(value.callbacks)
         ? value.callbacks.flatMap((callback): SceneAssetCollisionCallback[] => {
             if (
@@ -486,6 +498,7 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
     ...(normalizeScriptProperties(value.scriptProperties)
       ? { scriptProperties: normalizeScriptProperties(value.scriptProperties) }
       : {}),
+    ...(normalizeSceneNodeTags(value.tags) ? { tags: normalizeSceneNodeTags(value.tags) } : {}),
     x: Number.isInteger(value.x) ? Number(value.x) : 0,
     y: Number.isInteger(value.y) ? Number(value.y) : 0,
     followCamera: typeof value.followCamera === 'boolean' ? value.followCamera : false
@@ -522,6 +535,7 @@ const serializeSceneAssetNode = (
       width: node.width,
       height: node.height,
       isBlocking: node.isBlocking,
+      ...(node.tags && node.tags.length > 0 ? { tags: node.tags } : {}),
       callbacks: callbacks.map((callback) => ({
         scriptPath: callback.scriptPath,
         functionName: callback.functionName
@@ -549,6 +563,7 @@ const serializeSceneAssetNode = (
     ...(node.scriptProperties && Object.keys(node.scriptProperties).length > 0
       ? { scriptProperties: node.scriptProperties }
       : {}),
+    ...(node.tags && node.tags.length > 0 ? { tags: node.tags } : {}),
     x: node.x,
     y: node.y,
     followCamera: node.followCamera,

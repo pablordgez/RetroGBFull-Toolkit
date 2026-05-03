@@ -3,7 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadProjectAssetFile, saveProjectAssetFile } from '../../src/main/projectAssetFiles'
-import { saveProjectSaveDataState } from '../../src/main/projectMetadata'
+import { saveProjectSaveDataState, saveProjectTagState } from '../../src/main/projectMetadata'
 import { createProjectStructure } from '../../src/main/projectLauncher'
 import { normalizeCodeIdentifierStem } from '../../src/shared/codeIdentifiers'
 import {
@@ -633,6 +633,74 @@ describe('projectCode collision callback helpers', () => {
     expect(roomSceneSource).toContain('// BEGIN GENERATED SCENE INITIALIZATION')
     expect(roomSceneSource).toContain('set_scene_map(maps[dungeon]);')
     await expect(stat(projectBindingsPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('emits project tags into the actor registry and generated scene initialization', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const scene = await createProjectResource(project.path, 'scene', '', 'Room')
+    const loadedScene = await loadProjectAssetFile(project.path, scene.resourcePath)
+
+    if (loadedScene.document.kind !== 'scene') {
+      throw new Error('Expected scene document.')
+    }
+
+    await saveProjectTagState(project.path, {
+      entries: [
+        { id: 'player', name: 'Player' },
+        { id: 'hurtbox', name: 'Hurt Box' }
+      ]
+    })
+    await saveProjectAssetFile(project.path, scene.resourcePath, {
+      ...loadedScene.document,
+      nodes: [
+        {
+          id: 'hero-node',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          spritePath: null,
+          tags: ['player'],
+          x: 0,
+          y: 0,
+          followCamera: false,
+          children: [
+            {
+              id: 'hero-collision',
+              type: 'collision',
+              name: 'Hitbox',
+              isCollapsed: false,
+              x: 0,
+              y: 0,
+              width: 128,
+              height: 128,
+              isBlocking: true,
+              tags: ['hurtbox'],
+              callbacks: [],
+              children: []
+            }
+          ]
+        }
+      ]
+    })
+
+    await buildProjectCode(project.path)
+
+    const actorRegistry = await readFile(
+      join(project.path, 'src', 'Actor', 'ActorRegistry.h'),
+      'utf-8'
+    )
+    const sceneSource = await readFile(
+      join(project.path, 'src', 'CustomScenes', 'room.c'),
+      'utf-8'
+    )
+
+    expect(actorRegistry).toContain('TAG_PLAYER,')
+    expect(actorRegistry).toContain('TAG_HURT_BOX,')
+    expect(sceneSource).toContain('set_tag(TAG_PLAYER, 0);')
+    expect(sceneSource).toContain('generated_actor_1_collider->tags[0] = TAG_HURT_BOX;')
   })
 
   it('generates separate CustomScenes entries when multiple scenes share one scene script', async () => {

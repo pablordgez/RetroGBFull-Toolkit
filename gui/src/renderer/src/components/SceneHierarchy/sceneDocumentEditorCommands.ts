@@ -328,6 +328,40 @@ export const buildActorUpdateChange = (
   }
 }
 
+export const buildSceneNodeTagsChange = (
+  nodes: SceneAssetNode[],
+  nodeId: string,
+  tags: string[]
+): SceneNodeChange | null => {
+  const node = findSceneNodeById(nodes, nodeId)
+
+  if (!node || (!isSceneActorNode(node) && !isSceneCollisionNode(node))) {
+    return null
+  }
+
+  const nextTags = [...new Set(tags)]
+  const currentTags = node.tags ?? []
+  const didChange =
+    nextTags.length !== currentTags.length ||
+    nextTags.some((tagId, index) => currentTags[index] !== tagId)
+
+  if (!didChange) {
+    return null
+  }
+
+  return {
+    nodes: updateSceneNodeById(nodes, nodeId, (currentNode) =>
+      isSceneActorNode(currentNode) || isSceneCollisionNode(currentNode)
+        ? {
+            ...currentNode,
+            tags: nextTags.length > 0 ? nextTags : undefined
+          }
+        : currentNode
+    ),
+    selectedNodeId: nodeId
+  }
+}
+
 export const buildSceneScriptPropertyChange = (
   scriptProperties: ScriptPropertyMap | undefined,
   propertyName: string,

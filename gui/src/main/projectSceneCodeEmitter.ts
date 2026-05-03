@@ -6,6 +6,7 @@ import type {
   SceneAssetDocument,
   SceneAssetNode
 } from '../shared/projectAssets'
+import { buildProjectTagEnumName, type ProjectTagEntry } from '../shared/projectTags'
 
 export const MANAGED_DEFAULT_ACTOR_IDENTIFIER = 'GeneratedDefaultActor'
 
@@ -19,8 +20,23 @@ type SceneNodeEmitter = (
 // builds a function that generates code for an editor scene node and its children
 export const createNodeEmitter = (
   spriteAssetsByPath: Map<string, ProjectAssetRecordLike>,
-  actorScriptsByPath: Map<string, ProjectScriptRecordResolved>
+  actorScriptsByPath: Map<string, ProjectScriptRecordResolved>,
+  projectTags: ProjectTagEntry[] = [],
+  maxTagSlots = 5
 ): SceneNodeEmitter => {
+  // helpers to get the tag enum names from their ids
+  const tagEnumNamesById = new Map(
+    projectTags.map((tag) => [tag.id, buildProjectTagEnumName(tag.name)])
+  )
+  const getEmittableTags = (tagIds: string[] | undefined): string[] => {
+    return (tagIds ?? [])
+      .flatMap((tagId): string[] => {
+        const enumName = tagEnumNamesById.get(tagId)
+        return enumName ? [enumName] : []
+      })
+      .slice(0, maxTagSlots)
+  }
+
   // function takes a node, the variable name of its parent actor if it has one, an array to push lines of code
   // into and a counter to generate unique actor variable names
   const emitNode = (
@@ -69,6 +85,12 @@ export const createNodeEmitter = (
       lines.push(`    ${colliderVariable}->height = ${collisionNode.height};`)
       lines.push(`    ${colliderVariable}->is_blocking = ${collisionNode.isBlocking ? 1 : 0};`)
       lines.push(`    ${colliderVariable}->type = BOX_COLLIDER;`)
+
+      // set tags for the collider, if any
+      getEmittableTags(collisionNode.tags).forEach((tagName, tagIndex) => {
+        lines.push(`    ${colliderVariable}->tags[${tagIndex}] = ${tagName};`)
+      })
+
       lines.push(`    THIS_ACTOR = ${parentActorVariable ?? actorVariable};`)
       lines.push(`    set_collider(${colliderVariable});`)
 
@@ -89,6 +111,11 @@ export const createNodeEmitter = (
     lines.push(`    THIS_ACTOR = ${actorVariable};`)
     lines.push(`    actor_init_functions[${actorVariable}->type]();`)
     lines.push(`    set_actor_position(${node.x}, ${node.y});`)
+
+    // set tags for the actor, if any
+    getEmittableTags(node.tags).forEach((tagName, tagIndex) => {
+      lines.push(`    set_tag(${tagName}, ${tagIndex});`)
+    })
 
     if (node.spritePath) {
       const spriteResource = spriteAssetsByPath.get(node.spritePath)

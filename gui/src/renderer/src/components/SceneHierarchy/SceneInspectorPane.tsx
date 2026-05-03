@@ -15,6 +15,7 @@ import {
   type ScriptPropertyValue
 } from '../../../../shared/projectScriptProperties'
 import type { ProjectScriptOption } from '../ProjectAssets/projectScriptBrowser'
+import type { ProjectTagEntry } from '../../../../shared/projectTags'
 import { ProjectScriptCallbackPickerModal } from '../ProjectAssets/ProjectScriptCallbackPickerModal'
 import {
   clampSceneActorPosition,
@@ -42,6 +43,8 @@ interface SceneInspectorPaneProps {
   isCollisionCallbackPickerLoading?: boolean
   collisionCallbackPickerErrorMessage?: string | null
   maxCollisionCallbacks?: number
+  maxTagSlots?: number
+  projectTags?: ProjectTagEntry[]
   onRequestTilemapSelection?: () => void
   onRequestWindowSelection?: () => void
   onRequestSceneScriptSelection?: () => void
@@ -86,6 +89,8 @@ export const SceneInspectorPane = ({
   isCollisionCallbackPickerLoading = false,
   collisionCallbackPickerErrorMessage = null,
   maxCollisionCallbacks = 0,
+  maxTagSlots = 5,
+  projectTags = [],
   onRequestTilemapSelection = () => undefined,
   onRequestWindowSelection = () => undefined,
   onRequestSceneScriptSelection = () => undefined,
@@ -273,6 +278,62 @@ export const SceneInspectorPane = ({
     selectedActor?.scriptPath ?? null,
     'No actor script selected'
   )
+  const selectedTaggableNode = selectedActor ?? selectedCollision
+  const selectedTagIds = selectedTaggableNode?.tags ?? []
+
+  const toggleTag = (tagId: string, isSelected: boolean): void => {
+    if (!selectedTaggableNode) {
+      return
+    }
+
+    const nextTags = isSelected
+      ? [...selectedTagIds, tagId].slice(0, maxTagSlots)
+      : selectedTagIds.filter((currentTagId) => currentTagId !== tagId)
+
+    editor.setNodeTags(selectedTaggableNode.id, nextTags)
+  }
+
+  const renderTagControls = (): ReactElement | null => {
+    if (!selectedTaggableNode) {
+      return null
+    }
+
+    return (
+      <>
+        <div className="scene-inspector-pane__field">
+          <span>Tags</span>
+          <strong>
+            {selectedTagIds.length} / {maxTagSlots}
+          </strong>
+        </div>
+
+        {projectTags.length === 0 && (
+          <div className="scene-inspector-pane__hint">No project tags defined.</div>
+        )}
+
+        {projectTags.length > 0 && (
+          <div className="scene-inspector-pane__tag-list">
+            {projectTags.map((tag) => {
+              const isSelected = selectedTagIds.includes(tag.id)
+              const isDisabled = !isSelected && selectedTagIds.length >= maxTagSlots
+
+              return (
+                <label key={tag.id} className="scene-inspector-pane__tag-option">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    disabled={isDisabled}
+                    onChange={(event) => toggleTag(tag.id, event.target.checked)}
+                  />
+                  <span>{tag.name}</span>
+                </label>
+              )
+            })}
+          </div>
+        )}
+      </>
+    )
+  }
   const commitScriptProperty = (definition: ParsedScriptPropertyDefinition): void => {
     if (definition.kind !== 'integer') {
       return
@@ -556,13 +617,13 @@ export const SceneInspectorPane = ({
     >
       {!editor.canEdit && (
         <div className="scene-inspector-pane__empty">
-          Open a scene to inspect its hierarchy, scripts, and collision callbacks.
+          Open a scene to inspect it.
         </div>
       )}
 
       {editor.canEdit && showLegacyEmptyState && (
         <div className="scene-inspector-pane__empty">
-          Select an actor or collision in the hierarchy or scene view to edit its properties.
+          Select an actor or collision.
         </div>
       )}
 
@@ -714,7 +775,9 @@ export const SceneInspectorPane = ({
                 </label>
               </div>
 
-              <p className="scene-inspector-pane__hint">Positions use 1/16th-pixel precision.</p>
+              <p className="scene-inspector-pane__hint">1/16th-pixel precision.</p>
+
+              {renderTagControls()}
 
               {activeScriptPropertyDefinitions.length > 0 && (
                 <>
@@ -864,19 +927,20 @@ export const SceneInspectorPane = ({
                 </button>
               </div>
 
+              {renderTagControls()}
+
               <p className="scene-inspector-pane__hint">
-                Collision boxes use local coordinates under actor parents and scene coordinates at
-                the root.
+                Local under actors; scene coordinates at the root.
               </p>
 
               {isCollisionCallbackPickerOpen && (
                 <ProjectScriptCallbackPickerModal
                   title="Add Collision Callback"
-                  description="Choose a script, then expand it to pick one of its compatible collision callbacks."
+                  description="Pick a compatible callback."
                   candidates={availableCollisionCandidates}
                   isLoading={isCollisionCallbackPickerLoading}
                   errorMessage={collisionCallbackPickerErrorMessage}
-                  emptyMessage="No compatible callbacks were found in general, actor, or scene scripts."
+                  emptyMessage="No compatible callbacks found."
                   onRefresh={onRefreshCollisionCallbackCandidates}
                   onClose={() => {
                     setIsCollisionCallbackPickerOpen(false)

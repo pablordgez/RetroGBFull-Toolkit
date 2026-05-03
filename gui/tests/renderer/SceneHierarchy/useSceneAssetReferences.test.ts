@@ -36,6 +36,7 @@ const createEditor = (
     updateActor: vi.fn(),
     setActorResourcePath: vi.fn(),
     setFollowedActor: vi.fn(),
+    setNodeTags: vi.fn(),
     updateCollision: vi.fn(),
     clampActorsToMap: vi.fn(),
     setTilemapPath: vi.fn(),

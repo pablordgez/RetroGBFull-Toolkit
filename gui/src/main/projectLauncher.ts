@@ -123,6 +123,9 @@ const buildProjectFileContents = (projectName: string): string => {
         name: projectName,
         createdAt: new Date().toISOString(),
         startingScenePath: null,
+        tags: {
+            entries: []
+        },
         saveData: {
             entries: []
         },

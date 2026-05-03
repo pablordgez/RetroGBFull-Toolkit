@@ -14,7 +14,7 @@ export const EditorClosePrompt = ({
       <div className="editor-modal" role="dialog" aria-modal="true">
         <h2>Save changes to "{assetLabel}"?</h2>
         <p className="editor-modal-copy">
-          You have unsaved changes. Choose whether to save them before closing the editor.
+          Save before closing?
         </p>
 
         <div className="editor-modal-actions">

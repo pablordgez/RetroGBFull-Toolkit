@@ -208,6 +208,36 @@ select.scene-inspector-pane__property-input:focus {
   color: rgba(15, 56, 15, 0.72);
 }
 
+.scene-inspector-pane__tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scene-inspector-pane__tag-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  border: 2px solid rgba(15, 56, 15, 0.2);
+  background: rgba(196, 190, 187, 0.42);
+  padding: 5px 8px;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.scene-inspector-pane__tag-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-inspector-pane__tag-option input {
+  margin: 0;
+}
+
 .scene-inspector-pane__callback-list {
   display: flex;
   flex-direction: column;

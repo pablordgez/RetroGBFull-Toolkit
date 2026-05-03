@@ -182,7 +182,7 @@ export const ProjectScriptCallbackPickerModal = ({
                         >
                           <span>{candidate.functionName}</span>
                           <span className="project-script-callback-picker__function-meta">
-                            Use this callback from {group.scriptName}.
+                            {group.scriptName}
                           </span>
                         </button>
                       ))}
