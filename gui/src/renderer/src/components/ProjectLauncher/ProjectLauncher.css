@@ -192,6 +192,35 @@
     margin-bottom: 4px;
 }
 
+.launcher-gbdk-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border: 3px solid #0f380f;
+    background-color: #c4bebb;
+    padding: 14px;
+    line-height: 1.4;
+}
+
+.launcher-gbdk-card--missing {
+    background-color: #c98364;
+    color: #2f130c;
+}
+
+.launcher-gbdk-card strong {
+    font-size: 1.15rem;
+}
+
+.launcher-gbdk-card span {
+    word-break: break-word;
+    opacity: 0.86;
+}
+
+.launcher-gbdk-card button {
+    margin-top: 4px;
+    align-self: flex-start;
+}
+
 .launcher-modal-backdrop {
     position: fixed;
     inset: 0;

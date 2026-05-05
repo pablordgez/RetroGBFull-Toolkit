@@ -25,6 +25,16 @@ describe('<ProjectLauncher />', () => {
     beforeEach(() => {
         vi.mocked(window.api.getRecentProjects).mockReset();
         vi.mocked(window.api.getRecentProjects).mockResolvedValue([]);
+        vi.mocked(window.api.getGbdkToolchainStatus).mockReset();
+        vi.mocked(window.api.getGbdkToolchainStatus).mockResolvedValue({
+            installed: true,
+            installPath: '/toolchains/gbdk',
+            executablePath: '/toolchains/gbdk/bin/lcc',
+            version: null,
+            source: 'development-root',
+            message: 'GBDK is available at /toolchains/gbdk.'
+        });
+        vi.mocked(window.api.installLatestGbdkToolchain).mockReset();
         vi.mocked(window.api.pickProjectParentDirectory).mockReset();
         vi.mocked(window.api.pickProjectParentDirectory).mockResolvedValue(null);
         vi.mocked(window.api.createProject).mockReset();
@@ -127,6 +137,41 @@ describe('<ProjectLauncher />', () => {
 
         expect(await screen.findByRole('status')).toHaveTextContent(
             'Something went wrong while opening the project. Please try again.'
+        );
+    });
+
+    it('shows the missing GBDK card and installs from the launcher', async () => {
+        vi.mocked(window.api.getGbdkToolchainStatus).mockResolvedValue({
+            installed: false,
+            installPath: '/toolchains/gbdk',
+            executablePath: '/toolchains/gbdk/bin/lcc',
+            version: null,
+            source: 'runtime-managed',
+            message: 'GBDK was not found at /toolchains/gbdk.'
+        });
+        vi.mocked(window.api.installLatestGbdkToolchain).mockResolvedValue({
+            installed: true,
+            installPath: '/toolchains/gbdk',
+            executablePath: '/toolchains/gbdk/bin/lcc',
+            version: 'gbdk-4.5.0',
+            source: 'runtime-managed',
+            message: 'Installed gbdk-4.5.0 to /toolchains/gbdk.',
+            releaseTag: 'gbdk-4.5.0',
+            assetName: 'gbdk-win64.zip',
+            replacedExisting: false
+        });
+
+        render(<ProjectLauncher />);
+
+        expect(await screen.findByText('Missing')).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Install GBDK' }));
+
+        await waitFor(() => {
+            expect(window.api.installLatestGbdkToolchain).toHaveBeenCalledTimes(1);
+        });
+        expect(await screen.findByRole('status')).toHaveTextContent(
+            'Installed gbdk-4.5.0 from gbdk-win64.zip.'
         );
     });
 });

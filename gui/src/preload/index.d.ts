@@ -1,5 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
+import type { GbdkInstallResult, GbdkToolchainStatus } from '../shared/projectGbdk'
 import type { ProjectSaveDataState } from '../shared/projectSaveData'
 import type { ProjectTagState } from '../shared/projectTags'
 import type {
@@ -80,6 +81,8 @@ declare global {
       closeCurrentProject: () => Promise<boolean>
       openProjectInFileExplorer: (projectPath: string) => Promise<boolean>
       getRecentProjects: () => Promise<RecentProject[]>
+      getGbdkToolchainStatus: () => Promise<GbdkToolchainStatus>
+      installLatestGbdkToolchain: () => Promise<GbdkInstallResult>
       loadProjectSaveData: (projectPath: string) => Promise<ProjectSaveDataState>
       saveProjectSaveData: (
         projectPath: string,

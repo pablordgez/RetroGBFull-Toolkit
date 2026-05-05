@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
+import type { GbdkInstallResult, GbdkToolchainStatus } from '../shared/projectGbdk'
 import type { ProjectSaveDataState } from '../shared/projectSaveData'
 import type { ProjectTagState } from '../shared/projectTags'
 import type {
@@ -87,6 +88,9 @@ const api = {
   openProjectInFileExplorer: (projectPath: string) =>
     ipcRenderer.invoke('project:open-in-file-explorer', projectPath) as Promise<boolean>,
   getRecentProjects: () => ipcRenderer.invoke('project:list-recent') as Promise<RecentProject[]>,
+  getGbdkToolchainStatus: () => ipcRenderer.invoke('gbdk:status') as Promise<GbdkToolchainStatus>,
+  installLatestGbdkToolchain: () =>
+    ipcRenderer.invoke('gbdk:install-latest') as Promise<GbdkInstallResult>,
   loadProjectSaveData: (projectPath: string) =>
     ipcRenderer.invoke('project:save-data:load', projectPath) as Promise<ProjectSaveDataState>,
   saveProjectSaveData: (projectPath: string, saveDataState: ProjectSaveDataState) =>

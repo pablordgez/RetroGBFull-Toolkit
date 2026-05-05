@@ -76,6 +76,25 @@ describe('<ProjectWorkspace />', () => {
     vi.clearAllMocks()
     vi.mocked(window.api.openProjectAssetEditor).mockResolvedValue(true)
     vi.mocked(window.api.getRecentProjects).mockResolvedValue([])
+    vi.mocked(window.api.getGbdkToolchainStatus).mockResolvedValue({
+      installed: true,
+      installPath: '/toolchains/gbdk',
+      executablePath: '/toolchains/gbdk/bin/lcc',
+      version: null,
+      source: 'development-root',
+      message: 'GBDK is available at /toolchains/gbdk.'
+    })
+    vi.mocked(window.api.installLatestGbdkToolchain).mockResolvedValue({
+      installed: true,
+      installPath: '/toolchains/gbdk',
+      executablePath: '/toolchains/gbdk/bin/lcc',
+      version: 'gbdk-4.5.0',
+      source: 'development-root',
+      message: 'Installed gbdk-4.5.0 to /toolchains/gbdk.',
+      releaseTag: 'gbdk-4.5.0',
+      assetName: 'gbdk-win64.zip',
+      replacedExisting: false
+    })
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'MockProject',
       projectPath: '/projects/MockProject',
@@ -109,6 +128,38 @@ describe('<ProjectWorkspace />', () => {
     expect(screen.getByTestId('project-workspace-surface')).toBeInTheDocument()
     expect(screen.getByTestId('resource-management-pane')).toBeInTheDocument()
     expect(screen.getByText('Create or load a new scene to start working')).toBeInTheDocument()
+  })
+
+  it('shows the missing GBDK banner and installs from the Code menu', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: []
+    })
+    vi.mocked(window.api.getGbdkToolchainStatus).mockResolvedValue({
+      installed: false,
+      installPath: '/toolchains/gbdk',
+      executablePath: '/toolchains/gbdk/bin/lcc',
+      version: null,
+      source: 'runtime-managed',
+      message: 'GBDK was not found at /toolchains/gbdk.'
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    expect(await screen.findByText('GBDK is missing')).toBeInTheDocument()
+
+    openCodeMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Install GBDK' }))
+
+    await waitFor(() => {
+      expect(window.api.installLatestGbdkToolchain).toHaveBeenCalledTimes(1)
+    })
+    expect(await screen.findByText('Installed gbdk-4.5.0 from gbdk-win64.zip.')).toBeInTheDocument()
   })
 
   it('opens a project from the integrated project menu', async () => {

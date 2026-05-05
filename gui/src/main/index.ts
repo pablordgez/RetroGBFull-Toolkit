@@ -56,6 +56,7 @@ import {
   readMaxTagSlots,
   saveProjectScriptResource
 } from './projectCode'
+import { getGbdkToolchainStatus, installLatestGbdkToolchain } from './projectGbdk'
 import { getProjectCodeWorkspaceSnapshot } from './projectCodeLanguageService'
 import { getProjectCodeSymbolIndex } from './projectCodeIntelligence'
 import { PROJECT_SCRIPT_LABELS, ProjectScriptKind, getProjectScriptDisplayName } from '../shared/projectScripts'
@@ -416,6 +417,10 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  if (!is.dev && !process.env['RETROGBFULL_RUNTIME_GBDK_PATH']) {
+    process.env['RETROGBFULL_RUNTIME_GBDK_PATH'] = join(app.getPath('userData'), 'gbdk')
+  }
+
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
@@ -772,6 +777,14 @@ ipcMain.handle('project:code:symbol-index', async (_, projectPath: string) => {
 
 ipcMain.handle('project:code:workspace-snapshot', async (_, projectPath: string) => {
   return getProjectCodeWorkspaceSnapshot(projectPath)
+})
+
+ipcMain.handle('gbdk:status', async () => {
+  return getGbdkToolchainStatus()
+})
+
+ipcMain.handle('gbdk:install-latest', async () => {
+  return installLatestGbdkToolchain()
 })
 
 ipcMain.handle('editor:confirm-close', async (event) => {

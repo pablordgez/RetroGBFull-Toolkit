@@ -70,6 +70,31 @@
   color: #0f380f;
 }
 
+.project-workspace__gbdk-banner {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 3px solid #0f380f;
+  padding: 12px 14px;
+  background-color: #c98364;
+  color: #2f130c;
+  box-shadow: inset 0 0 0 2px rgba(15, 56, 15, 0.08);
+}
+
+.project-workspace__gbdk-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-workspace__gbdk-copy span {
+  word-break: break-word;
+}
+
 .project-workspace__layout {
   width: 100%;
   box-sizing: border-box;
@@ -167,6 +192,11 @@
   .project-workspace__project-summary {
     align-items: flex-start;
     text-align: left;
+  }
+
+  .project-workspace__gbdk-banner {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .project-workspace__project-summary strong,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import '../style/SpriteEditor.css';
 import './ProjectLauncher.css';
+import type { GbdkToolchainStatus } from '../../../../shared/projectGbdk';
 
 type StatusTone = 'success' | 'error' | 'info';
 
@@ -50,6 +51,8 @@ export const ProjectLauncher = () => {
     const [statusMessage, setStatusMessage] = useState<StatusMessage | null>(null);
     const [createDraft, setCreateDraft] = useState<CreateProjectDraft | null>(null);
     const [isBusy, setIsBusy] = useState(false);
+    const [gbdkStatus, setGbdkStatus] = useState<GbdkToolchainStatus | null>(null);
+    const [isInstallingGbdk, setIsInstallingGbdk] = useState(false);
 
     const showError = (text: string) => {
         setStatusMessage({
@@ -82,6 +85,18 @@ export const ProjectLauncher = () => {
 
     useEffect(() => {
         void loadRecentProjects();
+    }, []);
+
+    useEffect(() => {
+        const loadGbdkStatus = async () => {
+            try {
+                setGbdkStatus(await window.api.getGbdkToolchainStatus());
+            } catch (error) {
+                console.error('[project-launcher] getGbdkToolchainStatus failed', error);
+            }
+        };
+
+        void loadGbdkStatus();
     }, []);
 
     const applyActionResponse = async (response: ProjectActionResponse) => {
@@ -198,6 +213,24 @@ export const ProjectLauncher = () => {
         await handleLoadProject(selectedProjectPath);
     };
 
+    const handleInstallGbdk = async () => {
+        setIsInstallingGbdk(true);
+
+        try {
+            const result = await window.api.installLatestGbdkToolchain();
+            setGbdkStatus(result);
+            setStatusMessage({
+                tone: 'success',
+                text: `Installed ${result.releaseTag} from ${result.assetName}.`
+            });
+        } catch (error) {
+            console.error('[project-launcher] installLatestGbdkToolchain failed', error);
+            showError(error instanceof Error ? error.message : 'Something went wrong while installing GBDK.');
+        } finally {
+            setIsInstallingGbdk(false);
+        }
+    };
+
     const selectedProject = recentProjects.find((project) => project.path === selectedProjectPath) ?? null;
 
     return (
@@ -215,16 +248,37 @@ export const ProjectLauncher = () => {
                 )}
 
                 <div className="launcher-action-group">
-                    <button type="button" onClick={handleCreateClick} disabled={isBusy}>
+                    <button type="button" onClick={handleCreateClick} disabled={isBusy || isInstallingGbdk}>
                         Create
                     </button>
-                    <button type="button" onClick={handleOpenClick} disabled={isBusy}>
+                    <button type="button" onClick={handleOpenClick} disabled={isBusy || isInstallingGbdk}>
                         Open...
                     </button>
-                    <button type="button" onClick={handleLoadClick} disabled={isBusy || !selectedProjectPath}>
+                    <button
+                        type="button"
+                        onClick={handleLoadClick}
+                        disabled={isBusy || isInstallingGbdk || !selectedProjectPath}
+                    >
                         Load
                     </button>
+                    <button type="button" onClick={handleInstallGbdk} disabled={isBusy || isInstallingGbdk}>
+                        {isInstallingGbdk ? 'Installing GBDK...' : 'Install / Reinstall GBDK'}
+                    </button>
                 </div>
+
+                {gbdkStatus && (
+                    <div className={`launcher-gbdk-card${gbdkStatus.installed ? '' : ' launcher-gbdk-card--missing'}`}>
+                        <p className="launcher-eyebrow">GBDK Toolchain</p>
+                        <strong>{gbdkStatus.installed ? 'Ready' : 'Missing'}</strong>
+                        <span>{gbdkStatus.installPath}</span>
+                        {gbdkStatus.version && <span>Version {gbdkStatus.version}</span>}
+                        {!gbdkStatus.installed && (
+                            <button type="button" onClick={handleInstallGbdk} disabled={isBusy || isInstallingGbdk}>
+                                {isInstallingGbdk ? 'Installing GBDK...' : 'Install GBDK'}
+                            </button>
+                        )}
+                    </div>
+                )}
             </section>
 
             <section className="launcher-panel launcher-panel--recent">

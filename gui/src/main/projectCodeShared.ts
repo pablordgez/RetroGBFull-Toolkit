@@ -2,6 +2,7 @@ import { cp, mkdir, readdir, rm, stat } from 'fs/promises'
 import { dirname, join, resolve } from 'path'
 import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
 import { resolvePathWithinProject as resolveProjectResourcePath } from './projectResourcePaths'
+import type { GbdkToolchainSource } from '../shared/projectGbdk'
 
 export const IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES = new Set(['deleted-resources'])
 export const INTERNAL_GENERATION_DIRECTORY = '.retrogbfull'
@@ -37,8 +38,24 @@ export const getBundledCorePath = (): string => {
   return resolve(__dirname, '../../../core')
 }
 
+export const getBundledGbdkSource = (): GbdkToolchainSource => {
+  if (process.env['RETROGBFULL_BUNDLED_GBDK_PATH']) {
+    return 'override'
+  }
+
+  if (process.env['RETROGBFULL_RUNTIME_GBDK_PATH']) {
+    return 'runtime-managed'
+  }
+
+  return 'development-root'
+}
+
 export const getBundledGbdkPath = (): string => {
-  return process.env['RETROGBFULL_BUNDLED_GBDK_PATH'] ?? resolve(__dirname, '../../../gbdk')
+  return (
+    process.env['RETROGBFULL_BUNDLED_GBDK_PATH'] ??
+    process.env['RETROGBFULL_RUNTIME_GBDK_PATH'] ??
+    resolve(__dirname, '../../../gbdk')
+  )
 }
 
 // recursively walks through a directory and returns relative paths of all files and directories inside

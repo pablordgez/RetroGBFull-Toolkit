@@ -8,6 +8,7 @@ import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt'
 import { SceneEditorWorkspace } from './SceneEditorWorkspace'
 import { useSceneWorkspaceSession } from './useSceneWorkspaceSession'
 import './ProjectWorkspace.css'
+import type { GbdkToolchainStatus } from '../../../../shared/projectGbdk'
 
 interface RecentProject {
   name: string
@@ -70,6 +71,8 @@ export const ProjectWorkspace = (): ReactElement => {
   const [resourceManagerCurrentPath, setResourceManagerCurrentPath] = useState('')
   const [statusMessage, setStatusMessage] = useState<WorkspaceStatus | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const [gbdkStatus, setGbdkStatus] = useState<GbdkToolchainStatus | null>(null)
+  const [isInstallingGbdk, setIsInstallingGbdk] = useState(false)
 
   const showStatus = (tone: WorkspaceStatusTone, text: string): void => {
     setStatusMessage({ tone, text })
@@ -109,6 +112,18 @@ export const ProjectWorkspace = (): ReactElement => {
   useEffect(() => {
     void loadRecentProjects()
   }, [loadRecentProjects])
+
+  useEffect(() => {
+    const loadGbdkStatus = async () => {
+      try {
+        setGbdkStatus(await window.api.getGbdkToolchainStatus())
+      } catch (error) {
+        console.error('[project-workspace] getGbdkToolchainStatus failed', error)
+      }
+    }
+
+    void loadGbdkStatus()
+  }, [projectPath])
 
   const handleOpenProject = useCallback(async () => {
     setIsBusy(true)
@@ -263,6 +278,24 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [projectPath])
 
+  const handleInstallGbdk = useCallback(async () => {
+    setIsInstallingGbdk(true)
+
+    try {
+      const result = await window.api.installLatestGbdkToolchain()
+      setGbdkStatus(result)
+      showStatus('info', `Installed ${result.releaseTag} from ${result.assetName}.`)
+    } catch (error) {
+      console.error('[project-workspace] installLatestGbdkToolchain failed', error)
+      showStatus(
+        'error',
+        error instanceof Error ? error.message : 'Something went wrong while installing GBDK.'
+      )
+    } finally {
+      setIsInstallingGbdk(false)
+    }
+  }, [])
+
   const handleOpenTagEditor = useCallback(async () => {
     if (!projectPath) {
       return
@@ -371,13 +404,22 @@ export const ProjectWorkspace = (): ReactElement => {
           {
             id: 'copy-engine-core',
             label: 'Copy Engine Core',
-            disabled: isBusy || !projectPath,
+            disabled: isBusy || isInstallingGbdk || !projectPath,
             onSelect: () => void handleCopyEngineCore()
+          },
+          {
+            id: 'install-gbdk',
+            label:
+              isInstallingGbdk || !gbdkStatus?.installed
+                ? 'Install GBDK'
+                : 'Reinstall GBDK',
+            disabled: isBusy || isInstallingGbdk,
+            onSelect: () => void handleInstallGbdk()
           },
           {
             id: 'build-project-code',
             label: 'Build Project Code',
-            disabled: isBusy || !projectPath,
+            disabled: isBusy || isInstallingGbdk || !projectPath,
             onSelect: () => void handleBuildProjectCode()
           }
         ]
@@ -387,12 +429,15 @@ export const ProjectWorkspace = (): ReactElement => {
     handleBuildProjectCode,
     handleCloseProject,
     handleCopyEngineCore,
+    handleInstallGbdk,
     handleOpenSaveDataEditor,
     handleOpenTagEditor,
     handleOpenProject,
     handleOpenProjectInExplorer,
     handleScanProjectDirectory,
+    gbdkStatus?.installed,
     isBusy,
+    isInstallingGbdk,
     loadRecentProjects,
     projectPath,
     recentProjectItems
@@ -417,6 +462,18 @@ export const ProjectWorkspace = (): ReactElement => {
           role="status"
         >
           {statusMessage.text}
+        </div>
+      )}
+
+      {gbdkStatus && !gbdkStatus.installed && (
+        <div className="project-workspace__gbdk-banner" role="status">
+          <div className="project-workspace__gbdk-copy">
+            <strong>GBDK is missing</strong>
+            <span>{gbdkStatus.installPath}</span>
+          </div>
+          <button type="button" onClick={() => void handleInstallGbdk()} disabled={isBusy || isInstallingGbdk}>
+            {isInstallingGbdk ? 'Installing GBDK...' : 'Install GBDK'}
+          </button>
         </div>
       )}
 
