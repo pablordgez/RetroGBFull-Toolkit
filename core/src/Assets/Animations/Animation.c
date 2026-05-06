@@ -23,15 +23,27 @@ void init_animation_state(AnimationState* animation_state) BANKED{
     animation_state->time_since_last_frame = 0;
 }
 
-void load_animation(uint8_t x, uint8_t y) NONBANKED{
+uint8_t load_animation(uint8_t x, uint8_t y) NONBANKED{
     const AssetEntry* entry = &animation_data[THIS_ANIMATION->animation_id];
     uint8_t prev_bank = _current_bank;
+    uint8_t sprite_tile_count = THIS_ANIMATION->width * THIS_ANIMATION->height / 64;
+    uint8_t animation_tile_count = sprite_tile_count * THIS_ANIMATION->number_of_frames;
+
     SWITCH_ROM(entry->bank);
-    THIS_ANIMATION_STATE->sprite_slot = register_space(&sprite_space_manager, THIS_ANIMATION->width * THIS_ANIMATION->height / 64);
+    THIS_ANIMATION_STATE->sprite_slot = register_space(&sprite_space_manager, sprite_tile_count);
+    if(THIS_ANIMATION_STATE->sprite_slot == SPACE_MANAGER_INVALID_SLOT){
+        SWITCH_ROM(prev_bank);
+        return 0;
+    }
     if(animation_loaded[THIS_ANIMATION->animation_id] == 0){
+        animation_tiles[THIS_ANIMATION->animation_id] = register_space(&sprite_tile_manager, animation_tile_count);
+        if(animation_tiles[THIS_ANIMATION->animation_id] == SPACE_MANAGER_INVALID_SLOT){
+            remove_spaces(&sprite_space_manager, THIS_ANIMATION_STATE->sprite_slot, sprite_tile_count);
+            SWITCH_ROM(prev_bank);
+            return 0;
+        }
         animation_loaded[THIS_ANIMATION->animation_id]++;
-        animation_tiles[THIS_ANIMATION->animation_id] = register_space(&sprite_tile_manager, THIS_ANIMATION->width * THIS_ANIMATION->height / 64);
-        set_sprite_data(animation_tiles[THIS_ANIMATION->animation_id], THIS_ANIMATION->width * THIS_ANIMATION->height * THIS_ANIMATION->number_of_frames / 64, entry->data);
+        set_sprite_data(animation_tiles[THIS_ANIMATION->animation_id], animation_tile_count, entry->data);
         if(THIS_ANIMATION->width == 8 && THIS_ANIMATION->height == 8){
             set_sprite_tile(THIS_ANIMATION_STATE->sprite_slot, animation_tiles[THIS_ANIMATION->animation_id]);
             move_sprite(THIS_ANIMATION_STATE->sprite_slot, x, y);
@@ -43,6 +55,7 @@ void load_animation(uint8_t x, uint8_t y) NONBANKED{
         animation_loaded[THIS_ANIMATION->animation_id]++;
     }
     SWITCH_ROM(prev_bank);
+    return 1;
 
 }
 
@@ -73,13 +86,16 @@ void update_animation(uint8_t x, uint8_t y) NONBANKED{
 }
 
 void unload_animation(void) BANKED{
-    remove_spaces(&sprite_space_manager, THIS_ANIMATION_STATE->sprite_slot, (THIS_ANIMATION->width * THIS_ANIMATION->height) >> 6);
+    uint8_t sprite_tile_count = THIS_ANIMATION->width * THIS_ANIMATION->height / 64;
+    uint8_t animation_tile_count = sprite_tile_count * THIS_ANIMATION->number_of_frames;
+
+    remove_spaces(&sprite_space_manager, THIS_ANIMATION_STATE->sprite_slot, sprite_tile_count);
     animation_loaded[THIS_ANIMATION->animation_id]--;
     if(animation_loaded[THIS_ANIMATION->animation_id] > 0){
         free(THIS_ANIMATION_STATE);
         return;
     }
-    remove_spaces(&sprite_tile_manager, animation_tiles[THIS_ANIMATION->animation_id], (THIS_ANIMATION->width * THIS_ANIMATION->height * THIS_ANIMATION->number_of_frames) >> 6);
+    remove_spaces(&sprite_tile_manager, animation_tiles[THIS_ANIMATION->animation_id], animation_tile_count);
     free(THIS_ANIMATION_STATE);
 }
 

@@ -14,6 +14,10 @@ void init_space_manager(SpaceManager* manager, uint8_t num_spaces) BANKED{
 }
 
 uint8_t register_space(SpaceManager* manager, uint8_t size) BANKED{
+    if(manager->spaces == (void*)0 || size == 0 || size > manager->total_spaces){
+        return SPACE_MANAGER_INVALID_SLOT;
+    }
+
     uint8_t block_start = 0;
     uint8_t consecutive_free = 0;
     for(uint8_t slot = 0; slot < manager->total_spaces; slot++){
@@ -54,12 +58,12 @@ uint8_t register_space(SpaceManager* manager, uint8_t size) BANKED{
             consecutive_free = 0;
         }
     }
-    return 0; // Not enough space
+    return SPACE_MANAGER_INVALID_SLOT; // Not enough space
 }
 
 
 void remove_spaces(SpaceManager* manager, uint8_t slot, uint8_t size) BANKED{
-    if(slot >= manager->total_spaces) {
+    if(manager->spaces == (void*)0 || slot == SPACE_MANAGER_INVALID_SLOT || slot >= manager->total_spaces) {
         return; // Invalid slot
     }
     /*
@@ -67,7 +71,7 @@ void remove_spaces(SpaceManager* manager, uint8_t slot, uint8_t size) BANKED{
         ~(1 << (slot & 7)) nos da un byte con un 0 en la posición del bit del slot y 1s en las demás posiciones
         al hacer &= con el byte en el que está el slot y un byte con un 0 en la posición del bit del slot, marcamos ese bit como libre
     */
-    for(uint8_t i = slot; i < slot + size; i++){
+    for(uint8_t i = slot; i < slot + size && i < manager->total_spaces; i++){
         /*
             i >> 3 nos da el byte en el que está el slot i
             &= es un operador AND de asignación, similar a los operadores aritméticos como +=, pero con el operador AND

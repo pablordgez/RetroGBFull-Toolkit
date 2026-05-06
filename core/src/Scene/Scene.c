@@ -111,7 +111,12 @@ void init_scene(Scene* scene) BANKED{
 }
 
 void add_actor(Actor* actor) BANKED{
-    THIS_SCENE->actors = realloc(THIS_SCENE->actors, sizeof(Actor*) * (THIS_SCENE->num_actors + 1));
+    Actor** next_actors = realloc(THIS_SCENE->actors, sizeof(Actor*) * (THIS_SCENE->num_actors + 1));
+    if(next_actors == NULL){
+        destroy_actor(actor);
+        return;
+    }
+    THIS_SCENE->actors = next_actors;
     THIS_SCENE->actors[THIS_SCENE->num_actors++] = actor;
 }
 
@@ -122,7 +127,16 @@ void remove_actor(Actor* actor) BANKED{
                 THIS_SCENE->actors[j] = THIS_SCENE->actors[j + 1];
             }
             THIS_SCENE->num_actors--;
-            THIS_SCENE->actors = realloc(THIS_SCENE->actors, sizeof(Actor*) * THIS_SCENE->num_actors);
+            destroy_actor(actor);
+            if(THIS_SCENE->num_actors == 0){
+                free(THIS_SCENE->actors);
+                THIS_SCENE->actors = NULL;
+            } else{
+                Actor** next_actors = realloc(THIS_SCENE->actors, sizeof(Actor*) * THIS_SCENE->num_actors);
+                if(next_actors != NULL){
+                    THIS_SCENE->actors = next_actors;
+                }
+            }
             break;
         }
     }
@@ -159,6 +173,10 @@ void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t*
 }
 
 void cleanup_scene(Scene* scene) BANKED{
+    THIS_SCENE = scene;
+    for(int i = 0; i < scene->num_actors; i++){
+        destroy_actor(scene->actors[i]);
+    }
     free(scene->actors);
     scene->actors = NULL;
     scene->num_actors = 0;

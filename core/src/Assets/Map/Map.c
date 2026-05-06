@@ -17,6 +17,11 @@ void load_map(uint8_t window) NONBANKED{
     SWITCH_ROM(entry->bank);
     if(THIS_MAP->num_tiles > 0 && map_loaded[THIS_MAP->id] == 1){
         uint8_t slot = register_space(&map_space_manager, THIS_MAP->num_tiles);
+        if(slot == SPACE_MANAGER_INVALID_SLOT){
+            map_loaded[THIS_MAP->id]--;
+            SWITCH_ROM(prev_bank);
+            return;
+        }
         THIS_MAP->first_tile = slot;
         if(window == 1){
             set_win_data(slot, THIS_MAP->num_tiles, THIS_MAP->tileset);

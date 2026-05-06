@@ -623,8 +623,9 @@ describe('projectCode collision callback helpers', () => {
     const projectBindingsPath = join(project.path, 'src', 'Generated', 'ProjectBindings.c')
 
     expect(mainSource).toContain('#include "CustomScenes/room.h"')
-    expect(mainSource).toContain('room ss;')
-    expect(mainSource).toContain('ss.base.type = _room;')
+    expect(mainSource).toContain('room* ss = (room*) malloc(sizeof(room));')
+    expect(mainSource).toContain('ss->base.type = _room;')
+    expect(mainSource).toContain('set_scene((Scene*) ss);')
     expect(roomLogicSource).not.toContain('// BEGIN GENERATED SCENE INITIALIZATION')
     expect(roomSceneHeader).toContain('#include "CustomScenes/RoomLogic.h"')
     expect(roomSceneHeader).toContain('typedef RoomLogic room;')

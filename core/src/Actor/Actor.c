@@ -57,10 +57,21 @@ void set_actor_animation(Animation* animation) NONBANKED{
         THIS_ACTOR->animation_state = NULL;
     }
     THIS_ACTOR->current_animation = animation;
+    if(animation == NULL){
+        return;
+    }
     THIS_ACTOR->animation_state = malloc(sizeof(AnimationState));
+    if(THIS_ACTOR->animation_state == NULL){
+        THIS_ACTOR->current_animation = NULL;
+        return;
+    }
     set_animation_context();
     init_animation_state(THIS_ACTOR->animation_state);
-    load_animation(THIS_ACTOR->x >> 4, THIS_ACTOR->y >> 4);
+    if(load_animation(THIS_ACTOR->x >> 4, THIS_ACTOR->y >> 4) == 0){
+        free(THIS_ACTOR->animation_state);
+        THIS_ACTOR->animation_state = NULL;
+        THIS_ACTOR->current_animation = NULL;
+    }
 
 } 
 
@@ -83,6 +94,9 @@ void set_animation_context(void) BANKED{
 }
 
 void draw(void) NONBANKED{
+    if(THIS_ACTOR->current_animation == NULL || THIS_ACTOR->animation_state == NULL){
+        return;
+    }
     set_animation_context();
     int16_t draw_x = (THIS_ACTOR->x >> 4) - (int16_t)camera_x;
     int16_t draw_y = (THIS_ACTOR->y >> 4) - (int16_t)camera_y;
@@ -284,4 +298,18 @@ void detach_child(Actor* child) BANKED{
             child->parent = NULL;
         }
     }
+}
+
+void destroy_actor(Actor* actor) BANKED{
+    if(actor == NULL){
+        return;
+    }
+
+    THIS_ACTOR = actor;
+    set_actor_animation(NULL);
+    set_collider(NULL);
+    actor->child = NULL;
+    actor->sibling = NULL;
+    actor->parent = NULL;
+    free(actor);
 }

@@ -532,17 +532,18 @@ export const rewriteStartingSceneInMain = async (
       STARTING_SCENE_INSTANTIATION_BEGIN,
       STARTING_SCENE_INSTANTIATION_END,
       [
-        `    ${sceneIdentifier} ss;`,
-        `    ss.base.type = _${sceneIdentifier};`,
-        '',
-        '    set_scene((Scene*) &ss);'
+        `    ${sceneIdentifier}* ss = (${sceneIdentifier}*) malloc(sizeof(${sceneIdentifier}));`,
+        '    if(ss != NULL){',
+        `        ss->base.type = _${sceneIdentifier};`,
+        '        set_scene((Scene*) ss);',
+        '    }'
       ]
     )
   } // if not present, tries to match declaration, assignment and set_scene call
   else {
     nextMainContent = nextMainContent.replace(
       /[ \t]*[A-Za-z_][A-Za-z0-9_]*\s+ss;\r?\n[ \t]*ss\.base\.type\s*=\s*_[A-Za-z_][A-Za-z0-9_]*;\r?\n(?:\r?\n)?[ \t]*set_scene\(\(Scene\*\)\s*&ss\);\r?\n/,
-      `    ${sceneIdentifier} ss;\n    ss.base.type = _${sceneIdentifier};\n\n    set_scene((Scene*) &ss);\n`
+      `    ${sceneIdentifier}* ss = (${sceneIdentifier}*) malloc(sizeof(${sceneIdentifier}));\n    if(ss != NULL){\n        ss->base.type = _${sceneIdentifier};\n        set_scene((Scene*) ss);\n    }\n`
     )
   }
 
@@ -552,7 +553,7 @@ export const rewriteStartingSceneInMain = async (
       `#include "CustomScenes/${sceneIdentifier}.h"`
     )
     const alreadyInstantiatesStartingScene = mainContent.includes(
-      `ss.base.type = _${sceneIdentifier};`
+      `ss->base.type = _${sceneIdentifier};`
     )
 
     if (!alreadyIncludesStartingScene || !alreadyInstantiatesStartingScene) {

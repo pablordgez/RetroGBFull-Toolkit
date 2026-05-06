@@ -4,6 +4,9 @@ GameManager* THIS_GAME_MANAGER;
 
 void update_game(void){
     THIS_SCENE = THIS_GAME_MANAGER->current_scene;
+    if(THIS_SCENE == NULL){
+        return;
+    }
     scene_update_functions[THIS_SCENE->type]();
 #if COLLISION_CALLBACKS_EVERY_FRAME
     run_collision_callbacks();
@@ -12,6 +15,7 @@ void update_game(void){
 
 void set_scene(Scene* scene){
     if(THIS_GAME_MANAGER->current_scene != NULL){
+        THIS_SCENE = THIS_GAME_MANAGER->current_scene;
         cleanup_scene(THIS_GAME_MANAGER->current_scene);
     }
     THIS_GAME_MANAGER->current_scene = scene;

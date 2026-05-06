@@ -1,5 +1,6 @@
 #include <gb/gb.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include "Assets/Animations/AnimationRegistry.h"
 #include "GameManager/GameManager.h"
 #include "Saves/SaveData.h"
@@ -29,10 +30,11 @@ void main(void)
     gm.current_scene = NULL;
 
     // BEGIN STARTING SCENE INSTANTIATION
-    SampleScene ss;
-    ss.base.type = _SampleScene;
-
-    set_scene((Scene*) &ss);
+    SampleScene* ss = (SampleScene*) malloc(sizeof(SampleScene));
+    if(ss != NULL){
+        ss->base.type = _SampleScene;
+        set_scene((Scene*) ss);
+    }
     // END STARTING SCENE INSTANTIATION
     enable_interrupts();
 
