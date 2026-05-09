@@ -11,6 +11,9 @@
 #define SUPDATE CONCAT(scene_update_, FILE_NAME) 
 #define SINIT CONCAT(scene_init_state_, FILE_NAME)
 
+#define false 0
+#define true 1
+
 #define SCREEN_WIDTH 160
 #define SCREEN_HEIGHT 144
 

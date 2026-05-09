@@ -10,6 +10,7 @@ import {
   RetroActorIcon,
   RetroFileIcon,
   RetroFolderIcon,
+  RetroMusicIcon,
   RetroSceneIcon,
   RetroSpriteIcon,
   RetroTilemapIcon,
@@ -114,6 +115,8 @@ export const getResourceIcon = (resource: ProjectResourceItem): ReactElement => 
       return <RetroWindowIcon className="resource-management-pane__folder-icon" />
     case 'scene':
       return <RetroSceneIcon className="resource-management-pane__folder-icon" />
+    case 'music':
+      return <RetroMusicIcon className="resource-management-pane__folder-icon" />
     default:
       return <RetroFileIcon className="resource-management-pane__folder-icon" />
   }

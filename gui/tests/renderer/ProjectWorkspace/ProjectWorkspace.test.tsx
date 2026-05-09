@@ -768,6 +768,7 @@ describe('<ProjectWorkspace />', () => {
       tilesetCount: 0,
       tilemapCount: 0,
       windowCount: 0,
+      musicCount: 0,
       sceneCount: 0,
       actorScriptCount: 0,
       sceneScriptCount: 0
@@ -793,7 +794,7 @@ describe('<ProjectWorkspace />', () => {
 
     expect(
       await screen.findByText(
-        'Built project code for 2 save entries, 1 sprites, 0 tilesets, 0 tilemaps, 0 windows, and 0 scenes.'
+        'Built project code for 2 save entries, 1 sprites, 0 tilesets, 0 tilemaps, 0 windows, 0 music assets, and 0 scenes.'
       )
     ).toBeInTheDocument()
   })

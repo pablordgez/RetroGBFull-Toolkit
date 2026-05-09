@@ -3,6 +3,7 @@ import { ProjectLauncher } from './components/ProjectLauncher/ProjectLauncher'
 import { ProjectWorkspace } from './components/ProjectWorkspace/ProjectWorkspace'
 import { SaveDataEditor } from './components/SaveDataEditor/SaveDataEditor'
 import { ScriptEditor } from './components/ScriptEditor/ScriptEditor'
+import { MusicEditor } from './components/MusicEditor/MusicEditor'
 import { SpriteEditor } from './components/SpriteEditor/SpriteEditor'
 import { TagEditor } from './components/TagEditor/TagEditor'
 import { TilesetEditor } from './components/Tileset/TilesetEditor'
@@ -19,6 +20,7 @@ function App() {
         <Route path="/script-editor" element={<ScriptEditor />} />
         <Route path="/sprite-editor" element={<SpriteEditor />} />
         <Route path="/tag-editor" element={<TagEditor />} />
+        <Route path="/music-editor" element={<MusicEditor />} />
         <Route path="/tileset-editor" element={<TilesetEditor />} />
         <Route path="/tilemap-editor" element={<TilemapEditor />} />
         <Route path="/window-editor" element={<WindowEditor />} />

@@ -5,6 +5,9 @@ import type { ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
 import { buildProjectTagEnumName, type ProjectTagEntry } from '../shared/projectTags'
 import type {
+  MusicAssetDocument,
+  MusicChannelKey,
+  MusicPattern,
   SpriteAssetDocument,
   TilemapAssetDocument,
   TilesetAssetDocument,
@@ -435,6 +438,259 @@ export const canReuseSharedTilesetForMap = (
   tileset: ProjectAssetRecordLike
 ): boolean => {
   return map.bank !== DEFAULT_PROJECT_RESOURCE_BANK && map.bank === tileset.bank
+}
+
+const MUSIC_CHANNELS: MusicChannelKey[] = ['ch1', 'ch2', 'ch4']
+
+const formatMusicStep = (noteIndex: number, instrument: number): string => {
+  return `{ .note_index = ${formatHexByte(noteIndex)}, .instrument = ${formatHexByte(instrument)} }`
+}
+
+const assertValidMusicDocument = (music: ProjectAssetRecordLike): MusicAssetDocument => {
+  const document = music.document as MusicAssetDocument
+
+  if (document.kind !== 'music') {
+    throw new ProjectLauncherError(`Music "${music.name}" has an invalid asset document.`)
+  }
+
+  if (!Number.isInteger(document.speed) || document.speed < 1 || document.speed > 255) {
+    throw new ProjectLauncherError(`Music "${music.name}" has an invalid speed.`)
+  }
+
+  if (
+    document.instruments.length > 256 ||
+    document.instruments.some(
+      (instrument) =>
+        !Number.isInteger(instrument.reg1) ||
+        instrument.reg1 < 0 ||
+        instrument.reg1 > 255 ||
+        !Number.isInteger(instrument.reg2) ||
+        instrument.reg2 < 0 ||
+        instrument.reg2 > 255 ||
+        !Number.isInteger(instrument.reg3) ||
+        instrument.reg3 < 0 ||
+        instrument.reg3 > 255
+    )
+  ) {
+    throw new ProjectLauncherError(`Music "${music.name}" has invalid instrument register values.`)
+  }
+
+  const patternIds = new Set(document.patterns.map((pattern) => pattern.id))
+
+  if (patternIds.size !== document.patterns.length) {
+    throw new ProjectLauncherError(`Music "${music.name}" has duplicate pattern ids.`)
+  }
+
+  for (const pattern of document.patterns) {
+    if (pattern.steps.some((step) => step.noteIndex > 71 && step.noteIndex !== 0xff)) {
+      throw new ProjectLauncherError(`Music "${music.name}" has a pattern step with an invalid note.`)
+    }
+
+    if (
+      pattern.steps.some(
+        (step) =>
+          step.instrument < 0 ||
+          (step.instrument >= document.instruments.length &&
+            !(
+              document.instruments.length === 0 &&
+              step.noteIndex === 0xff &&
+              step.instrument === 0
+            ))
+      )
+    ) {
+      throw new ProjectLauncherError(
+        `Music "${music.name}" has a pattern step with an invalid instrument.`
+      )
+    }
+  }
+
+  for (const channel of MUSIC_CHANNELS) {
+    const missingPatternId = document.sequence[channel].find(
+      (patternId) => patternId !== null && !patternIds.has(patternId)
+    )
+
+    if (missingPatternId) {
+      throw new ProjectLauncherError(
+        `Music "${music.name}" references a missing pattern: ${missingPatternId}`
+      )
+    }
+  }
+
+  const sequenceLength = Math.max(...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length))
+
+  if (sequenceLength < 1 || sequenceLength > 255) {
+    throw new ProjectLauncherError(`Music "${music.name}" has an invalid sequence length.`)
+  }
+
+  return document
+}
+
+const getMusicSequenceEntry = (
+  identifier: string,
+  patternsById: Map<string, MusicPattern & { index: number }>,
+  patternId: string | null | undefined
+): string => {
+  if (!patternId) {
+    return '(void*) 0'
+  }
+
+  const pattern = patternsById.get(patternId)
+  return pattern ? `&${identifier}_pattern_${pattern.index}` : '(void*) 0'
+}
+
+export const buildMusicResourceFiles = (
+  music: ProjectAssetRecordLike
+): { headerPath: string; sourcePath: string; headerContent: string; sourceContent: string } => {
+  const document = assertValidMusicDocument(music)
+  const resourceDirectory = `res/${music.identifier}`
+  const headerPath = `${resourceDirectory}/${music.identifier}.h`
+  const sourcePath = `${resourceDirectory}/${music.identifier}.c`
+  const sequenceLength = Math.max(...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length))
+  const patternsById = new Map(
+    document.patterns.map((pattern, index) => [pattern.id, { ...pattern, index }])
+  )
+
+  const headerContent = [
+    `#ifndef ${music.identifier.toUpperCase()}_H`,
+    `#define ${music.identifier.toUpperCase()}_H`,
+    '#include "Assets/Music/Music.h"',
+    '',
+    `extern const Instrument ${music.identifier}_instruments[];`,
+    ...document.patterns.map(
+      (_pattern, index) => `extern const Pattern ${music.identifier}_pattern_${index};`
+    ),
+    '',
+    `extern const Pattern* const ${music.identifier}_ch1_sequence[];`,
+    `extern const Pattern* const ${music.identifier}_ch2_sequence[];`,
+    `extern const Pattern* const ${music.identifier}_ch4_sequence[];`,
+    '',
+    `#endif /* ${music.identifier.toUpperCase()}_H */`,
+    ''
+  ].join('\n')
+
+  const instrumentLines = [
+    `const Instrument ${music.identifier}_instruments[] = {`,
+    ...(document.instruments.length > 0
+      ? document.instruments.map(
+          (instrument) =>
+            `    { .reg1 = ${formatHexByte(instrument.reg1)}, .reg2 = ${formatHexByte(instrument.reg2)}, .reg3 = ${formatHexByte(instrument.reg3)} },`
+        )
+      : ['    { .reg1 = 0x00, .reg2 = 0x00, .reg3 = 0x00 },']),
+    '};'
+  ]
+  const patternLines = document.patterns.flatMap((pattern, index) => [
+    `const Pattern ${music.identifier}_pattern_${index} = {`,
+    '    .steps = {',
+    ...pattern.steps.map(
+      (step) => `        ${formatMusicStep(step.noteIndex, step.instrument)},`
+    ),
+    '    }',
+    '};',
+    ''
+  ])
+  const sequenceLines = MUSIC_CHANNELS.flatMap((channel) => [
+    `const Pattern* const ${music.identifier}_${channel}_sequence[] = {`,
+    ...Array.from({ length: sequenceLength }, (_, index) => {
+      return `    ${getMusicSequenceEntry(
+        music.identifier,
+        patternsById,
+        document.sequence[channel][index]
+      )},`
+    }),
+    '};',
+    ''
+  ])
+  const sourceContent = [
+    `#pragma bank ${music.bank}`,
+    `#include "${music.identifier}.h"`,
+    '',
+    `BANKREF(${music.identifier}_bankref)`,
+    '',
+    ...instrumentLines,
+    '',
+    ...patternLines,
+    ...sequenceLines
+  ].join('\n')
+
+  return {
+    headerPath,
+    sourcePath,
+    headerContent,
+    sourceContent
+  }
+}
+
+export const buildSongRegistryFiles = (
+  songs: ProjectAssetRecordLike[]
+): { headerContent: string; sourceContent: string } => {
+  const includeLines = songs.map((song) => `#include "${song.identifier}/${song.identifier}.h"`)
+  const enumLines =
+    songs.length > 0
+      ? songs.map((song) => `    ${song.identifier},`)
+      : ['    NUMBER_OF_SONGS = 1']
+  const headerContent = [
+    '#ifndef SONG_REGISTRY_H',
+    '#define SONG_REGISTRY_H',
+    '',
+    '#include "Music.h"',
+    ...includeLines,
+    ...(includeLines.length > 0 ? [''] : []),
+    'typedef enum {',
+    ...enumLines,
+    ...(songs.length > 0 ? ['    NUMBER_OF_SONGS'] : []),
+    '} SongType;',
+    '',
+    'extern const Song* const songs[NUMBER_OF_SONGS];',
+    '',
+    '#endif /* SONG_REGISTRY_H */',
+    ''
+  ].join('\n')
+
+  if (songs.length === 0) {
+    return {
+      headerContent,
+      sourceContent: [
+        '#include "SongRegistry.h"',
+        '',
+        'const Song* const songs[NUMBER_OF_SONGS] = {',
+        '    (void*) 0',
+        '};',
+        ''
+      ].join('\n')
+    }
+  }
+
+  const songDefinitionLines = songs.flatMap((song) => {
+    const document = assertValidMusicDocument(song)
+    const sequenceLength = Math.max(...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length))
+
+    return [
+      `BANKREF_EXTERN(${song.identifier}_bankref)`,
+      `const Song _${song.identifier} = {`,
+      `    .bank = BANK(${song.identifier}_bankref),`,
+      `    .speed = ${formatHexByte(document.speed)},`,
+      `    .sequence_length = ${formatHexByte(sequenceLength)},`,
+      `    .instruments = ${song.identifier}_instruments,`,
+      `    .ch1_seq = ${song.identifier}_ch1_sequence,`,
+      `    .ch2_seq = ${song.identifier}_ch2_sequence,`,
+      `    .ch4_seq = ${song.identifier}_ch4_sequence`,
+      '};',
+      ''
+    ]
+  })
+
+  return {
+    headerContent,
+    sourceContent: [
+      '#include "SongRegistry.h"',
+      '',
+      ...songDefinitionLines,
+      'const Song* const songs[NUMBER_OF_SONGS] = {',
+      ...songs.map((song) => `    [${song.identifier}] = &_${song.identifier},`),
+      '};',
+      ''
+    ].join('\n')
+  }
 }
 
 // builds the animation registry

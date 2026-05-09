@@ -1,6 +1,20 @@
 import type { ScriptPropertyMap, ScriptPropertyValue } from './projectScriptProperties'
 
-export type ProjectAssetKind = 'sprite' | 'tileset' | 'tilemap' | 'window' | 'scene' | 'actor'
+export type ProjectAssetKind =
+  | 'sprite'
+  | 'tileset'
+  | 'tilemap'
+  | 'window'
+  | 'scene'
+  | 'actor'
+  | 'music'
+
+export const MUSIC_PATTERN_LENGTH = 16
+export const MUSIC_NOTE_REST = 0xff
+export const MUSIC_NOTE_COUNT = 72
+
+export type MusicChannelKey = 'ch1' | 'ch2' | 'ch4'
+export type MusicInstrumentKind = 'pulse' | 'noise'
 
 export interface SceneAssetCollisionCallback {
   scriptPath: string
@@ -105,6 +119,36 @@ export interface ActorAssetDocument {
   root: SceneAssetActorNode
 }
 
+export interface MusicInstrument {
+  name?: string
+  channelType?: MusicInstrumentKind
+  reg1: number
+  reg2: number
+  reg3: number
+}
+
+export interface MusicStep {
+  noteIndex: number
+  instrument: number
+}
+
+export interface MusicPattern {
+  id: string
+  name: string
+  channel?: MusicChannelKey
+  steps: MusicStep[]
+}
+
+export interface MusicAssetDocument {
+  kind: 'music'
+  version: 1
+  speed: number
+  loop: boolean
+  instruments: MusicInstrument[]
+  patterns: MusicPattern[]
+  sequence: Record<MusicChannelKey, Array<string | null>>
+}
+
 export type ProjectAssetDocument =
   | SpriteAssetDocument
   | TilesetAssetDocument
@@ -112,6 +156,7 @@ export type ProjectAssetDocument =
   | WindowAssetDocument
   | SceneAssetDocument
   | ActorAssetDocument
+  | MusicAssetDocument
 
 export const createDefaultSceneActorNode = (name = 'Actor'): SceneAssetActorNode => {
   return {
@@ -133,7 +178,8 @@ export const PROJECT_ASSET_EXTENSIONS: Record<ProjectAssetKind, string> = {
   tilemap: '.rgbtilemap.json',
   window: '.rgbwindow.json',
   scene: '.rgbscene.json',
-  actor: '.rgbactor.json'
+  actor: '.rgbactor.json',
+  music: '.rgbmusic.json'
 }
 
 export const PROJECT_ASSET_LABELS: Record<ProjectAssetKind, string> = {
@@ -142,7 +188,8 @@ export const PROJECT_ASSET_LABELS: Record<ProjectAssetKind, string> = {
   tilemap: 'Tilemap',
   window: 'Window',
   scene: 'Scene',
-  actor: 'Actor'
+  actor: 'Actor',
+  music: 'Music'
 }
 
 export interface WindowSplitSettings {
@@ -302,6 +349,20 @@ export const createDefaultProjectAssetDocument = (
         version: 1,
         root: createDefaultSceneActorNode()
       }
+    case 'music':
+      return {
+        kind: 'music',
+        version: 1,
+        speed: 8,
+        loop: true,
+        instruments: [],
+        patterns: [],
+        sequence: {
+          ch1: [null],
+          ch2: [null],
+          ch4: [null]
+        }
+      }
   }
 }
 
@@ -315,6 +376,46 @@ const isIntegerArray = (value: unknown): value is number[] => {
 
 const isStringArray = (value: unknown): value is string[] => {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+}
+
+const isByte = (value: unknown): value is number => {
+  return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 0xff
+}
+
+const isMusicNoteIndex = (value: unknown): value is number => {
+  return (
+    Number.isInteger(value) &&
+    ((Number(value) >= 0 && Number(value) < MUSIC_NOTE_COUNT) || Number(value) === MUSIC_NOTE_REST)
+  )
+}
+
+const isMusicStep = (value: unknown, instrumentCount: number): value is MusicStep => {
+  return (
+    isRecord(value) &&
+    isMusicNoteIndex(value.noteIndex) &&
+    Number.isInteger(value.instrument) &&
+    Number(value.instrument) >= 0 &&
+    (Number(value.instrument) < instrumentCount ||
+      (instrumentCount === 0 && Number(value.noteIndex) === MUSIC_NOTE_REST && Number(value.instrument) === 0))
+  )
+}
+
+const isMusicSequence = (
+  value: unknown,
+  patternIds: Set<string>
+): value is Record<MusicChannelKey, Array<string | null>> => {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  const channels: MusicChannelKey[] = ['ch1', 'ch2', 'ch4']
+  return channels.every((channel) => {
+    const sequence = value[channel]
+    return (
+      Array.isArray(sequence) &&
+      sequence.every((entry) => entry === null || (typeof entry === 'string' && patternIds.has(entry)))
+    )
+  })
 }
 
 const normalizeSceneNodeTags = (value: unknown): string[] | undefined => {
@@ -692,6 +793,64 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
         ...rawDocument,
         root: normalizedRootNode
       })
+    }
+    case 'music': {
+      const rawInstruments = rawDocument.instruments
+
+      if (
+        !Number.isInteger(rawDocument.speed) ||
+        Number(rawDocument.speed) < 1 ||
+        Number(rawDocument.speed) > 255 ||
+        typeof rawDocument.loop !== 'boolean' ||
+        !Array.isArray(rawInstruments) ||
+        rawInstruments.length > 256 ||
+        !rawInstruments.every(
+          (instrument) =>
+            isRecord(instrument) &&
+            (instrument.name === undefined || typeof instrument.name === 'string') &&
+            (instrument.channelType === undefined ||
+              instrument.channelType === 'pulse' ||
+              instrument.channelType === 'noise') &&
+            isByte(instrument.reg1) &&
+            isByte(instrument.reg2) &&
+            isByte(instrument.reg3)
+        ) ||
+        !Array.isArray(rawDocument.patterns)
+      ) {
+        throw new Error('The music asset file is invalid.')
+      }
+
+      const patternIds = new Set<string>()
+
+      for (const pattern of rawDocument.patterns) {
+        if (
+          !isRecord(pattern) ||
+          typeof pattern.id !== 'string' ||
+          pattern.id.trim().length === 0 ||
+          typeof pattern.name !== 'string' ||
+          (pattern.channel !== undefined &&
+            pattern.channel !== 'ch1' &&
+            pattern.channel !== 'ch2' &&
+            pattern.channel !== 'ch4') ||
+          !Array.isArray(pattern.steps) ||
+          pattern.steps.length !== MUSIC_PATTERN_LENGTH ||
+          !pattern.steps.every((step) => isMusicStep(step, rawInstruments.length))
+        ) {
+          throw new Error('The music asset file is invalid.')
+        }
+
+        if (patternIds.has(pattern.id)) {
+          throw new Error('The music asset file is invalid.')
+        }
+
+        patternIds.add(pattern.id)
+      }
+
+      if (!isMusicSequence(rawDocument.sequence, patternIds)) {
+        throw new Error('The music asset file is invalid.')
+      }
+
+      return asAssetDocument<MusicAssetDocument>(rawDocument)
     }
     default:
       throw new Error('The asset type is not supported.')

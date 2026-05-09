@@ -8,6 +8,7 @@ import {
   getProjectAssetKindFromFileName,
   normalizeWindowSplitSettings,
   type ActorAssetDocument,
+  type MusicAssetDocument,
   type SceneAssetDocument
 } from '../../src/shared/projectAssets'
 
@@ -341,8 +342,10 @@ describe('projectAssets scene parsing', () => {
   it('builds file names and resolves asset kinds and display names case-insensitively', () => {
     expect(buildProjectAssetFileName('sprite', 'Hero')).toBe('Hero.rgbsprite.json')
     expect(getProjectAssetKindFromFileName('HERO.RGBWINDOW.JSON')).toBe('window')
+    expect(getProjectAssetKindFromFileName('BATTLE.RGBMUSIC.JSON')).toBe('music')
     expect(getProjectAssetKindFromFileName('README.md')).toBeNull()
     expect(getProjectAssetDisplayName('HUD.rgbwindow.json')).toBe('HUD')
+    expect(getProjectAssetDisplayName('Battle.rgbmusic.json')).toBe('Battle')
     expect(getProjectAssetDisplayName('plain.txt')).toBe('plain.txt')
   })
 
@@ -377,6 +380,49 @@ describe('projectAssets scene parsing', () => {
         followCamera: false
       }
     })
+    expect(createDefaultProjectAssetDocument('music')).toMatchObject({
+      kind: 'music',
+      speed: 8,
+      loop: true,
+      instruments: [],
+      patterns: [],
+      sequence: {
+        ch1: [null],
+        ch2: [null],
+        ch4: [null]
+      }
+    })
+  })
+
+  it('parses and serializes music assets with engine-native patterns and sequences', () => {
+    const document = parseProjectAssetDocument({
+      kind: 'music',
+      version: 1,
+      speed: 6,
+      loop: false,
+      instruments: [
+        { name: 'Lead', reg1: 0x80, reg2: 0xf2, reg3: 0x20 },
+        { name: 'Kick', reg1: 0x3f, reg2: 0xf1, reg3: 0x23 }
+      ],
+      patterns: [
+        {
+          id: 'intro',
+          name: 'Intro',
+          steps: [
+            { noteIndex: 12, instrument: 1 },
+            ...Array.from({ length: 15 }, () => ({ noteIndex: 0xff, instrument: 0 }))
+          ]
+        }
+      ],
+      sequence: {
+        ch1: ['intro'],
+        ch2: [null],
+        ch4: ['intro']
+      }
+    }) as MusicAssetDocument
+
+    expect(document.patterns[0].steps[0]).toEqual({ noteIndex: 12, instrument: 1 })
+    expect(serializeProjectAssetDocument(document)).toContain('"kind": "music"')
   })
 
   it('parses tilemap and window assets and normalizes optional fields', () => {
@@ -417,7 +463,7 @@ describe('projectAssets scene parsing', () => {
     })
   })
 
-  it('rejects malformed sprite, tileset, tilemap, window, actor, and unsupported assets', () => {
+  it('rejects malformed sprite, tileset, tilemap, window, actor, music, and unsupported assets', () => {
     expect(() =>
       parseProjectAssetDocument({
         kind: 'sprite',
@@ -487,6 +533,35 @@ describe('projectAssets scene parsing', () => {
     expect(() =>
       parseProjectAssetDocument({
         kind: 'music',
+        version: 1
+      })
+    ).toThrow('The music asset file is invalid.')
+
+    expect(() =>
+      parseProjectAssetDocument({
+        kind: 'music',
+        version: 1,
+        speed: 6,
+        loop: true,
+        instruments: [{ reg1: 0x100, reg2: 0xf2, reg3: 0x20 }],
+        patterns: [
+          {
+            id: 'bad',
+            name: 'Bad',
+            steps: Array.from({ length: 16 }, () => ({ noteIndex: 0xff, instrument: 0 }))
+          }
+        ],
+        sequence: {
+          ch1: ['bad'],
+          ch2: [null],
+          ch4: [null]
+        }
+      })
+    ).toThrow('The music asset file is invalid.')
+
+    expect(() =>
+      parseProjectAssetDocument({
+        kind: 'shader',
         version: 1
       })
     ).toThrow('The asset type is not supported.')

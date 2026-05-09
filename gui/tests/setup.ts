@@ -83,6 +83,7 @@ Object.defineProperty(window, 'api', {
       tilesetCount: 0,
       tilemapCount: 0,
       windowCount: 0,
+      musicCount: 0,
       sceneCount: 0,
       actorScriptCount: 0,
       sceneScriptCount: 0,

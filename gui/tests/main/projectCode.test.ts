@@ -232,6 +232,70 @@ describe('projectCode collision callback helpers', () => {
     )
   })
 
+  it('generates engine-native music resources and song registry entries', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const music = await createProjectResource(project.path, 'music', '', 'Battle Theme')
+    const musicIdentifier = normalizeCodeIdentifierStem('Battle Theme')
+
+    await saveProjectAssetFile(project.path, music.resourcePath, {
+      kind: 'music',
+      version: 1,
+      speed: 6,
+      loop: true,
+      instruments: [
+        { name: 'Lead', reg1: 0x80, reg2: 0xf2, reg3: 0x20 },
+        { name: 'Noise', reg1: 0x3f, reg2: 0xf1, reg3: 0x23 }
+      ],
+      patterns: [
+        {
+          id: 'main',
+          name: 'Main',
+          steps: [
+            { noteIndex: 12, instrument: 1 },
+            ...Array.from({ length: 15 }, () => ({ noteIndex: 0xff, instrument: 0 }))
+          ]
+        }
+      ],
+      sequence: {
+        ch1: ['main'],
+        ch2: [null],
+        ch4: ['main']
+      }
+    })
+
+    const result = await buildProjectCode(project.path)
+    const musicSource = await readFile(
+      join(project.path, 'res', musicIdentifier, `${musicIdentifier}.c`),
+      'utf-8'
+    )
+    const songRegistryHeader = await readFile(
+      join(project.path, 'src', 'Assets', 'Music', 'SongRegistry.h'),
+      'utf-8'
+    )
+    const songRegistrySource = await readFile(
+      join(project.path, 'src', 'Assets', 'Music', 'SongRegistry.c'),
+      'utf-8'
+    )
+
+    expect(result.musicCount).toBe(1)
+    expect(musicSource).toContain(`const Instrument ${musicIdentifier}_instruments[]`)
+    expect(musicSource).toContain('{ .reg1 = 0x80, .reg2 = 0xF2, .reg3 = 0x20 }')
+    expect(musicSource).toContain('{ .note_index = 0x0C, .instrument = 0x01 }')
+    expect(musicSource).toContain(`const Pattern* const ${musicIdentifier}_ch2_sequence[] = {`)
+    expect(musicSource).toContain('(void*) 0')
+    expect(musicSource).not.toContain(`BANK(${musicIdentifier}_bankref)`)
+    expect(songRegistryHeader).toContain(`${musicIdentifier},`)
+    expect(songRegistryHeader).toContain(`#include "${musicIdentifier}/${musicIdentifier}.h"`)
+    expect(songRegistrySource).toContain(`BANKREF_EXTERN(${musicIdentifier}_bankref)`)
+    expect(songRegistrySource).toContain(`const Song _${musicIdentifier} = {`)
+    expect(songRegistrySource).toContain(`.bank = BANK(${musicIdentifier}_bankref)`)
+    expect(songRegistrySource).toContain(`.speed = 0x06`)
+    expect(songRegistrySource).toContain(`[${musicIdentifier}] = &_${musicIdentifier}`)
+  })
+
   it('generates a shared metasprite layout for sparse sprite frames', async () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)

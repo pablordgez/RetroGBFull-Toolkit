@@ -18,13 +18,14 @@ export type CreatableProjectResourceKind = 'folder' | ProjectAssetKind | 'script
 
 export const isBankableAssetKind = (
   value: ProjectAssetKind | 'script'
-): value is 'script' | 'sprite' | 'tileset' | 'tilemap' | 'window' => {
+): value is 'script' | 'sprite' | 'tileset' | 'tilemap' | 'window' | 'music' => {
   return (
     value === 'script' ||
     value === 'sprite' ||
     value === 'tileset' ||
     value === 'tilemap' ||
-    value === 'window'
+    value === 'window' ||
+    value === 'music'
   )
 }
 

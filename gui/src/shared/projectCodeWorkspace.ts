@@ -125,6 +125,7 @@ export interface BuildProjectCodeResult {
   tilesetCount: number
   tilemapCount: number
   windowCount: number
+  musicCount: number
   sceneCount: number
   actorScriptCount: number
   sceneScriptCount: number

@@ -1118,6 +1118,12 @@ export const ResourceManagementPane = ({
             onSelect: () => void handleCreateResource('window')
           },
           {
+            id: 'new-music',
+            label: 'Music',
+            disabled: !projectPath || isInteractionDisabled,
+            onSelect: () => void handleCreateResource('music')
+          },
+          {
             id: 'new-scene',
             label: 'Scene',
             disabled: !projectPath || isInteractionDisabled,

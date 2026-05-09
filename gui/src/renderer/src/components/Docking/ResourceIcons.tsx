@@ -137,6 +137,19 @@ export const RetroWindowIcon = ({ className }: ResourceIconProps): ReactElement 
   )
 }
 
+export const RetroMusicIcon = ({ className }: ResourceIconProps): ReactElement => {
+  return (
+    <svg className={className} viewBox="0 0 32 32" role="img" aria-hidden="true">
+      <rect x="5" y="5" width="22" height="22" fill="#c4bebb" />
+      <path d="M5 5h22v22H5V5Zm19 3H8v16h16V8Z" fill="#0f380f" />
+      <path d="M18 10h4v3h-2v7h-2V10Z" fill="#306230" />
+      <rect x="11" y="18" width="5" height="3" fill="#8bac0f" />
+      <rect x="16" y="20" width="4" height="3" fill="#8bac0f" />
+      <path d="M14 12h2v9h-2v-9Zm6 1h2v9h-2v-9Z" fill="#0f380f" />
+    </svg>
+  )
+}
+
 export const RetroFileIcon = ({ className }: ResourceIconProps): ReactElement => {
   return (
     <svg className={className} viewBox="0 0 32 32" role="img" aria-hidden="true">

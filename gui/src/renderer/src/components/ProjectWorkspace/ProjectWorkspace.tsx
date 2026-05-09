@@ -244,7 +244,7 @@ export const ProjectWorkspace = (): ReactElement => {
       const result = await window.api.buildProjectCode(projectPath)
       showStatus(
         'info',
-        `Built project code for ${result.saveDataEntryCount} save entr${result.saveDataEntryCount === 1 ? 'y' : 'ies'}, ${result.spriteCount} sprites, ${result.tilesetCount} tilesets, ${result.tilemapCount} tilemaps, ${result.windowCount} windows, and ${result.sceneCount} scenes.`
+        `Built project code for ${result.saveDataEntryCount} save entr${result.saveDataEntryCount === 1 ? 'y' : 'ies'}, ${result.spriteCount} sprites, ${result.tilesetCount} tilesets, ${result.tilemapCount} tilemaps, ${result.windowCount} windows, ${result.musicCount} music assets, and ${result.sceneCount} scenes.`
       )
       setRefreshVersion((currentVersion) => currentVersion + 1)
     } catch (error) {

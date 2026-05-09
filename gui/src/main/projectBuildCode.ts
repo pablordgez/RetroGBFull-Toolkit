@@ -47,6 +47,8 @@ import {
   buildMapRegistryFiles,
   buildMapResourceFiles,
   buildSceneRegistryHeader,
+  buildMusicResourceFiles,
+  buildSongRegistryFiles,
   buildSpriteResourceFiles,
   buildTilesetResourceFiles,
   canReuseSharedTilesetForMap
@@ -372,6 +374,7 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
   const tilesetAssets = assets.filter((asset) => asset.kind === 'tileset')
   const tilemapAssets = assets.filter((asset) => asset.kind === 'tilemap')
   const windowAssets = assets.filter((asset) => asset.kind === 'window')
+  const musicAssets = assets.filter((asset) => asset.kind === 'music')
   const sceneAssets = assets.filter((asset) => asset.kind === 'scene')
   const actorScripts = scripts.filter((script) => script.kind === 'actor')
   const sceneScripts = scripts.filter((script) => script.kind === 'scene')
@@ -567,6 +570,18 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
     )
   }
 
+  // generate music resources using the engine-native Song/Pattern/Instrument structures
+  for (const music of musicAssets) {
+    const files = buildMusicResourceFiles(music)
+    managedResourceDirectories.add(dirname(files.headerPath).replace(/\\/g, '/'))
+    writtenFiles.push(
+      await writeManagedTextFile(normalizedProjectPath, files.headerPath, files.headerContent)
+    )
+    writtenFiles.push(
+      await writeManagedTextFile(normalizedProjectPath, files.sourcePath, files.sourceContent)
+    )
+  }
+
   // regenerate registries used by runtime lookups
   const animationRegistryFiles = buildAnimationRegistryFiles(spriteAssets)
   writtenFiles.push(
@@ -612,6 +627,21 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
       buildSceneRegistryHeader(sceneRecords.map((scene) => scene.identifier))
     )
   )
+  const songRegistryFiles = buildSongRegistryFiles(musicAssets)
+  writtenFiles.push(
+    await writeManagedTextFile(
+      normalizedProjectPath,
+      'src/Assets/Music/SongRegistry.h',
+      songRegistryFiles.headerContent
+    )
+  )
+  writtenFiles.push(
+    await writeManagedTextFile(
+      normalizedProjectPath,
+      'src/Assets/Music/SongRegistry.c',
+      songRegistryFiles.sourceContent
+    )
+  )
 
   // remove stale generated files/directories that are no longer referenced
   await removeLegacyGeneratedFiles(normalizedProjectPath)
@@ -626,6 +656,7 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
     tilesetCount: tilesetAssets.length,
     tilemapCount: tilemapAssets.length,
     windowCount: windowAssets.length,
+    musicCount: musicAssets.length,
     sceneCount: sceneAssets.length,
     actorScriptCount: actorScripts.length,
     sceneScriptCount: sceneScripts.length
