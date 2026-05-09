@@ -37,6 +37,7 @@ const createScene = (): SceneAssetDocument => ({
       },
       x: 0,
       y: 0,
+      physicsMode: 'balanced',
       followCamera: false,
       children: [
         {
@@ -226,6 +227,7 @@ describe('SceneInspectorPane', () => {
     expect(screen.getByDisplayValue('3')).toBeInTheDocument()
     expect(screen.getByLabelText('active')).toBeChecked()
     expect(screen.getByText('HeroIdle')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /physics mode/i })).toHaveValue('balanced')
     expect(screen.getByRole('combobox', { name: /mood/i })).toHaveValue('MOOD_ALERT')
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Sprite' }))
@@ -269,6 +271,11 @@ describe('SceneInspectorPane', () => {
       target: { value: 'MOOD_CALM' }
     })
     expect(screen.getByRole('combobox', { name: /mood/i })).toHaveValue('MOOD_CALM')
+
+    fireEvent.change(screen.getByRole('combobox', { name: /physics mode/i }), {
+      target: { value: 'highFidelity' }
+    })
+    expect(screen.getByRole('combobox', { name: /physics mode/i })).toHaveValue('highFidelity')
   })
 
   it('shows and updates scene script properties when the scene root is selected', () => {

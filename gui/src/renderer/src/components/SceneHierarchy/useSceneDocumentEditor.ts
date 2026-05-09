@@ -79,7 +79,9 @@ export interface SceneDocumentEditor {
   pasteNodes: (targetParentId: string | null) => void
   updateActor: (
     nodeId: string,
-    nextValues: Partial<Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath' | 'scriptPath'>>
+    nextValues: Partial<
+      Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode'>
+    >
   ) => void
   setSceneScriptProperty: (propertyName: string, propertyValue: ScriptPropertyValue) => void
   setActorScriptProperty: (
@@ -422,7 +424,9 @@ export const useSceneDocumentEditor = ({
   const updateActor = useCallback(
     (
       nodeId: string,
-      nextValues: Partial<Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath' | 'scriptPath'>>
+      nextValues: Partial<
+        Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode'>
+      >
     ) => {
       if (!scene || editingNode) {
         return

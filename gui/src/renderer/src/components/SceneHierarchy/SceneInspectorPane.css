@@ -29,7 +29,8 @@
   opacity: 0.8;
 }
 
-.scene-inspector-pane__field span {
+.scene-inspector-pane__field span,
+.scene-inspector-pane__field label {
   font-size: 0.82rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;

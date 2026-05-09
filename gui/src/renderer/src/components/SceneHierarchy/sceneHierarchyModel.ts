@@ -470,6 +470,7 @@ export const buildDefaultSceneNode = (
     spritePath: null,
     x: 0,
     y: 0,
+    physicsMode: 'balanced',
     followCamera: false,
     children: []
   }

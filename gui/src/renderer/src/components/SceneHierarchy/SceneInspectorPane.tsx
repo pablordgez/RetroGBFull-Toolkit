@@ -1,9 +1,14 @@
 import { type ChangeEvent, type KeyboardEvent, type ReactElement, useEffect, useMemo, useState } from 'react'
 import type {
   SceneAssetCollisionCallback,
+  SceneActorPhysicsMode,
   SceneAssetNode
 } from '../../../../shared/projectAssets'
-import { getProjectAssetDisplayName } from '../../../../shared/projectAssets'
+import {
+  SCENE_ACTOR_PHYSICS_MODES,
+  getProjectAssetDisplayName,
+  isSceneActorPhysicsMode
+} from '../../../../shared/projectAssets'
 import type {
   ParsedScriptPropertyDefinition,
   ProjectScriptCallbackCandidate
@@ -74,6 +79,12 @@ const getPathLabel = (resourcePath: string | null, fallback: string): string => 
 
 const getScriptPropertyInputId = (propertyName: string): string => {
   return `scene-inspector-script-property-${propertyName}`
+}
+
+const SCENE_ACTOR_PHYSICS_MODE_LABELS: Record<SceneActorPhysicsMode, string> = {
+  highPerf: 'High Performance',
+  balanced: 'Balanced',
+  highFidelity: 'High Fidelity'
 }
 
 export const SceneInspectorPane = ({
@@ -731,6 +742,27 @@ export const SceneInspectorPane = ({
                 />
                 <span>Follow camera</span>
               </label>
+
+              <div className="scene-inspector-pane__field">
+                <label htmlFor="scene-inspector-actor-physics-mode">Physics Mode</label>
+                <select
+                  id="scene-inspector-actor-physics-mode"
+                  value={selectedActor.physicsMode}
+                  onChange={(event) => {
+                    const nextPhysicsMode = event.target.value
+
+                    if (isSceneActorPhysicsMode(nextPhysicsMode)) {
+                      editor.updateActor(selectedActor.id, { physicsMode: nextPhysicsMode })
+                    }
+                  }}
+                >
+                  {SCENE_ACTOR_PHYSICS_MODES.map((physicsMode) => (
+                    <option key={physicsMode} value={physicsMode}>
+                      {SCENE_ACTOR_PHYSICS_MODE_LABELS[physicsMode]}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div className="scene-inspector-pane__field">
                 <span>Scene Bounds</span>

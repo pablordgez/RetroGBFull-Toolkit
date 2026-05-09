@@ -2,6 +2,7 @@ import { ProjectLauncherError } from './projectLauncher'
 import type { ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
 import type {
+  SceneActorPhysicsMode,
   SceneAssetCollisionNode,
   SceneAssetDocument,
   SceneAssetNode
@@ -9,6 +10,12 @@ import type {
 import { buildProjectTagEnumName, type ProjectTagEntry } from '../shared/projectTags'
 
 export const MANAGED_DEFAULT_ACTOR_IDENTIFIER = 'GeneratedDefaultActor'
+
+const PHYSICS_MODE_ENUM_BY_SCENE_VALUE: Record<SceneActorPhysicsMode, string> = {
+  highPerf: 'HIGH_PERF',
+  balanced: 'BALANCED',
+  highFidelity: 'HIGH_FIDELITY'
+}
 
 type SceneNodeEmitter = (
   node: SceneAssetNode,
@@ -110,6 +117,9 @@ export const createNodeEmitter = (
     lines.push(`    ${actorVariable}->type = _${actorType};`)
     lines.push(`    THIS_ACTOR = ${actorVariable};`)
     lines.push(`    actor_init_functions[${actorVariable}->type]();`)
+    lines.push(
+      `    ${actorVariable}->physics_mode = ${PHYSICS_MODE_ENUM_BY_SCENE_VALUE[node.physicsMode]};`
+    )
     lines.push(`    set_actor_position(${node.x}, ${node.y});`)
 
     // set tags for the actor, if any

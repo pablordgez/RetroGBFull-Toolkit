@@ -730,6 +730,7 @@ describe('projectCode collision callback helpers', () => {
           tags: ['player'],
           x: 0,
           y: 0,
+          physicsMode: 'highPerf',
           followCamera: false,
           children: [
             {
@@ -764,6 +765,7 @@ describe('projectCode collision callback helpers', () => {
 
     expect(actorRegistry).toContain('TAG_PLAYER,')
     expect(actorRegistry).toContain('TAG_HURT_BOX,')
+    expect(sceneSource).toContain('generated_actor_0->physics_mode = HIGH_PERF;')
     expect(sceneSource).toContain('set_tag(TAG_PLAYER, 0);')
     expect(sceneSource).toContain('generated_actor_1_collider->tags[0] = TAG_HURT_BOX;')
   })

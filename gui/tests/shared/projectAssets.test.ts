@@ -13,7 +13,7 @@ import {
 } from '../../src/shared/projectAssets'
 
 describe('projectAssets scene parsing', () => {
-  it('parses an older scene actor without followCamera', () => {
+  it('parses an older scene actor without followCamera or physicsMode', () => {
     const document = parseProjectAssetDocument({
       kind: 'scene',
       version: 1,
@@ -35,6 +35,7 @@ describe('projectAssets scene parsing', () => {
 
     expect(document.nodes[0]).toMatchObject({
       type: 'actor',
+      physicsMode: 'balanced',
       followCamera: false
     })
   })
@@ -123,6 +124,7 @@ describe('projectAssets scene parsing', () => {
           tags: ['player', 'spawn'],
           x: 0,
           y: 0,
+          physicsMode: 'highFidelity',
           followCamera: false,
           children: [
             {
@@ -149,11 +151,13 @@ describe('projectAssets scene parsing', () => {
     }) as ActorAssetDocument
 
     expect(sceneDocument.nodes[0]).toMatchObject({ type: 'actor', tags: ['player', 'spawn'] })
+    expect(sceneDocument.nodes[0]).toMatchObject({ type: 'actor', physicsMode: 'highFidelity' })
     expect(actorDocument.root.children[0]).toMatchObject({
       type: 'collision',
       tags: ['hurtbox']
     })
     expect(serializeProjectAssetDocument(sceneDocument)).toContain('"tags"')
+    expect(serializeProjectAssetDocument(sceneDocument)).toContain('"physicsMode": "highFidelity"')
     expect(serializeProjectAssetDocument(actorDocument)).toContain('"tags"')
   })
 
@@ -377,6 +381,7 @@ describe('projectAssets scene parsing', () => {
       kind: 'actor',
       root: {
         type: 'actor',
+        physicsMode: 'balanced',
         followCamera: false
       }
     })

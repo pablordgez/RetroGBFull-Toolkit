@@ -41,6 +41,7 @@ export interface SceneAssetActorNode extends BaseSceneAssetNode {
   tags?: string[]
   x: number
   y: number
+  physicsMode: SceneActorPhysicsMode
   followCamera: boolean
 }
 
@@ -56,6 +57,16 @@ export interface SceneAssetCollisionNode extends BaseSceneAssetNode {
 }
 
 export type SceneAssetNode = SceneAssetFolderNode | SceneAssetActorNode | SceneAssetCollisionNode
+
+export type SceneActorPhysicsMode = 'highPerf' | 'balanced' | 'highFidelity'
+
+export const SCENE_ACTOR_PHYSICS_MODES: SceneActorPhysicsMode[] = [
+  'highPerf',
+  'balanced',
+  'highFidelity'
+]
+
+export const DEFAULT_SCENE_ACTOR_PHYSICS_MODE: SceneActorPhysicsMode = 'balanced'
 
 export interface SpriteAssetDocument {
   kind: 'sprite'
@@ -167,6 +178,7 @@ export const createDefaultSceneActorNode = (name = 'Actor'): SceneAssetActorNode
     spritePath: null,
     x: 0,
     y: 0,
+    physicsMode: DEFAULT_SCENE_ACTOR_PHYSICS_MODE,
     followCamera: false,
     children: []
   }
@@ -435,6 +447,14 @@ const isOptionalString = (value: unknown): value is string | null | undefined =>
   return value === undefined || value === null || typeof value === 'string'
 }
 
+export const isSceneActorPhysicsMode = (value: unknown): value is SceneActorPhysicsMode => {
+  return (
+    value === 'highPerf' ||
+    value === 'balanced' ||
+    value === 'highFidelity'
+  )
+}
+
 const isScriptPropertyValue = (value: unknown): value is ScriptPropertyValue => {
   return (
     value === null ||
@@ -602,6 +622,9 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
     ...(normalizeSceneNodeTags(value.tags) ? { tags: normalizeSceneNodeTags(value.tags) } : {}),
     x: Number.isInteger(value.x) ? Number(value.x) : 0,
     y: Number.isInteger(value.y) ? Number(value.y) : 0,
+    physicsMode: isSceneActorPhysicsMode(value.physicsMode)
+      ? value.physicsMode
+      : DEFAULT_SCENE_ACTOR_PHYSICS_MODE,
     followCamera: typeof value.followCamera === 'boolean' ? value.followCamera : false
   }
 }
@@ -667,6 +690,7 @@ const serializeSceneAssetNode = (
     ...(node.tags && node.tags.length > 0 ? { tags: node.tags } : {}),
     x: node.x,
     y: node.y,
+    physicsMode: node.physicsMode,
     followCamera: node.followCamera,
     children: childNodes.map((childNode) => serializeSceneAssetNode(childNode, includeResourcePath))
   }
