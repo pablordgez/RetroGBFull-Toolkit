@@ -281,7 +281,10 @@ export const buildActorUpdateChange = (
   nodes: SceneAssetNode[],
   nodeId: string,
   nextValues: Partial<
-    Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode'>
+    Pick<
+      SceneAssetActorNode,
+      'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode' | 'spritePaletteIndex'
+    >
   >
 ): SceneNodeChange | null => {
   const actor = findSceneNodeById(nodes, nodeId)
@@ -300,7 +303,8 @@ export const buildActorUpdateChange = (
     nextActor.y === actor.y &&
     nextActor.spritePath === actor.spritePath &&
     nextActor.scriptPath === actor.scriptPath &&
-    nextActor.physicsMode === actor.physicsMode
+    nextActor.physicsMode === actor.physicsMode &&
+    nextActor.spritePaletteIndex === actor.spritePaletteIndex
   ) {
     return null
   }
@@ -325,6 +329,7 @@ export const buildActorUpdateChange = (
         spritePath: nextActor.spritePath,
         scriptPath: nextActor.scriptPath,
         physicsMode: nextActor.physicsMode,
+        spritePaletteIndex: nextActor.spritePaletteIndex,
         followCamera: nextActor.followCamera
       }
     }),

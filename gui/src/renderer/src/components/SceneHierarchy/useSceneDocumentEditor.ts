@@ -9,6 +9,13 @@ import type {
 } from '../../../../shared/projectAssets'
 import type { ScriptPropertyValue } from '../../../../shared/projectScriptProperties'
 import {
+  areProjectPalettesEqual,
+  type SceneSpritePaletteIndex,
+  type SceneSpritePalettes,
+  normalizeProjectPalette,
+  normalizeSceneSpritePalettes
+} from '../../../../shared/projectPalettes'
+import {
   type EditingSceneNodeState,
   type SceneEditorDocumentSnapshot,
   type SceneHierarchyClipboardOperation,
@@ -57,6 +64,8 @@ export interface SceneDocumentEditor {
   sceneScriptProperties: SceneAssetDocument['scriptProperties']
   tilemapPath: string | null
   windowPath: string | null
+  spritePalettes: SceneSpritePalettes
+  backgroundPalette: string[] | null
   selectedNodeId: string | null
   selectedNode: SceneAssetNode | null
   selectedActor: SceneAssetActorNode | null
@@ -80,10 +89,19 @@ export interface SceneDocumentEditor {
   updateActor: (
     nodeId: string,
     nextValues: Partial<
-      Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode'>
+      Pick<
+        SceneAssetActorNode,
+        'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode' | 'spritePaletteIndex'
+      >
     >
   ) => void
   setSceneScriptProperty: (propertyName: string, propertyValue: ScriptPropertyValue) => void
+  setSpritePalette: (paletteIndex: SceneSpritePaletteIndex, nextPalette: string[] | null) => void
+  setBackgroundPalette: (nextPalette: string[] | null) => void
+  setActorSpritePaletteIndex: (
+    nodeId: string,
+    spritePaletteIndex: SceneSpritePaletteIndex
+  ) => void
   setActorScriptProperty: (
     nodeId: string,
     propertyName: string,
@@ -122,6 +140,8 @@ export const useSceneDocumentEditor = ({
       scriptProperties: undefined,
       tilemapPath: null,
       windowPath: null,
+      spritePalettes: [null, null],
+      backgroundPalette: null,
       nodes: []
     }
   )
@@ -149,6 +169,8 @@ export const useSceneDocumentEditor = ({
         scriptProperties: clonedSnapshot.scriptProperties,
         tilemapPath: clonedSnapshot.tilemapPath,
         windowPath: clonedSnapshot.windowPath,
+        spritePalettes: clonedSnapshot.spritePalettes,
+        backgroundPalette: clonedSnapshot.backgroundPalette,
         nodes: clonedSnapshot.nodes
       })
     },
@@ -162,6 +184,8 @@ export const useSceneDocumentEditor = ({
         scriptProperties: nextState.scriptProperties,
         tilemapPath: nextState.tilemapPath,
         windowPath: nextState.windowPath,
+        spritePalettes: nextState.spritePalettes,
+        backgroundPalette: nextState.backgroundPalette,
         nodes: nextState.nodes
       })
       setSelectedNodeId(nextState.selectedNodeId)
@@ -190,6 +214,16 @@ export const useSceneDocumentEditor = ({
           nextValues && 'windowPath' in nextValues
             ? (nextValues.windowPath ?? null)
             : documentSnapshot.windowPath,
+        spritePalettes:
+          nextValues && 'spritePalettes' in nextValues
+            ? normalizeSceneSpritePalettes(nextValues.spritePalettes)
+            : documentSnapshot.spritePalettes,
+        backgroundPalette:
+          nextValues && 'backgroundPalette' in nextValues
+            ? nextValues.backgroundPalette
+              ? normalizeProjectPalette(nextValues.backgroundPalette)
+              : null
+            : documentSnapshot.backgroundPalette,
         nodes: nextValues?.nodes ?? documentSnapshot.nodes,
         selectedNodeId:
           nextValues && 'selectedNodeId' in nextValues
@@ -206,6 +240,8 @@ export const useSceneDocumentEditor = ({
       documentSnapshot.scriptProperties,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
+      documentSnapshot.spritePalettes,
+      documentSnapshot.backgroundPalette,
       selectedNodeId
     ]
   )
@@ -340,6 +376,8 @@ export const useSceneDocumentEditor = ({
         scriptProperties: documentSnapshot.scriptProperties,
         tilemapPath: documentSnapshot.tilemapPath,
         windowPath: documentSnapshot.windowPath,
+        spritePalettes: documentSnapshot.spritePalettes,
+        backgroundPalette: documentSnapshot.backgroundPalette,
         nodes: updateSceneNodeById(documentSnapshot.nodes, nodeId, (node) => ({
           ...node,
           isCollapsed: !node.isCollapsed
@@ -352,6 +390,8 @@ export const useSceneDocumentEditor = ({
       documentSnapshot.scriptProperties,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
+      documentSnapshot.spritePalettes,
+      documentSnapshot.backgroundPalette,
       publishDocumentSnapshot,
       scene
     ]
@@ -425,7 +465,10 @@ export const useSceneDocumentEditor = ({
     (
       nodeId: string,
       nextValues: Partial<
-        Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode'>
+        Pick<
+          SceneAssetActorNode,
+          'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode' | 'spritePaletteIndex'
+        >
       >
     ) => {
       if (!scene || editingNode) {
@@ -475,6 +518,56 @@ export const useSceneDocumentEditor = ({
     [commitHistoryValues, documentSnapshot.scriptProperties, editingNode, scene]
   )
 
+  const setSpritePalette = useCallback(
+    (paletteIndex: SceneSpritePaletteIndex, nextPalette: string[] | null) => {
+      if (!scene || editingNode) {
+        return
+      }
+
+      const normalizedPalette = nextPalette ? normalizeProjectPalette(nextPalette) : null
+      const currentPalette = documentSnapshot.spritePalettes[paletteIndex]
+
+      if (
+        (!currentPalette && !normalizedPalette) ||
+        areProjectPalettesEqual(currentPalette, normalizedPalette)
+      ) {
+        return
+      }
+
+      const nextPalettes: SceneSpritePalettes = [...documentSnapshot.spritePalettes]
+      nextPalettes[paletteIndex] = normalizedPalette
+      commitHistoryValues({ spritePalettes: nextPalettes })
+    },
+    [commitHistoryValues, documentSnapshot.spritePalettes, editingNode, scene]
+  )
+
+  const setBackgroundPalette = useCallback(
+    (nextPalette: string[] | null) => {
+      if (!scene || editingNode) {
+        return
+      }
+
+      const normalizedPalette = nextPalette ? normalizeProjectPalette(nextPalette) : null
+
+      if (
+        (!documentSnapshot.backgroundPalette && !normalizedPalette) ||
+        areProjectPalettesEqual(documentSnapshot.backgroundPalette, normalizedPalette)
+      ) {
+        return
+      }
+
+      commitHistoryValues({ backgroundPalette: normalizedPalette })
+    },
+    [commitHistoryValues, documentSnapshot.backgroundPalette, editingNode, scene]
+  )
+
+  const setActorSpritePaletteIndex = useCallback(
+    (nodeId: string, spritePaletteIndex: SceneSpritePaletteIndex) => {
+      updateActor(nodeId, { spritePaletteIndex })
+    },
+    [updateActor]
+  )
+
   const setFollowedActor = useCallback(
     (nodeId: string | null) => {
       if (!scene || editingNode) {
@@ -509,6 +602,8 @@ export const useSceneDocumentEditor = ({
         scriptProperties: documentSnapshot.scriptProperties,
         tilemapPath: documentSnapshot.tilemapPath,
         windowPath: documentSnapshot.windowPath,
+        spritePalettes: documentSnapshot.spritePalettes,
+        backgroundPalette: documentSnapshot.backgroundPalette,
         nodes: nextNodes
       })
     },
@@ -518,6 +613,8 @@ export const useSceneDocumentEditor = ({
       documentSnapshot.scriptProperties,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
+      documentSnapshot.spritePalettes,
+      documentSnapshot.backgroundPalette,
       publishDocumentSnapshot,
       scene
     ]
@@ -623,6 +720,8 @@ export const useSceneDocumentEditor = ({
         scriptProperties: documentSnapshot.scriptProperties,
         tilemapPath: documentSnapshot.tilemapPath,
         windowPath: documentSnapshot.windowPath,
+        spritePalettes: documentSnapshot.spritePalettes,
+        backgroundPalette: documentSnapshot.backgroundPalette,
         nodes: clampedNodes
       })
     },
@@ -632,6 +731,8 @@ export const useSceneDocumentEditor = ({
       documentSnapshot.scriptProperties,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
+      documentSnapshot.spritePalettes,
+      documentSnapshot.backgroundPalette,
       publishDocumentSnapshot,
       scene
     ]
@@ -696,6 +797,8 @@ export const useSceneDocumentEditor = ({
     sceneScriptProperties: documentSnapshot.scriptProperties,
     tilemapPath: documentSnapshot.tilemapPath,
     windowPath: documentSnapshot.windowPath,
+    spritePalettes: documentSnapshot.spritePalettes,
+    backgroundPalette: documentSnapshot.backgroundPalette,
     selectedNodeId,
     selectedNode,
     selectedActor,
@@ -718,6 +821,9 @@ export const useSceneDocumentEditor = ({
     pasteNodes,
     updateActor,
     setSceneScriptProperty,
+    setSpritePalette,
+    setBackgroundPalette,
+    setActorSpritePaletteIndex,
     setActorScriptProperty,
     setSceneScriptPath,
     setActorResourcePath,

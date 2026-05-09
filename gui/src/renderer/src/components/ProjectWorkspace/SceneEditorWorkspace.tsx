@@ -4,6 +4,7 @@ import type {
   SceneAssetDocument,
   TilemapAssetDocument
 } from '../../../../shared/projectAssets'
+import type { SceneSpritePalettes } from '../../../../shared/projectPalettes'
 import type { ProjectTagEntry } from '../../../../shared/projectTags'
 import { ProjectAssetPickerModal } from '../ProjectAssets/ProjectAssetPickerModal'
 import { ProjectScriptPickerModal } from '../ProjectAssets/ProjectScriptPickerModal'
@@ -35,6 +36,8 @@ interface SceneEditorWorkspaceProps {
   onResourcesChanged: () => void
 }
 
+const EMPTY_SCENE_SPRITE_PALETTES: SceneSpritePalettes = [null, null]
+
 export const SceneEditorWorkspace = ({
   projectPath,
   scene,
@@ -58,8 +61,14 @@ export const SceneEditorWorkspace = ({
     windowDocument,
     windowTilesetDocument,
     spritePreviews,
+    defaultSpritePalettes,
+    defaultBackgroundPalette,
+    spritePaletteMismatchPaths,
+    backgroundPaletteMismatchPaths,
     loadError
   } = useSceneAssetReferences(projectPath, editor)
+  const activeSpritePalettes = editor.spritePalettes ?? EMPTY_SCENE_SPRITE_PALETTES
+  const referencedSpritePalettes = defaultSpritePalettes ?? EMPTY_SCENE_SPRITE_PALETTES
 
   const focusWorkspace = useCallback(() => {
     workspaceRef.current?.focus()
@@ -205,15 +214,36 @@ export const SceneEditorWorkspace = ({
     clampActorsToMap(tilemapSize)
   }, [clampActorsToMap, tilemapSize])
 
+  useEffect(() => {
+    if (!activeSpritePalettes[0] && referencedSpritePalettes[0]) {
+      editor.setSpritePalette(0, referencedSpritePalettes[0])
+    }
+
+    if (!activeSpritePalettes[1] && referencedSpritePalettes[1]) {
+      editor.setSpritePalette(1, referencedSpritePalettes[1])
+    }
+  }, [activeSpritePalettes, editor, referencedSpritePalettes])
+
+  useEffect(() => {
+    if (!editor.backgroundPalette && defaultBackgroundPalette) {
+      editor.setBackgroundPalette(defaultBackgroundPalette)
+    }
+  }, [defaultBackgroundPalette, editor])
+
   const drawSceneTilemap = useCallback(
     (canvas: HTMLCanvasElement) => {
       if (!tilemapDocument || !tilemapTilesetDocument) {
         return
       }
 
-      drawTilemapToCanvas(canvas, tilemapDocument, tilemapTilesetDocument)
+      drawTilemapToCanvas(
+        canvas,
+        tilemapDocument,
+        tilemapTilesetDocument,
+        editor.backgroundPalette ?? tilemapTilesetDocument.palette
+      )
     },
-    [tilemapDocument, tilemapTilesetDocument]
+    [editor.backgroundPalette, tilemapDocument, tilemapTilesetDocument]
   )
 
   const drawSceneWindow = useCallback(
@@ -222,9 +252,14 @@ export const SceneEditorWorkspace = ({
         return
       }
 
-      drawWindowToCanvas(canvas, windowDocument, windowTilesetDocument)
+      drawWindowToCanvas(
+        canvas,
+        windowDocument,
+        windowTilesetDocument,
+        editor.backgroundPalette ?? windowTilesetDocument.palette
+      )
     },
-    [windowDocument, windowTilesetDocument]
+    [editor.backgroundPalette, windowDocument, windowTilesetDocument]
   )
 
   const handleDropProjectAsset = useCallback(
@@ -345,6 +380,10 @@ export const SceneEditorWorkspace = ({
               maxCollisionCallbacks={maxCollisionCallbacks}
               maxTagSlots={maxTagSlots}
               projectTags={projectTags}
+              defaultSpritePalettes={referencedSpritePalettes}
+              defaultBackgroundPalette={defaultBackgroundPalette}
+              spritePaletteMismatchPaths={spritePaletteMismatchPaths}
+              backgroundPaletteMismatchPaths={backgroundPaletteMismatchPaths}
               onRequestTilemapSelection={() => {
                 openPicker({ mode: 'tilemap' })
               }}

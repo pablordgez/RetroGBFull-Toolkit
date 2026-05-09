@@ -5,6 +5,11 @@ import type {
   SceneAssetNode
 } from '../../../../shared/projectAssets'
 import type { ScriptPropertyMap, ScriptPropertyValue } from '../../../../shared/projectScriptProperties'
+import {
+  type SceneSpritePalettes,
+  normalizeProjectPalette,
+  normalizeSceneSpritePalettes
+} from '../../../../shared/projectPalettes'
 
 export type SceneHierarchyClipboardOperation = 'copy' | 'cut'
 
@@ -19,6 +24,8 @@ export interface SceneHierarchyHistoryState {
   scriptProperties?: ScriptPropertyMap
   tilemapPath: string | null
   windowPath: string | null
+  spritePalettes: SceneSpritePalettes
+  backgroundPalette: string[] | null
   nodes: SceneAssetNode[]
   selectedNodeId: string | null
   clipboard: SceneHierarchyClipboardState | null
@@ -41,6 +48,8 @@ export interface SceneEditorDocumentSnapshot {
   scriptProperties?: ScriptPropertyMap
   tilemapPath: string | null
   windowPath: string | null
+  spritePalettes: SceneSpritePalettes
+  backgroundPalette: string[] | null
   nodes: SceneAssetNode[]
 }
 
@@ -92,6 +101,17 @@ export const cloneSceneDocumentSnapshot = (
     ...(document.scriptProperties ? { scriptProperties: { ...document.scriptProperties } } : {}),
     tilemapPath: document.tilemapPath,
     windowPath: document.windowPath,
+    spritePalettes: document.spritePalettes
+      ? normalizeSceneSpritePalettes(document.spritePalettes)
+      : [
+          'spritePalette' in document && document.spritePalette
+            ? normalizeProjectPalette(document.spritePalette)
+            : null,
+          null
+        ],
+    backgroundPalette: document.backgroundPalette
+      ? normalizeProjectPalette(document.backgroundPalette)
+      : null,
     nodes: document.nodes.map(cloneSceneNodeSnapshot)
   }
 }
@@ -472,6 +492,7 @@ export const buildDefaultSceneNode = (
     y: 0,
     physicsMode: 'balanced',
     followCamera: false,
+    spritePaletteIndex: 0,
     children: []
   }
 }

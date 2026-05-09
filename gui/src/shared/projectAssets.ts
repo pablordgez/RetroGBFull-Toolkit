@@ -1,4 +1,12 @@
 import type { ScriptPropertyMap, ScriptPropertyValue } from './projectScriptProperties'
+import {
+  DEFAULT_GB_PALETTE,
+  type SceneSpritePaletteIndex,
+  type SceneSpritePalettes,
+  normalizeProjectPalette,
+  normalizeSceneSpritePalettes,
+  normalizeSpritePaletteIndex
+} from './projectPalettes'
 
 export type ProjectAssetKind =
   | 'sprite'
@@ -39,6 +47,7 @@ export interface SceneAssetActorNode extends BaseSceneAssetNode {
   scriptPath?: string | null
   scriptProperties?: ScriptPropertyMap
   tags?: string[]
+  spritePaletteIndex?: SceneSpritePaletteIndex
   x: number
   y: number
   physicsMode: SceneActorPhysicsMode
@@ -119,6 +128,9 @@ export interface SceneAssetDocument {
   version: 1
   tilemapPath: string | null
   windowPath: string | null
+  spritePalettes?: SceneSpritePalettes
+  spritePalette?: string[] | null
+  backgroundPalette?: string[] | null
   scriptPath: string | null
   scriptProperties?: ScriptPropertyMap
   nodes: SceneAssetNode[]
@@ -180,6 +192,7 @@ export const createDefaultSceneActorNode = (name = 'Actor'): SceneAssetActorNode
     y: 0,
     physicsMode: DEFAULT_SCENE_ACTOR_PHYSICS_MODE,
     followCamera: false,
+    spritePaletteIndex: 0,
     children: []
   }
 }
@@ -310,7 +323,7 @@ export const createDefaultProjectAssetDocument = (
         is8x16Mode: false,
         currentFrame: 0,
         frames: [new Array(64).fill(0)],
-        palette: ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'],
+        palette: [...DEFAULT_GB_PALETTE],
         selectedColor: 3
       }
     case 'tileset':
@@ -318,7 +331,7 @@ export const createDefaultProjectAssetDocument = (
         kind: 'tileset',
         version: 1,
         tiles: [new Array(64).fill(0)],
-        palette: ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'],
+        palette: [...DEFAULT_GB_PALETTE],
         selectedColor: 3,
         selectedTileIndex: 0
       }
@@ -352,6 +365,9 @@ export const createDefaultProjectAssetDocument = (
         version: 1,
         tilemapPath: null,
         windowPath: null,
+        spritePalette: null,
+        spritePalettes: [null, null],
+        backgroundPalette: null,
         scriptPath: null,
         nodes: []
       }
@@ -437,6 +453,10 @@ const normalizeSceneNodeTags = (value: unknown): string[] | undefined => {
 
   const tags = [...new Set(value.filter((entry) => entry.trim().length > 0))]
   return tags.length > 0 ? tags : undefined
+}
+
+const normalizeOptionalPalette = (value: unknown): string[] | null => {
+  return isStringArray(value) ? normalizeProjectPalette(value) : null
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -620,6 +640,7 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
       ? { scriptProperties: normalizeScriptProperties(value.scriptProperties) }
       : {}),
     ...(normalizeSceneNodeTags(value.tags) ? { tags: normalizeSceneNodeTags(value.tags) } : {}),
+    spritePaletteIndex: normalizeSpritePaletteIndex(value.spritePaletteIndex),
     x: Number.isInteger(value.x) ? Number(value.x) : 0,
     y: Number.isInteger(value.y) ? Number(value.y) : 0,
     physicsMode: isSceneActorPhysicsMode(value.physicsMode)
@@ -688,6 +709,7 @@ const serializeSceneAssetNode = (
       ? { scriptProperties: node.scriptProperties }
       : {}),
     ...(node.tags && node.tags.length > 0 ? { tags: node.tags } : {}),
+    spritePaletteIndex: normalizeSpritePaletteIndex(node.spritePaletteIndex),
     x: node.x,
     y: node.y,
     physicsMode: node.physicsMode,
@@ -799,6 +821,12 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
         ...rawDocument,
         tilemapPath: rawDocument.tilemapPath ?? null,
         windowPath: rawDocument.windowPath ?? null,
+        spritePalettes:
+          Array.isArray(rawDocument.spritePalettes)
+            ? normalizeSceneSpritePalettes(rawDocument.spritePalettes)
+            : [normalizeOptionalPalette(rawDocument.spritePalette), null],
+        spritePalette: normalizeOptionalPalette(rawDocument.spritePalette),
+        backgroundPalette: normalizeOptionalPalette(rawDocument.backgroundPalette),
         scriptPath: rawDocument.scriptPath ?? null,
         ...(normalizeScriptProperties(rawDocument.scriptProperties)
           ? { scriptProperties: normalizeScriptProperties(rawDocument.scriptProperties) }
@@ -892,6 +920,17 @@ export const serializeProjectAssetDocument = (assetDocument: ProjectAssetDocumen
         version: assetDocument.version,
         tilemapPath: assetDocument.tilemapPath ?? null,
         windowPath: assetDocument.windowPath ?? null,
+        spritePalettes: assetDocument.spritePalettes
+          ? normalizeSceneSpritePalettes(assetDocument.spritePalettes)
+          : [
+              assetDocument.spritePalette
+                ? normalizeProjectPalette(assetDocument.spritePalette)
+                : null,
+              null
+            ],
+        backgroundPalette: assetDocument.backgroundPalette
+          ? normalizeProjectPalette(assetDocument.backgroundPalette)
+          : null,
         scriptPath: assetDocument.scriptPath ?? null,
         ...(assetDocument.scriptProperties &&
         Object.keys(assetDocument.scriptProperties).length > 0

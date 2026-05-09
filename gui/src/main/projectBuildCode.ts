@@ -435,7 +435,9 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
       sceneRecord.asset,
       tilemapAssetsByPath,
       windowAssetsByPath,
-      emitSceneNode
+      emitSceneNode,
+      spriteAssetsByPath,
+      tilesetAssetsByPath
     )
     const managedSceneFiles = sceneRecord.sceneScript
       ? buildManagedScriptedSceneFileContents(

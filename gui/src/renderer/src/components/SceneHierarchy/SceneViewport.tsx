@@ -36,6 +36,7 @@ interface SceneViewportProps {
     {
       path: string
       imageUrl: string
+      imageUrlsByPalette?: [string, string]
       width: number
       height: number
     }
@@ -813,7 +814,10 @@ export const SceneViewport = ({
               >
                 {preview ? (
                   <img
-                    src={preview.imageUrl}
+                    src={
+                      preview.imageUrlsByPalette?.[actor.spritePaletteIndex ?? 0] ??
+                      preview.imageUrl
+                    }
                     alt=""
                     draggable={false}
                     className="scene-viewport__actor-sprite"

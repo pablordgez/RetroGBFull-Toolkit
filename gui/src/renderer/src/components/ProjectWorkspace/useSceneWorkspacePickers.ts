@@ -2,8 +2,10 @@ import { useCallback, useMemo, useState } from 'react'
 import type {
   ActorAssetDocument,
   ProjectAssetKind,
+  SpriteAssetDocument,
   TilemapAssetDocument
 } from '../../../../shared/projectAssets'
+import { areProjectPalettesEqual } from '../../../../shared/projectPalettes'
 import { clearFollowCameraInSceneNodeSubtree } from '../SceneHierarchy/sceneHierarchyModel'
 import type { SceneDocumentEditor } from '../SceneHierarchy/useSceneDocumentEditor'
 import {
@@ -189,6 +191,25 @@ const buildScriptPickerCopy = (
   }
 }
 
+const getDefaultSpritePaletteIndex = (
+  spriteDocument: SpriteAssetDocument,
+  editor: SceneDocumentEditor
+): 0 | 1 => {
+  if (areProjectPalettesEqual(spriteDocument.palette, editor.spritePalettes[1])) {
+    return 1
+  }
+
+  if (
+    editor.spritePalettes[0] &&
+    !editor.spritePalettes[1] &&
+    !areProjectPalettesEqual(spriteDocument.palette, editor.spritePalettes[0])
+  ) {
+    return 1
+  }
+
+  return 0
+}
+
 export const useSceneWorkspacePickers = ({
   editor,
   focusWorkspace,
@@ -357,7 +378,19 @@ export const useSceneWorkspacePickers = ({
         }
 
         if (pickerState.mode === 'sprite') {
-          editor.updateActor(pickerState.nodeId, { spritePath: option.path })
+          const spritePayload = await window.api.loadProjectAssetFile(projectPath, option.path)
+
+          if (spritePayload.assetKind !== 'sprite') {
+            throw new Error('The selected asset is not a sprite.')
+          }
+
+          editor.updateActor(pickerState.nodeId, {
+            spritePath: option.path,
+            spritePaletteIndex: getDefaultSpritePaletteIndex(
+              spritePayload.document as SpriteAssetDocument,
+              editor
+            )
+          })
           closePicker()
           focusWorkspace()
           return

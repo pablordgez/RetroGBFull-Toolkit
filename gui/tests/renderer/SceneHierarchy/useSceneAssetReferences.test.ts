@@ -19,6 +19,8 @@ const createEditor = (
     selectedCollision: null,
     editingNode: null,
     clipboard: null,
+    spritePalettes: [null, null],
+    backgroundPalette: null,
     undo: vi.fn(),
     redo: vi.fn(),
     selectNode: vi.fn(),
@@ -43,6 +45,9 @@ const createEditor = (
     setWindowPath: vi.fn(),
     loadActor: vi.fn(),
     snapshotActor: vi.fn(),
+    setSpritePalette: vi.fn(),
+    setBackgroundPalette: vi.fn(),
+    setActorSpritePaletteIndex: vi.fn(),
     ...overrides
   }) as SceneDocumentEditor
 
@@ -197,6 +202,53 @@ describe('useSceneAssetReferences', () => {
       expect(result.current.windowDocument).toBeNull()
       expect(result.current.spritePreviews).toEqual({})
       expect(result.current.loadError).toBeNull()
+    })
+  })
+
+  it('suggests palette 1 from a single sprite that differs from the scene sprite palette 0', async () => {
+    const spritePalette = ['#9bbc0f', '#8bac0f', '#306230', '#0f380f']
+
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue({
+      assetKind: 'sprite' as const,
+      resourcePath: 'Sprites/HeroAlt.rgbsprite.json',
+      document: {
+        kind: 'sprite' as const,
+        version: 1,
+        width: 8,
+        height: 8,
+        fps: 8,
+        is8x16Mode: false,
+        currentFrame: 0,
+        frames: [new Array(64).fill(1)],
+        palette: spritePalette,
+        selectedColor: 0
+      }
+    })
+
+    const editor = createEditor({
+      spritePalettes: [['#000000', '#555555', '#aaaaaa', '#ffffff'], null],
+      nodes: [
+        {
+          id: 'hero-node',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          spritePath: 'Sprites/HeroAlt.rgbsprite.json',
+          x: 0,
+          y: 0,
+          followCamera: false,
+          children: []
+        }
+      ]
+    })
+
+    const { result } = renderHook(() => useSceneAssetReferences('/projects/Alpha', editor))
+
+    await waitFor(() => {
+      expect(result.current.defaultSpritePalettes[1]).toEqual(spritePalette)
+      expect(result.current.spritePaletteMismatchPaths).toEqual([
+        'Sprites/HeroAlt.rgbsprite.json'
+      ])
     })
   })
 

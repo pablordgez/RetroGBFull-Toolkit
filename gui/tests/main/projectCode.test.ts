@@ -700,6 +700,68 @@ describe('projectCode collision callback helpers', () => {
     await expect(stat(projectBindingsPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('sets scene hardware palettes during generated initialization', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const scene = await createProjectResource(project.path, 'scene', '', 'Palette Room')
+    const tilemap = await createProjectResource(project.path, 'tilemap', '', 'Palette Map')
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Palette Tiles')
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Palette Hero')
+
+    const loadedScene = await loadProjectAssetFile(project.path, scene.resourcePath)
+    const loadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+
+    if (loadedScene.document.kind !== 'scene' || loadedTilemap.document.kind !== 'tilemap') {
+      throw new Error('Expected scene and tilemap documents.')
+    }
+
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...loadedTilemap.document,
+      tilesetPath: tileset.resourcePath
+    })
+    await saveProjectAssetFile(project.path, scene.resourcePath, {
+      ...loadedScene.document,
+      tilemapPath: tilemap.resourcePath,
+      backgroundPalette: ['#ffffff', '#aaaaaa', '#555555', '#000000'],
+      spritePalettes: [
+        ['#000000', '#555555', '#aaaaaa', '#ffffff'],
+        ['#ffffff', '#aaaaaa', '#555555', '#000000']
+      ],
+      nodes: [
+        {
+          id: 'hero-node',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          spritePath: sprite.resourcePath,
+          spritePaletteIndex: 1,
+          x: 0,
+          y: 0,
+          physicsMode: 'balanced',
+          followCamera: false,
+          children: []
+        }
+      ]
+    })
+
+    await buildProjectCode(project.path)
+
+    const sceneSource = await readFile(
+      join(project.path, 'src', 'CustomScenes', 'palette_room.c'),
+      'utf-8'
+    )
+
+    expect(sceneSource).toContain('BGP_REG = 0xE4;')
+    expect(sceneSource).toContain('OBP0_REG = 0x1B;')
+    expect(sceneSource).toContain('OBP1_REG = 0xE4;')
+    expect(sceneSource).toContain('set_animation_props(S_PALETTE, 0, 0);')
+    expect(sceneSource.indexOf('BGP_REG = 0xE4;')).toBeLessThan(
+      sceneSource.indexOf('set_scene_map(maps[palette_map]);')
+    )
+  })
+
   it('emits project tags into the actor registry and generated scene initialization', async () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)

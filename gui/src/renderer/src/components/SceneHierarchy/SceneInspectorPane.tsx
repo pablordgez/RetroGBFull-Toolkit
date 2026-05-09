@@ -21,6 +21,11 @@ import {
 } from '../../../../shared/projectScriptProperties'
 import type { ProjectScriptOption } from '../ProjectAssets/projectScriptBrowser'
 import type { ProjectTagEntry } from '../../../../shared/projectTags'
+import {
+  DEFAULT_GB_PALETTE,
+  type SceneSpritePalettes,
+  normalizeProjectPalette
+} from '../../../../shared/projectPalettes'
 import { ProjectScriptCallbackPickerModal } from '../ProjectAssets/ProjectScriptCallbackPickerModal'
 import {
   clampSceneActorPosition,
@@ -50,6 +55,10 @@ interface SceneInspectorPaneProps {
   maxCollisionCallbacks?: number
   maxTagSlots?: number
   projectTags?: ProjectTagEntry[]
+  defaultSpritePalettes?: SceneSpritePalettes
+  defaultBackgroundPalette?: string[] | null
+  spritePaletteMismatchPaths?: string[]
+  backgroundPaletteMismatchPaths?: string[]
   onRequestTilemapSelection?: () => void
   onRequestWindowSelection?: () => void
   onRequestSceneScriptSelection?: () => void
@@ -87,6 +96,23 @@ const SCENE_ACTOR_PHYSICS_MODE_LABELS: Record<SceneActorPhysicsMode, string> = {
   highFidelity: 'High Fidelity'
 }
 
+const EMPTY_SCENE_SPRITE_PALETTES: SceneSpritePalettes = [null, null]
+
+const formatPaletteMismatchCopy = (paths: string[], singular: string, plural: string): string => {
+  if (paths.length === 0) {
+    return ''
+  }
+
+  const labels = paths
+    .slice(0, 3)
+    .map((path) => getPathLabel(path, path))
+    .join(', ')
+  const remainingCount = paths.length - 3
+  const suffix = remainingCount > 0 ? `, +${remainingCount} more` : ''
+
+  return `${paths.length === 1 ? singular : plural}: ${labels}${suffix}.`
+}
+
 export const SceneInspectorPane = ({
   className,
   editor,
@@ -102,6 +128,10 @@ export const SceneInspectorPane = ({
   maxCollisionCallbacks = 0,
   maxTagSlots = 5,
   projectTags = [],
+  defaultSpritePalettes = [null, null],
+  defaultBackgroundPalette = null,
+  spritePaletteMismatchPaths = [],
+  backgroundPaletteMismatchPaths = [],
   onRequestTilemapSelection = () => undefined,
   onRequestWindowSelection = () => undefined,
   onRequestSceneScriptSelection = () => undefined,
@@ -289,6 +319,8 @@ export const SceneInspectorPane = ({
     selectedActor?.scriptPath ?? null,
     'No actor script selected'
   )
+  const sceneSpritePalettes = editor.spritePalettes ?? EMPTY_SCENE_SPRITE_PALETTES
+  const referencedSpritePalettes = defaultSpritePalettes ?? EMPTY_SCENE_SPRITE_PALETTES
   const selectedTaggableNode = selectedActor ?? selectedCollision
   const selectedTagIds = selectedTaggableNode?.tags ?? []
 
@@ -345,6 +377,89 @@ export const SceneInspectorPane = ({
       </>
     )
   }
+
+  const renderScenePalette = (
+    title: string,
+    palette: string[] | null,
+    mismatchCopy: string,
+    defaultPalette: string[] | null,
+    onChangePalette: (palette: string[]) => void,
+    onUseDefaultPalette: (palette: string[]) => void,
+    emptyLabel = 'Unset'
+  ): ReactElement => {
+    const editablePalette = normalizeProjectPalette(
+      palette ?? defaultPalette ?? DEFAULT_GB_PALETTE
+    )
+    const reorderPalette = (sourceIndex: number, targetIndex: number): void => {
+      if (sourceIndex === targetIndex) {
+        return
+      }
+
+      const nextPalette = [...editablePalette]
+      const [movedColor] = nextPalette.splice(sourceIndex, 1)
+      nextPalette.splice(targetIndex, 0, movedColor)
+      onChangePalette(nextPalette)
+    }
+
+    return (
+      <div className="scene-inspector-pane__palette">
+        <div className="scene-inspector-pane__field">
+          <span>{title}</span>
+          <strong>{palette ? 'Scene palette' : emptyLabel}</strong>
+        </div>
+
+        <div className="scene-inspector-pane__palette-row" aria-label={title}>
+          {editablePalette.map((color, index) => (
+            <div
+              key={`${title}-${color}-${index}`}
+              draggable
+              className="scene-inspector-pane__palette-swatch"
+              style={{ backgroundColor: color }}
+              title={`Index ${index}: ${color}. Drag to reorder.`}
+              onDragStart={(event) => {
+                event.dataTransfer.setData('text/plain', String(index))
+                event.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragOver={(event) => {
+                event.preventDefault()
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                const sourceIndex = Number.parseInt(
+                  event.dataTransfer.getData('text/plain'),
+                  10
+                )
+
+                if (Number.isInteger(sourceIndex)) {
+                  reorderPalette(sourceIndex, index)
+                }
+              }}
+            >
+              <span className="scene-inspector-pane__palette-swatch-index">{index}</span>
+            </div>
+          ))}
+        </div>
+
+        {mismatchCopy && (
+          <p className="scene-inspector-pane__warning" role="status">
+            {mismatchCopy}
+          </p>
+        )}
+
+        {defaultPalette && (
+          <button
+            type="button"
+            onClick={() => {
+              onUseDefaultPalette(defaultPalette)
+            }}
+          >
+            Use Referenced Palette
+          </button>
+        )}
+      </div>
+    )
+  }
+
   const commitScriptProperty = (definition: ParsedScriptPropertyDefinition): void => {
     if (definition.kind !== 'integer') {
       return
@@ -670,6 +785,41 @@ export const SceneInspectorPane = ({
                 {editor.windowPath ? 'Change Window' : 'Select Window'}
               </button>
 
+              {renderScenePalette(
+                'Sprite Palette 0',
+                sceneSpritePalettes[0],
+                formatPaletteMismatchCopy(
+                  spritePaletteMismatchPaths,
+                  'Sprite palette matches neither scene palette',
+                  'Sprite palettes match neither scene palette'
+                ),
+                referencedSpritePalettes[0],
+                (palette) => editor.setSpritePalette(0, palette),
+                (palette) => editor.setSpritePalette(0, palette)
+              )}
+
+              {renderScenePalette(
+                'Sprite Palette 1',
+                sceneSpritePalettes[1],
+                '',
+                referencedSpritePalettes[1] ?? sceneSpritePalettes[0] ?? referencedSpritePalettes[0],
+                (palette) => editor.setSpritePalette(1, palette),
+                (palette) => editor.setSpritePalette(1, palette)
+              )}
+
+              {renderScenePalette(
+                'Background/Window Palette',
+                editor.backgroundPalette,
+                formatPaletteMismatchCopy(
+                  backgroundPaletteMismatchPaths,
+                  'Background/window palette differs',
+                  'Background/window palettes differ'
+                ),
+                defaultBackgroundPalette,
+                editor.setBackgroundPalette,
+                editor.setBackgroundPalette
+              )}
+
               <div className="scene-inspector-pane__field">
                 <span>Scene Script</span>
                 <strong>{selectedSceneScriptLabel}</strong>
@@ -717,6 +867,25 @@ export const SceneInspectorPane = ({
               >
                 {selectedActor.spritePath ? 'Change Sprite' : 'Select Sprite'}
               </button>
+
+              {selectedActor.spritePath && (
+                <div className="scene-inspector-pane__field">
+                  <label htmlFor="scene-inspector-actor-sprite-palette">Sprite Palette</label>
+                  <select
+                    id="scene-inspector-actor-sprite-palette"
+                    value={selectedActor.spritePaletteIndex ?? 0}
+                    onChange={(event) => {
+                      editor.setActorSpritePaletteIndex(
+                        selectedActor.id,
+                        Number(event.target.value) === 1 ? 1 : 0
+                      )
+                    }}
+                  >
+                    <option value={0}>Palette 0</option>
+                    <option value={1}>Palette 1</option>
+                  </select>
+                </div>
+              )}
 
               <div className="scene-inspector-pane__field">
                 <span>Actor Script</span>

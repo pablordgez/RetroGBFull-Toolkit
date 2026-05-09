@@ -49,7 +49,11 @@ vi.mock('../../../src/renderer/src/components/SceneHierarchy/SceneInspectorPane'
       tilemapPath: string | null
       windowPath: string | null
       nodes: Array<unknown>
-      selectedActor: { scriptProperties?: Record<string, unknown> } | null
+      selectedActor: {
+        scriptPath?: string | null
+        scriptProperties?: Record<string, unknown>
+        spritePaletteIndex?: number
+      } | null
       selectedNodeId: string | null
       selectedNode: { type: string; spritePath?: string | null; scriptPath?: string | null } | null
       sceneScriptProperties?: Record<string, unknown>
@@ -80,6 +84,9 @@ vi.mock('../../../src/renderer/src/components/SceneHierarchy/SceneInspectorPane'
       <div data-testid="scene-script-path">{String(props.editor.scriptPath ?? '')}</div>
       <div data-testid="actor-script-path">
         {String(props.editor.selectedActor?.scriptPath ?? '')}
+      </div>
+      <div data-testid="actor-sprite-palette-index">
+        {String(props.editor.selectedActor?.spritePaletteIndex ?? '')}
       </div>
       <div data-testid="tilemap-path">{String(props.editor.tilemapPath ?? '')}</div>
       <div data-testid="window-path">{String(props.editor.windowPath ?? '')}</div>
@@ -254,6 +261,10 @@ vi.mock('../../../src/renderer/src/components/SceneHierarchy/useSceneAssetRefere
     windowDocument: null,
     windowTilesetDocument: null,
     spritePreviews: {},
+    defaultSpritePalettes: [null, null],
+    defaultBackgroundPalette: null,
+    spritePaletteMismatchPaths: [],
+    backgroundPaletteMismatchPaths: [],
     loadError: null
   })
 }))
@@ -537,6 +548,25 @@ describe('SceneEditorWorkspace', () => {
         }
       }
 
+      if (assetPath === 'Sprites/HeroAlt.rgbsprite.json') {
+        return {
+          assetKind: 'sprite',
+          resourcePath: assetPath,
+          document: {
+            kind: 'sprite',
+            version: 1,
+            width: 8,
+            height: 8,
+            fps: 8,
+            is8x16Mode: false,
+            currentFrame: 0,
+            frames: [new Array(64).fill(1)],
+            palette: ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'],
+            selectedColor: 0
+          }
+        }
+      }
+
       if (assetPath === 'Maps/Room.rgbtilemap.json') {
         return {
           assetKind: 'tilemap',
@@ -616,6 +646,49 @@ describe('SceneEditorWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Select Background' }))
     await waitFor(() => {
       expect(screen.getByTestId('selected-node-id')).toHaveTextContent('')
+    })
+  })
+
+  it('assigns a selected sprite to palette 1 when it differs from the unused second scene palette', async () => {
+    vi.mocked(window.api.getProjectCodeSymbolIndex).mockResolvedValue(
+      createSymbolIndex(['intro_animation'], ['idle_animation'])
+    )
+    listProjectAssetsByKindMock.mockResolvedValue([
+      { kind: 'sprite', name: 'Hero Alt', path: 'Sprites/HeroAlt.rgbsprite.json' }
+    ])
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue({
+      assetKind: 'sprite',
+      resourcePath: 'Sprites/HeroAlt.rgbsprite.json',
+      document: {
+        kind: 'sprite',
+        version: 1,
+        width: 8,
+        height: 8,
+        fps: 8,
+        is8x16Mode: false,
+        currentFrame: 0,
+        frames: [new Array(64).fill(1)],
+        palette: ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'],
+        selectedColor: 0
+      }
+    })
+
+    renderWorkspace({
+      scene: {
+        ...createScene(),
+        spritePalettes: [['#000000', '#555555', '#aaaaaa', '#ffffff'], null]
+      }
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Hero' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pick Sprite' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Hero Alt' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('selected-sprite-path')).toHaveTextContent(
+        'Sprites/HeroAlt.rgbsprite.json'
+      )
+      expect(screen.getByTestId('actor-sprite-palette-index')).toHaveTextContent('1')
     })
   })
 

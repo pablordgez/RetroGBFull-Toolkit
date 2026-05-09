@@ -209,6 +209,53 @@ select.scene-inspector-pane__property-input:focus {
   color: rgba(15, 56, 15, 0.72);
 }
 
+.scene-inspector-pane__warning {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #9a2257;
+}
+
+.scene-inspector-pane__palette {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scene-inspector-pane__palette-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.scene-inspector-pane__palette-swatch {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  min-height: 24px;
+  border: 2px solid #0f380f;
+  box-shadow: 2px 2px 0 rgba(15, 56, 15, 0.18);
+  cursor: grab;
+  overflow: hidden;
+}
+
+.scene-inspector-pane__palette-swatch:active {
+  cursor: grabbing;
+}
+
+.scene-inspector-pane__palette-swatch-index {
+  position: absolute;
+  left: 4px;
+  bottom: 2px;
+  padding: 1px 3px;
+  background: rgba(155, 188, 15, 0.82);
+  color: #0f380f;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  border: 1px solid rgba(15, 56, 15, 0.44);
+}
+
 .scene-inspector-pane__tag-list {
   display: flex;
   flex-wrap: wrap;

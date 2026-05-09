@@ -31,6 +31,7 @@ void init_animation_system(void) BANKED;
 void init_animation_state(AnimationState* animation_state) BANKED;
 uint8_t load_animation(uint8_t x, uint8_t y) NONBANKED;
 void unload_animation(void) BANKED;
+void set_animation_props(uint8_t props, uint8_t x, uint8_t y) NONBANKED;
 void move_animation(uint8_t x, uint8_t y) NONBANKED;
 void update_animation(uint8_t x, uint8_t y) NONBANKED;
 void hide_animation(void) NONBANKED;

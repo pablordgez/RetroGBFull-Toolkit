@@ -4,6 +4,7 @@ import type {
   TilesetAssetDocument,
   WindowAssetDocument
 } from '../../../../shared/projectAssets'
+import { normalizeProjectPalette } from '../../../../shared/projectPalettes'
 
 const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
   return {
@@ -46,19 +47,23 @@ export const renderIndexedBitmapToDataUrl = (
   return canvas.toDataURL('image/png')
 }
 
-export const renderSpriteDocumentPreview = (document: SpriteAssetDocument): string => {
+export const renderSpriteDocumentPreview = (
+  document: SpriteAssetDocument,
+  palette = document.palette
+): string => {
   return renderIndexedBitmapToDataUrl(
     document.frames[document.currentFrame] ?? document.frames[0] ?? [],
     document.width,
     document.height,
-    document.palette
+    normalizeProjectPalette(palette)
   )
 }
 
 export const drawTilemapToCanvas = (
   canvas: HTMLCanvasElement,
   tilemap: TilemapAssetDocument,
-  tileset: TilesetAssetDocument
+  tileset: TilesetAssetDocument,
+  palette = tileset.palette
 ): void => {
   const context = canvas.getContext('2d')
 
@@ -85,7 +90,7 @@ export const drawTilemapToCanvas = (
 
       for (let pixelIndex = 0; pixelIndex < tilePixels.length; pixelIndex += 1) {
         const paletteIndex = tilePixels[pixelIndex]
-        const hex = tileset.palette[paletteIndex] ?? '#000000'
+        const hex = palette[paletteIndex] ?? '#000000'
         const { r, g, b } = hexToRgb(hex)
         const dataIndex = pixelIndex * 4
 
@@ -103,7 +108,8 @@ export const drawTilemapToCanvas = (
 export const drawWindowToCanvas = (
   canvas: HTMLCanvasElement,
   windowDocument: WindowAssetDocument,
-  tileset: TilesetAssetDocument
+  tileset: TilesetAssetDocument,
+  palette = tileset.palette
 ): void => {
   const context = canvas.getContext('2d')
 
@@ -131,7 +137,7 @@ export const drawWindowToCanvas = (
 
     for (let pixelIndex = 0; pixelIndex < tilePixels.length; pixelIndex += 1) {
       const paletteIndex = tilePixels[pixelIndex]
-      const hex = tileset.palette[paletteIndex] ?? '#000000'
+      const hex = palette[paletteIndex] ?? '#000000'
       const { r, g, b } = hexToRgb(hex)
       const dataIndex = pixelIndex * 4
 

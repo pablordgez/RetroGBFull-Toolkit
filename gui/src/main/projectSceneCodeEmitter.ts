@@ -5,9 +5,18 @@ import type {
   SceneActorPhysicsMode,
   SceneAssetCollisionNode,
   SceneAssetDocument,
-  SceneAssetNode
+  SceneAssetNode,
+  SpriteAssetDocument,
+  TilemapAssetDocument,
+  TilesetAssetDocument,
+  WindowAssetDocument
 } from '../shared/projectAssets'
 import { buildProjectTagEnumName, type ProjectTagEntry } from '../shared/projectTags'
+import {
+  areProjectPalettesEqual,
+  buildDmgPaletteRegisterValue,
+  formatHexByte
+} from '../shared/projectPalettes'
 
 export const MANAGED_DEFAULT_ACTOR_IDENTIFIER = 'GeneratedDefaultActor'
 
@@ -15,6 +24,96 @@ const PHYSICS_MODE_ENUM_BY_SCENE_VALUE: Record<SceneActorPhysicsMode, string> = 
   highPerf: 'HIGH_PERF',
   balanced: 'BALANCED',
   highFidelity: 'HIGH_FIDELITY'
+}
+
+const findFirstSpritePalette = (
+  nodes: SceneAssetNode[],
+  spriteAssetsByPath: Map<string, ProjectAssetRecordLike>
+): string[] | null => {
+  for (const node of nodes) {
+    if (node.type === 'actor' && node.spritePath) {
+      const sprite = spriteAssetsByPath.get(node.spritePath)
+
+      if (sprite) {
+        return (sprite.document as SpriteAssetDocument).palette
+      }
+    }
+
+    const nestedPalette = findFirstSpritePalette(node.children, spriteAssetsByPath)
+
+    if (nestedPalette) {
+      return nestedPalette
+    }
+  }
+
+  return null
+}
+
+const getSceneSpritePalettes = (
+  document: SceneAssetDocument,
+  spriteAssetsByPath: Map<string, ProjectAssetRecordLike>
+): [string[] | null, string[] | null] => {
+  const configuredPalettes = document.spritePalettes ?? [
+    document.spritePalette ?? null,
+    null
+  ]
+
+  if (configuredPalettes[0]) {
+    return [configuredPalettes[0], configuredPalettes[1] ?? configuredPalettes[0]]
+  }
+
+  if (configuredPalettes[1]) {
+    return [null, configuredPalettes[1]]
+  }
+
+  const firstPalette = findFirstSpritePalette(document.nodes, spriteAssetsByPath)
+
+  if (!firstPalette) {
+    return [null, null]
+  }
+
+  const secondPalette = (() => {
+    const findDistinctPalette = (nodes: SceneAssetNode[]): string[] | null => {
+      for (const node of nodes) {
+        if (node.type === 'actor' && node.spritePath) {
+          const sprite = spriteAssetsByPath.get(node.spritePath)
+          const palette = sprite ? (sprite.document as SpriteAssetDocument).palette : null
+
+          if (palette && !areProjectPalettesEqual(palette, firstPalette)) {
+            return palette
+          }
+        }
+
+        const nestedPalette = findDistinctPalette(node.children)
+
+        if (nestedPalette) {
+          return nestedPalette
+        }
+      }
+
+      return null
+    }
+
+    return findDistinctPalette(document.nodes)
+  })()
+
+  return [firstPalette, secondPalette ?? firstPalette]
+}
+
+const getMapTilesetPalette = (
+  mapPath: string | null,
+  mapAssetsByPath: Map<string, ProjectAssetRecordLike>,
+  tilesetAssetsByPath: Map<string, ProjectAssetRecordLike>
+): string[] | null => {
+  if (!mapPath) {
+    return null
+  }
+
+  const map = mapAssetsByPath.get(mapPath)
+  const document = map?.document as TilemapAssetDocument | WindowAssetDocument | undefined
+  const tileset = document?.tilesetPath ? tilesetAssetsByPath.get(document.tilesetPath) : null
+
+  return tileset ? (tileset.document as TilesetAssetDocument).palette : null
 }
 
 type SceneNodeEmitter = (
@@ -137,6 +236,9 @@ export const createNodeEmitter = (
       }
 
       lines.push(`    set_actor_animation(animations[${spriteResource.identifier}]);`)
+      if (node.spritePaletteIndex === 1) {
+        lines.push(`    set_animation_props(S_PALETTE, ${node.x >> 4}, ${node.y >> 4});`)
+      }
     }
 
     if (node.followCamera) {
@@ -166,10 +268,35 @@ export const buildSceneInitializationLines = (
   scene: ProjectAssetRecordLike,
   tilemapAssetsByPath: Map<string, ProjectAssetRecordLike>,
   windowAssetsByPath: Map<string, ProjectAssetRecordLike>,
-  emitNode: SceneNodeEmitter
+  emitNode: SceneNodeEmitter,
+  spriteAssetsByPath: Map<string, ProjectAssetRecordLike> = new Map(),
+  tilesetAssetsByPath: Map<string, ProjectAssetRecordLike> = new Map()
 ): string[] => {
   const document = scene.document as SceneAssetDocument
   const lines: string[] = []
+  const backgroundPalette =
+    document.backgroundPalette ??
+    getMapTilesetPalette(document.tilemapPath, tilemapAssetsByPath, tilesetAssetsByPath) ??
+    getMapTilesetPalette(document.windowPath, windowAssetsByPath, tilesetAssetsByPath)
+  const spritePalettes = getSceneSpritePalettes(document, spriteAssetsByPath)
+
+  if (backgroundPalette) {
+    lines.push(
+      `    BGP_REG = ${formatHexByte(buildDmgPaletteRegisterValue(backgroundPalette))};`
+    )
+  }
+
+  if (spritePalettes[0]) {
+    lines.push(
+      `    OBP0_REG = ${formatHexByte(buildDmgPaletteRegisterValue(spritePalettes[0]))};`
+    )
+  }
+
+  if (spritePalettes[1]) {
+    lines.push(
+      `    OBP1_REG = ${formatHexByte(buildDmgPaletteRegisterValue(spritePalettes[1]))};`
+    )
+  }
 
   if (document.tilemapPath) {
     const tilemap = tilemapAssetsByPath.get(document.tilemapPath)

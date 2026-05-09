@@ -46,6 +46,7 @@ uint8_t load_animation(uint8_t x, uint8_t y) NONBANKED{
         set_sprite_data(animation_tiles[THIS_ANIMATION->animation_id], animation_tile_count, entry->data);
         if(THIS_ANIMATION->width == 8 && THIS_ANIMATION->height == 8){
             set_sprite_tile(THIS_ANIMATION_STATE->sprite_slot, animation_tiles[THIS_ANIMATION->animation_id]);
+            set_sprite_prop(THIS_ANIMATION_STATE->sprite_slot, THIS_ANIMATION_STATE->props);
             move_sprite(THIS_ANIMATION_STATE->sprite_slot, x, y);
         } else{
             move_metasprite_ex(THIS_ANIMATION->metasprite, animation_tiles[THIS_ANIMATION->animation_id], THIS_ANIMATION_STATE->props, THIS_ANIMATION_STATE->sprite_slot, x, y);
@@ -64,6 +65,28 @@ void move_animation(uint8_t x, uint8_t y) NONBANKED{
         move_sprite(THIS_ANIMATION_STATE->sprite_slot, x, y);
     } else{
         move_metasprite_ex(THIS_ANIMATION->metasprite, animation_tiles[THIS_ANIMATION->animation_id], THIS_ANIMATION_STATE->props, THIS_ANIMATION_STATE->sprite_slot, x, y);
+    }
+}
+
+void set_animation_props(uint8_t props, uint8_t x, uint8_t y) NONBANKED{
+    if(THIS_ANIMATION == NULL || THIS_ANIMATION_STATE == NULL){
+        return;
+    }
+
+    THIS_ANIMATION_STATE->props = props;
+
+    if(THIS_ANIMATION->width == 8 && THIS_ANIMATION->height == 8){
+        set_sprite_prop(THIS_ANIMATION_STATE->sprite_slot, props);
+        move_sprite(THIS_ANIMATION_STATE->sprite_slot, x, y);
+    } else{
+        move_metasprite_ex(
+            THIS_ANIMATION->metasprite,
+            animation_tiles[THIS_ANIMATION->animation_id] + (THIS_ANIMATION_STATE->current_frame * THIS_ANIMATION->width * THIS_ANIMATION->height / 64),
+            THIS_ANIMATION_STATE->props,
+            THIS_ANIMATION_STATE->sprite_slot,
+            x,
+            y
+        );
     }
 }
 

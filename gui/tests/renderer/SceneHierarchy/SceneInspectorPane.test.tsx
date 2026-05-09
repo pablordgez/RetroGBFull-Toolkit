@@ -174,6 +174,10 @@ const renderInspector = () => {
             { id: 'friendly', name: 'Friendly' },
             { id: 'enemy', name: 'Enemy' }
           ]}
+          defaultSpritePalettes={[['#9bbc0f', '#8bac0f', '#306230', '#0f380f'], null]}
+          defaultBackgroundPalette={['#9bbc0f', '#8bac0f', '#306230', '#0f380f']}
+          spritePaletteMismatchPaths={['Sprites/HeroAlt.rgbsprite.json']}
+          backgroundPaletteMismatchPaths={['Windows/Hud.rgbwindow.json']}
           onRequestActorScriptSelection={onRequestActorScriptSelection}
           onRequestSpriteSelection={onRequestSpriteSelection}
           onRequestSceneAnimationPropertySelection={onRequestSceneAnimationPropertySelection}
@@ -282,6 +286,34 @@ describe('SceneInspectorPane', () => {
     const { onRequestSceneAnimationPropertySelection } = renderInspector()
 
     expect(screen.getByDisplayValue('2')).toBeInTheDocument()
+    expect(screen.getByText('Sprite Palette 0')).toBeInTheDocument()
+    expect(screen.getByText(/Sprite palette matches neither scene palette: HeroAlt/)).toBeInTheDocument()
+    expect(screen.getByText('Background/Window Palette')).toBeInTheDocument()
+    expect(screen.getByText(/Background\/window palette differs: Hud/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Sprite Palette 0 color 0')).not.toBeInTheDocument()
+
+    const dataTransfer = {
+      value: '',
+      effectAllowed: 'move',
+      setData(_type: string, value: string) {
+        this.value = value
+      },
+      getData() {
+        return this.value
+      }
+    }
+    const spritePalette0 = within(screen.getByLabelText('Sprite Palette 0'))
+    fireEvent.dragStart(spritePalette0.getByTitle('Index 0: #9bbc0f. Drag to reorder.'), {
+      dataTransfer
+    })
+    fireEvent.drop(spritePalette0.getByTitle('Index 2: #306230. Drag to reorder.'), {
+      dataTransfer
+    })
+    expect(
+      within(screen.getByLabelText('Sprite Palette 0')).getByTitle(
+        'Index 0: #8bac0f. Drag to reorder.'
+      )
+    ).toBeInTheDocument()
 
     const gravityInput = screen.getByRole('textbox', { name: /gravity/i })
     fireEvent.change(gravityInput, { target: { value: '12' } })
