@@ -5,6 +5,8 @@
 #include "GameManager/GameManager.h"
 #include "Saves/SaveData.h"
 #include "Interrupts/InterruptManager.h"
+#include "Window/WindowVisibility.h"
+#include "Assets/Text/Text.h"
 #include "Scene/SceneRegistry.h"
 // BEGIN STARTING SCENE INCLUDE
 #include "CustomScenes/SampleScene.h"
@@ -22,6 +24,8 @@ void main(void)
     init_animation_system();
     init_map_system();
     init_interrupt_manager();
+    init_window_visibility_system();
+    init_text_system();
     add_vblank_interrupt_callback(engine_idle_vblank_isr);
     load_save_data();
 
@@ -39,11 +43,6 @@ void main(void)
     enable_interrupts();
 
     DISPLAY_ON;
-    if(THIS_GAME_MANAGER->current_scene != NULL && THIS_GAME_MANAGER->current_scene->window != NULL){
-        SHOW_WIN;
-    } else{
-        HIDE_WIN;
-    }
     SHOW_BKG;
     SHOW_SPRITES;
     

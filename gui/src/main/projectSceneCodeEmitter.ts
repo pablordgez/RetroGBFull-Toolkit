@@ -118,10 +118,52 @@ const getMapTilesetPalette = (
 
 type SceneNodeEmitter = (
   node: SceneAssetNode,
-  parentActorVariable: string | null,
+  parentActor: ParentActorContext | null,
   lines: string[],
   counters: { actor: number }
 ) => string | null
+
+interface ParentActorContext {
+  variable: string
+  visualXExpression: string
+  visualYExpression: string
+}
+
+const getSpriteAnchorOffset = (
+  spritePath: string | null,
+  spriteAssetsByPath: Map<string, ProjectAssetRecordLike>
+): { x: number; y: number } => {
+  if (!spritePath) {
+    return { x: 0, y: 0 }
+  }
+
+  const spriteResource = spriteAssetsByPath.get(spritePath)
+
+  if (!spriteResource) {
+    return { x: 0, y: 0 }
+  }
+
+  const spriteDocument = spriteResource.document as SpriteAssetDocument
+  const offsetX = spriteDocument.width === 8 && spriteDocument.height === 8
+    ? 8
+    : Math.floor(spriteDocument.width / 2) + 8
+  const offsetY = spriteDocument.width === 8 && spriteDocument.height === 8
+    ? 16
+    : Math.floor(spriteDocument.height / 2) + 16
+
+  return {
+    x: offsetX << 4,
+    y: offsetY << 4
+  }
+}
+
+const subtractExpression = (expression: string, value: number): string => {
+  return value === 0 ? expression : `(${expression} - ${value})`
+}
+
+const addSceneCoordinate = (value: number, offset: number): number => {
+  return Math.min(0xffff, Math.max(0, value + offset))
+}
 
 // builds a function that generates code for an editor scene node and its children
 export const createNodeEmitter = (
@@ -147,14 +189,14 @@ export const createNodeEmitter = (
   // into and a counter to generate unique actor variable names
   const emitNode = (
     node: SceneAssetNode,
-    parentActorVariable: string | null,
+    parentActor: ParentActorContext | null,
     lines: string[],
     counters: { actor: number }
   ): string | null => {
     // if it's a folder, just emit its children
     if (node.type === 'folder') {
       for (const childNode of node.children) {
-        emitNode(childNode, parentActorVariable, lines, counters)
+        emitNode(childNode, parentActor, lines, counters)
       }
 
       return null
@@ -164,14 +206,14 @@ export const createNodeEmitter = (
       const collisionNode = node as SceneAssetCollisionNode
       const actorVariable = `generated_actor_${counters.actor}`
       counters.actor += 1
-      const worldX = parentActorVariable
-        ? `${parentActorVariable}->x + ${collisionNode.x}`
+      const worldX = parentActor
+        ? `${parentActor.visualXExpression} + ${collisionNode.x}`
         : `${collisionNode.x}`
-      const worldY = parentActorVariable
-        ? `${parentActorVariable}->y + ${collisionNode.y}`
+      const worldY = parentActor
+        ? `${parentActor.visualYExpression} + ${collisionNode.y}`
         : `${collisionNode.y}`
       // if it doesn't have a parent, we create one to attach the collider to
-      if (!parentActorVariable) {
+      if (!parentActor) {
         lines.push(`    Actor* ${actorVariable} = (Actor*) malloc(sizeof(Actor));`)
         lines.push(`    ${actorVariable}->type = _${MANAGED_DEFAULT_ACTOR_IDENTIFIER};`)
         lines.push(`    THIS_ACTOR = ${actorVariable};`)
@@ -197,14 +239,14 @@ export const createNodeEmitter = (
         lines.push(`    ${colliderVariable}->tags[${tagIndex}] = ${tagName};`)
       })
 
-      lines.push(`    THIS_ACTOR = ${parentActorVariable ?? actorVariable};`)
+      lines.push(`    THIS_ACTOR = ${parentActor?.variable ?? actorVariable};`)
       lines.push(`    set_collider(${colliderVariable});`)
 
       for (const callback of collisionNode.callbacks) {
         lines.push(`    set_collision_callback(${colliderVariable}, ${callback.functionName});`)
       }
 
-      return parentActorVariable ?? actorVariable
+      return parentActor?.variable ?? actorVariable
     }
     // otherwise, it's an actor node, so we create an actor for it, set its properties and emit its children
     const script = node.scriptPath ? actorScriptsByPath.get(node.scriptPath) : null
@@ -219,7 +261,10 @@ export const createNodeEmitter = (
     lines.push(
       `    ${actorVariable}->physics_mode = ${PHYSICS_MODE_ENUM_BY_SCENE_VALUE[node.physicsMode]};`
     )
-    lines.push(`    set_actor_position(${node.x}, ${node.y});`)
+    const anchorOffset = getSpriteAnchorOffset(node.spritePath, spriteAssetsByPath)
+    const runtimeX = addSceneCoordinate(node.x, anchorOffset.x)
+    const runtimeY = addSceneCoordinate(node.y, anchorOffset.y)
+    lines.push(`    set_actor_position(${runtimeX}, ${runtimeY});`)
 
     // set tags for the actor, if any
     getEmittableTags(node.tags).forEach((tagName, tagIndex) => {
@@ -237,7 +282,7 @@ export const createNodeEmitter = (
 
       lines.push(`    set_actor_animation(animations[${spriteResource.identifier}]);`)
       if (node.spritePaletteIndex === 1) {
-        lines.push(`    set_animation_props(S_PALETTE, ${node.x >> 4}, ${node.y >> 4});`)
+        lines.push(`    set_animation_props(S_PALETTE, ${runtimeX >> 4}, ${runtimeY >> 4});`)
       }
     }
 
@@ -247,8 +292,14 @@ export const createNodeEmitter = (
 
     lines.push(`    add_actor(${actorVariable});`)
 
+    const actorContext: ParentActorContext = {
+      variable: actorVariable,
+      visualXExpression: subtractExpression(`${actorVariable}->x`, anchorOffset.x),
+      visualYExpression: subtractExpression(`${actorVariable}->y`, anchorOffset.y)
+    }
+
     for (const childNode of node.children) {
-      const childActorVariable = emitNode(childNode, actorVariable, lines, counters)
+      const childActorVariable = emitNode(childNode, actorContext, lines, counters)
 
       if (childNode.type === 'actor' && childActorVariable) {
         lines.push(`    THIS_ACTOR = ${actorVariable};`)

@@ -33,6 +33,7 @@ import {
   findSceneNodeById,
   findSceneNodeRecord,
   formatSceneCoord,
+  getSceneActorAnchorOffsetForSize,
   isSceneActorNode,
   isSceneCollisionNode,
   parseSceneCoord
@@ -45,6 +46,7 @@ interface SceneInspectorPaneProps {
   editor: SceneDocumentEditor
   sceneLabel?: string | null
   tilemapSize: { width: number; height: number } | null
+  spritePreviews?: Record<string, { width: number; height: number }>
   sceneScriptOptions?: ProjectScriptOption[]
   actorScriptOptions?: ProjectScriptOption[]
   sceneScriptPropertyDefinitions?: ParsedScriptPropertyDefinition[]
@@ -118,6 +120,7 @@ export const SceneInspectorPane = ({
   editor,
   sceneLabel,
   tilemapSize,
+  spritePreviews,
   sceneScriptOptions = [],
   actorScriptOptions = [],
   sceneScriptPropertyDefinitions = [],
@@ -239,7 +242,12 @@ export const SceneInspectorPane = ({
     const nextPosition = clampSceneActorPosition(
       axis === 'x' ? nextCoord : selectedActor.x,
       axis === 'y' ? nextCoord : selectedActor.y,
-      tilemapSize
+      tilemapSize,
+      getSceneActorAnchorOffsetForSize(
+        selectedActor.spritePath && spritePreviews
+          ? spritePreviews[selectedActor.spritePath]
+          : null
+      )
     )
 
     editor.updateActor(selectedActor.id, nextPosition)

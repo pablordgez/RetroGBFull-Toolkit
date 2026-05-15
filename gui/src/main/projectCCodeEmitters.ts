@@ -364,6 +364,7 @@ export const buildMapResourceFiles = (
 ): { headerPath: string; sourcePath: string; headerContent: string; sourceContent: string } => {
   const document = resource.document as TilemapAssetDocument | WindowAssetDocument
   const tilesetDocument = tileset.document as TilesetAssetDocument
+  const runtimeGrid = buildRuntimeMapGrid(document, windowTopEnd, windowBottomStart)
   const resourceDirectory = `res/${resource.identifier}`
   const headerPath = `${resourceDirectory}/${resource.identifier}.h`
   const sourcePath = `${resourceDirectory}/${resource.identifier}.c`
@@ -409,7 +410,7 @@ export const buildMapResourceFiles = (
     `BANKREF(${resource.identifier}_bankref)`,
     '',
     `const uint8_t ${resource.identifier}_map_data[] = {`,
-    formatByteArray(document.grid),
+    formatByteArray(runtimeGrid.grid),
     '};',
     ...(!usesSharedTileset
       ? [
@@ -429,6 +430,54 @@ export const buildMapResourceFiles = (
     sourcePath,
     headerContent: headerLines.join('\n'),
     sourceContent: sourceLines.join('\n')
+  }
+}
+
+const clampWindowRow = (value: number, height: number): number => {
+  return Math.max(0, Math.min(height, Math.trunc(value)))
+}
+
+const buildRuntimeMapGrid = (
+  document: TilemapAssetDocument | WindowAssetDocument,
+  windowTopEnd: number,
+  windowBottomStart: number
+): { grid: number[]; height: number } => {
+  if (document.kind !== 'window') {
+    return {
+      grid: document.grid,
+      height: document.height
+    }
+  }
+
+  const topEnd = clampWindowRow(windowTopEnd, document.height)
+  const bottomStart = clampWindowRow(windowBottomStart, document.height)
+  const width = Math.max(1, document.width)
+
+  if (topEnd === 0 && bottomStart === 0) {
+    return {
+      grid: document.grid,
+      height: document.height
+    }
+  }
+
+  const rows: number[] = []
+
+  for (let row = 0; row < topEnd; row += 1) {
+    rows.push(...document.grid.slice(row * width, (row + 1) * width))
+  }
+
+  if (bottomStart > topEnd) {
+    const screenTileRows = 18
+    const bottomEnd = Math.min(document.height, screenTileRows)
+
+    for (let row = bottomStart; row < bottomEnd; row += 1) {
+      rows.push(...document.grid.slice(row * width, (row + 1) * width))
+    }
+  }
+
+  return {
+    grid: rows,
+    height: rows.length / width
   }
 }
 
@@ -898,11 +947,12 @@ export const buildMapRegistryFiles = (
   // define the map_data array with entries for each map pointing to its bank and map data
   const mapDefinitionLines = maps.flatMap((map) => {
     const document = map.document as TilemapAssetDocument | WindowAssetDocument
+    const runtimeGrid = buildRuntimeMapGrid(document, map.windowTopEnd, map.windowBottomStart)
     return [
       `Map _${map.identifier} = {`,
       `    .id = ${map.identifier},`,
       `    .width = ${document.width},`,
-      `    .height = ${document.height},`,
+      `    .height = ${runtimeGrid.height},`,
       `    .tileset = ${map.usesSharedTileset ? map.tileset.identifier : map.identifier}_tileset,`,
       `    .num_tiles = ${map.usesSharedTileset ? map.tileset.identifier : map.identifier}_num_tiles,`,
       '    .first_tile = 0,',

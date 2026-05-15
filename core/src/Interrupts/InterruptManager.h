@@ -35,5 +35,7 @@ void set_timer_interrupt_callback(uint8_t clock_select, uint8_t modulo, Interrup
 void disable_timer_interrupt(void) NONBANKED;
 void clear_lcd_scanline_interrupts(void) BANKED;
 uint8_t add_lcd_scanline_interrupt(uint8_t ly, InterruptCallback callback) BANKED;
+uint8_t remove_lcd_scanline_interrupt(uint8_t ly, InterruptCallback callback) BANKED;
+void clear_lcd_scanline_interrupts_for_callback(InterruptCallback callback) BANKED;
 
 #endif /* INTERRUPT_MANAGER_H */

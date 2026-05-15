@@ -568,6 +568,60 @@ describe('projectCode collision callback helpers', () => {
     expect(mapRegistrySource).toContain(`.num_tiles = ${mapIdentifier}_num_tiles,`)
   })
 
+  it('generates split window map data already compacted for runtime loading', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const tileset = await createProjectResource(project.path, 'tileset', '', 'Window Tiles')
+    const windowResource = await createProjectResource(project.path, 'window', '', 'Dialog Window')
+    const windowIdentifier = normalizeCodeIdentifierStem('Dialog Window')
+    const loadedWindow = await loadProjectAssetFile(project.path, windowResource.resourcePath)
+
+    if (loadedWindow.document.kind !== 'window') {
+      throw new Error('Expected a window document.')
+    }
+
+    const width = 4
+    const height = 18
+    const grid = Array.from({ length: width * height }, (_, index) => Math.floor(index / width))
+
+    await saveProjectAssetFile(project.path, windowResource.resourcePath, {
+      ...loadedWindow.document,
+      width,
+      height,
+      grid,
+      tilesetPath: tileset.resourcePath,
+      windowTopEnd: 2,
+      windowBottomStart: 15
+    })
+
+    await buildProjectCode(project.path)
+
+    const windowSource = await readFile(
+      join(project.path, 'res', windowIdentifier, `${windowIdentifier}.c`),
+      'utf-8'
+    )
+    const mapRegistrySource = await readFile(
+      join(project.path, 'src', 'Assets', 'Map', 'MapRegistry.c'),
+      'utf-8'
+    )
+    const compactMapData = [
+      ...new Array(width).fill(0),
+      ...new Array(width).fill(1),
+      ...new Array(width).fill(15),
+      ...new Array(width).fill(16),
+      ...new Array(width).fill(17)
+    ]
+      .map((value) => `0x${value.toString(16).toUpperCase().padStart(2, '0')}`)
+      .join(',')
+
+    expect(windowSource.replace(/\s/g, '')).toContain(compactMapData)
+    expect(mapRegistrySource).toContain('.height = 5,')
+    expect(mapRegistrySource).toContain('.window_top_end = 2,')
+    expect(mapRegistrySource).toContain('.window_bottom_start = 15')
+  })
+
   it('keeps per-map tileset copies when the map and tileset banks differ', async () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
@@ -756,7 +810,7 @@ describe('projectCode collision callback helpers', () => {
     expect(sceneSource).toContain('BGP_REG = 0xE4;')
     expect(sceneSource).toContain('OBP0_REG = 0x1B;')
     expect(sceneSource).toContain('OBP1_REG = 0xE4;')
-    expect(sceneSource).toContain('set_animation_props(S_PALETTE, 0, 0);')
+    expect(sceneSource).toContain('set_animation_props(S_PALETTE, 8, 16);')
     expect(sceneSource.indexOf('BGP_REG = 0xE4;')).toBeLessThan(
       sceneSource.indexOf('set_scene_map(maps[palette_map]);')
     )

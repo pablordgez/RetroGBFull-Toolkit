@@ -70,6 +70,27 @@ const SCENE_COORD_MAX = 0xffff
 const SCENE_COLLISION_MIN_SIZE = SCENE_COORD_SCALE
 export const DEFAULT_SCENE_COLLISION_SIZE = 8 * SCENE_COORD_SCALE
 
+export interface SceneActorAnchorOffset {
+  x: number
+  y: number
+}
+
+export const getSceneActorAnchorOffsetForSize = (
+  spriteSize?: { width: number; height: number } | null
+): SceneActorAnchorOffset => {
+  if (!spriteSize || (spriteSize.width === 8 && spriteSize.height === 8)) {
+    return {
+      x: 8 * SCENE_COORD_SCALE,
+      y: 16 * SCENE_COORD_SCALE
+    }
+  }
+
+  return {
+    x: (Math.floor(spriteSize.width / 2) + 8) * SCENE_COORD_SCALE,
+    y: (Math.floor(spriteSize.height / 2) + 16) * SCENE_COORD_SCALE
+  }
+}
+
 export const getDefaultSceneNodeName = (type: SceneAssetNode['type']): string => {
   switch (type) {
     case 'actor':
@@ -511,12 +532,16 @@ export const mergeScriptPropertyValue = (
 export const clampSceneActorCoordinate = (
   value: number,
   mapTileCount: number | null,
-  edgePadding: number
+  edgePadding: number,
+  anchorOffset: number
 ): number => {
+  const minCoordinate = -anchorOffset
   const maxCoordinate =
-    mapTileCount === null ? SCENE_COORD_MAX : ((mapTileCount << 3) + edgePadding) << 4
+    mapTileCount === null
+      ? SCENE_COORD_MAX
+      : Math.max(minCoordinate, (((mapTileCount << 3) + edgePadding) << 4) - anchorOffset)
 
-  return Math.max(0, Math.min(SCENE_COORD_MAX, Math.round(value), maxCoordinate))
+  return Math.max(minCoordinate, Math.min(SCENE_COORD_MAX, Math.round(value), maxCoordinate))
 }
 
 export const clampSceneActorPosition = (
@@ -525,11 +550,12 @@ export const clampSceneActorPosition = (
   mapSize?: {
     width: number
     height: number
-  } | null
+  } | null,
+  anchorOffset = getSceneActorAnchorOffsetForSize()
 ): { x: number; y: number } => {
   return {
-    x: clampSceneActorCoordinate(x, mapSize?.width ?? null, 7),
-    y: clampSceneActorCoordinate(y, mapSize?.height ?? null, 15)
+    x: clampSceneActorCoordinate(x, mapSize?.width ?? null, 7, anchorOffset.x),
+    y: clampSceneActorCoordinate(y, mapSize?.height ?? null, 15, anchorOffset.y)
   }
 }
 

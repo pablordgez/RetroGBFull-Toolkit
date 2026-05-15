@@ -369,6 +369,7 @@ export const SceneEditorWorkspace = ({
               className="project-workspace__editor-pane project-workspace__editor-pane--inspector"
               editor={editor}
               tilemapSize={tilemapSize}
+              spritePreviews={spritePreviews}
               sceneLabel={sceneLabel}
               sceneScriptOptions={sceneScriptOptions}
               actorScriptOptions={actorScriptOptions}

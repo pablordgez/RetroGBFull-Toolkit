@@ -12,13 +12,14 @@ typedef struct {
     uint8_t* tileset;
     uint8_t num_tiles;
     uint8_t first_tile;
-    // Tile-row positions on screen used only by window split rendering.
+    // Window resources may have generated, compacted map rows; these keep the original screen split.
     uint8_t window_top_end;
     uint8_t window_bottom_start;
 
 } Map;
 
 extern Map* THIS_MAP;
+extern SpaceManager map_space_manager;
 
 void init_map_system(void) BANKED;
 void load_map(uint8_t window) NONBANKED;
