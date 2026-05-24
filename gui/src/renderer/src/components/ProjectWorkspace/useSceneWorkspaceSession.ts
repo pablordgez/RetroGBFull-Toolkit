@@ -274,7 +274,18 @@ export const useSceneWorkspaceSession = ({
         if (isSceneCollisionNode(node)) {
           return {
             ...node,
-            callbacks: node.callbacks.flatMap((callback) => {
+            callbacks: (node.callbacks ?? []).flatMap((callback) => {
+              const nextCallbackScriptPath = remapReferencedAssetPath(callback.scriptPath, event)
+              return nextCallbackScriptPath
+                ? [
+                    {
+                      ...callback,
+                      scriptPath: nextCallbackScriptPath
+                    }
+                  ]
+                : []
+            }),
+            exitCallbacks: (node.exitCallbacks ?? []).flatMap((callback) => {
               const nextCallbackScriptPath = remapReferencedAssetPath(callback.scriptPath, event)
               return nextCallbackScriptPath
                 ? [

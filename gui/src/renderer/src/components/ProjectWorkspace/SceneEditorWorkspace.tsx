@@ -418,6 +418,9 @@ export const SceneEditorWorkspace = ({
               onSetCollisionCallbacks={(nodeId, callbacks) => {
                 editor.setCollisionCallbacks(nodeId, callbacks)
               }}
+              onSetCollisionExitCallbacks={(nodeId, callbacks) => {
+                editor.setCollisionExitCallbacks(nodeId, callbacks)
+              }}
             />
           }
           initialPaneSize={280}

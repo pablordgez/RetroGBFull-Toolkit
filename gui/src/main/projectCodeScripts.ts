@@ -79,7 +79,8 @@ const escapeHeaderGuardName = (scriptName: string): string => {
 }
 
 const buildManagedSourcePrefix = (scriptFileStem: string, bank: number): string => {
-  return `#pragma bank ${bank}\n#include "${scriptFileStem}.h"\n#include "ScriptEnvironment.h"\n\n`
+  const scriptIdentifier = normalizeCodeIdentifier(scriptFileStem)
+  return `#pragma bank ${bank}\n#include "${scriptFileStem}.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(${scriptIdentifier}_bankref)\n\n`
 }
 
 const buildActorHeaderTemplate = (scriptIdentifier: string): string => {
@@ -96,15 +97,15 @@ const buildSceneHeaderTemplate = (scriptIdentifier: string): string => {
 
 const buildGeneralHeaderTemplate = (scriptIdentifier: string): string => {
   const headerGuard = escapeHeaderGuardName(scriptIdentifier)
-  return `#ifndef ${headerGuard}\n#define ${headerGuard}\n\n#endif // ${headerGuard}\n`
+  return `#ifndef ${headerGuard}\n#define ${headerGuard}\n#include "MainDefinitions.h"\n\n#endif // ${headerGuard}\n`
 }
 
 const buildActorSourceTemplate = (scriptIdentifier: string): string => {
-  return `void AINIT(void){\n    ${scriptIdentifier}* self = (${scriptIdentifier}*) THIS_ACTOR;\n    init_actor(&self->base);\n}\n\nvoid AUPDATE(void){\n\n}\n`
+  return `void AINIT(void) BANKED{\n    ${scriptIdentifier}* self = (${scriptIdentifier}*) THIS_ACTOR;\n    init_actor(&self->base);\n}\n\nvoid AUPDATE(void) BANKED{\n\n}\n`
 }
 
 const buildSceneSourceTemplate = (scriptIdentifier: string): string => {
-  return `void SINIT(void) BANKED{\n    ${scriptIdentifier}* scene = (${scriptIdentifier}*) THIS_SCENE;\n    init_scene(&scene->base);\n}\n\nvoid SUPDATE(void){\n    update_actors();\n    draw_actors();\n}\n`
+  return `void SINIT(void) BANKED{\n    ${scriptIdentifier}* scene = (${scriptIdentifier}*) THIS_SCENE;\n    init_scene(&scene->base);\n}\n\nvoid SUPDATE(void) BANKED{\n    update_actors();\n    draw_actors();\n}\n`
 }
 
 const buildGeneralSourceTemplate = (): string => {
@@ -161,6 +162,16 @@ const splitEditableSourceContent = (sourceContent: string): string => {
     ['#include "Generated/ScriptEnvironment.h"', '#include "ScriptEnvironment.h"'].includes(
       (sourceLines[index] ?? '').trim()
     )
+  ) {
+    index += 1
+  }
+
+  while (index < sourceLines.length && (sourceLines[index] ?? '').trim() === '') {
+    index += 1
+  }
+
+  if (
+    /^BANKREF\s*\(\s*[A-Za-z_][A-Za-z0-9_]*_bankref\s*\)\s*$/.test(sourceLines[index]?.trim() ?? '')
   ) {
     index += 1
   }
@@ -408,15 +419,15 @@ export const buildManagedScriptedSceneFileContents = (
       MANAGED_SCENE_FILE_MARKER,
       '',
       `void scene_init_state_${sceneScriptIdentifier}(void) BANKED;`,
-      `void scene_update_${sceneScriptIdentifier}(void);`,
+      `void scene_update_${sceneScriptIdentifier}(void) BANKED;`,
       '',
       'void SINIT(void) BANKED{',
-      `    scene_init_state_${sceneScriptIdentifier}();`,
+      `    FAR_CALL(TO_FAR_PTR(scene_init_state_${sceneScriptIdentifier}, BANK(${sceneScriptIdentifier}_bankref)), RVoid_PVoid_BANKED);`,
       ...generatedInitializationBlock,
       '}',
       '',
-      'void SUPDATE(void){',
-      `    scene_update_${sceneScriptIdentifier}();`,
+      'void SUPDATE(void) BANKED{',
+      `    FAR_CALL(TO_FAR_PTR(scene_update_${sceneScriptIdentifier}, BANK(${sceneScriptIdentifier}_bankref)), RVoid_PVoid_BANKED);`,
       '}',
       ''
     ].join('\n')
@@ -513,7 +524,7 @@ export const rewriteStartingSceneInMain = async (
       STARTING_SCENE_INCLUDE_END,
       [`#include "CustomScenes/${sceneIdentifier}.h"`]
     )
-    // if not present, replace any imports from CustomScenes 
+    // if not present, replace any imports from CustomScenes
   } else {
     nextMainContent = nextMainContent.replace(
       /#include\s+"CustomScenes\/[^"]+\.h"/,
@@ -576,14 +587,28 @@ export const rewriteManagedProjectScriptSource = async (
   script: ProjectScriptRecordResolved
 ): Promise<string> => {
   const sourceAbsolutePath = resolvePathWithinProject(projectPath, script.path)
+  const headerPath = getProjectScriptHeaderPath(script.path)
+  const headerAbsolutePath = resolvePathWithinProject(projectPath, headerPath)
   const existingSourceContent = await readFile(sourceAbsolutePath, 'utf-8')
+  const existingHeaderContent = await readFile(headerAbsolutePath, 'utf-8')
   const editableSourceContent =
     script.kind === 'scene'
       ? stripGeneratedSceneInitializationBlock(splitEditableSourceContent(existingSourceContent))
       : splitEditableSourceContent(existingSourceContent)
+  const bankedEditableSourceContent = ensureBankedScriptVoidDefinitions(editableSourceContent)
   const managedSourcePrefix = buildManagedSourcePrefix(script.name, script.bank)
+  const bankedFunctionNames = collectBankedScriptVoidFunctionNames(bankedEditableSourceContent)
+  const headerContent = ensureBankedScriptHeaderPrototypes(
+    existingHeaderContent,
+    bankedFunctionNames
+  )
 
-  await writeFile(sourceAbsolutePath, `${managedSourcePrefix}${editableSourceContent}`, 'utf-8')
+  await writeFile(
+    sourceAbsolutePath,
+    `${managedSourcePrefix}${bankedEditableSourceContent}`,
+    'utf-8'
+  )
+  await writeFile(headerAbsolutePath, headerContent, 'utf-8')
 
   return script.path.replace(/\\/g, '/')
 }
@@ -606,8 +631,11 @@ export const rewriteScriptedSceneInitialization = async (
   return sceneScript.path.replace(/\\/g, '/')
 }
 
-const buildScriptEnvironmentHeaderContent = (scriptHeaderIncludes: string[]): string => {
-  return `#ifndef SCRIPT_ENVIRONMENT_H\n#define SCRIPT_ENVIRONMENT_H\n#include "MainDefinitions.h"\n#include "Actor/Actor.h"\n#include "Scene/Scene.h"\n#include "Collisions/CollisionManager.h"\n#include "Collisions/ColliderRegistry.h"\n#include "Assets/Animations/AnimationRegistry.h"\n#include "Assets/Map/MapRegistry.h"\n#include "Assets/Music/SongRegistry.h"\n#include "Assets/Text/Text.h"\n#include "Interrupts/InterruptManager.h"\n#include "Saves/SaveData.h"\n${scriptHeaderIncludes.length > 0 ? `${scriptHeaderIncludes.join('\n')}\n` : ''}#include <gb/gb.h>\n#include <stdint.h>\n#include <stdlib.h>\n#include <stdio.h>\n#include <string.h>\n\n#endif // SCRIPT_ENVIRONMENT_H\n`
+const buildScriptEnvironmentHeaderContent = (
+  scriptHeaderIncludes: string[],
+  scriptBankRefExterns: string[] = []
+): string => {
+  return `#ifndef SCRIPT_ENVIRONMENT_H\n#define SCRIPT_ENVIRONMENT_H\n#include "MainDefinitions.h"\n#include "Actor/Actor.h"\n#include "Scene/Scene.h"\n#include "Collisions/CollisionManager.h"\n#include "Collisions/ColliderRegistry.h"\n#include "Assets/Animations/AnimationRegistry.h"\n#include "Assets/Map/MapRegistry.h"\n#include "Assets/Music/SongRegistry.h"\n#include "Assets/Text/Text.h"\n#include "Interrupts/InterruptManager.h"\n#include "Saves/SaveData.h"\n${scriptHeaderIncludes.length > 0 ? `${scriptHeaderIncludes.join('\n')}\n` : ''}${scriptBankRefExterns.length > 0 ? `${scriptBankRefExterns.join('\n')}\n` : ''}#include <gb/gb.h>\n#include <stdint.h>\n#include <stdlib.h>\n#include <stdio.h>\n#include <string.h>\n\n#endif // SCRIPT_ENVIRONMENT_H\n`
 }
 
 // generates a header file that includes some base headers and detected script headers
@@ -623,7 +651,13 @@ export const writeGeneratedScriptEnvironment = async (projectPath: string): Prom
       })
     )
   ].sort((left, right) => left.localeCompare(right))
-  const headerContent = buildScriptEnvironmentHeaderContent(scriptHeaderIncludes)
+  const scriptBankRefExterns = scriptRecords
+    .map((script) => `BANKREF_EXTERN(${script.identifier}_bankref)`)
+    .sort((left, right) => left.localeCompare(right))
+  const headerContent = buildScriptEnvironmentHeaderContent(
+    scriptHeaderIncludes,
+    scriptBankRefExterns
+  )
 
   await mkdir(dirname(headerPath), { recursive: true })
   await writeFile(headerPath, headerContent, 'utf-8')
@@ -702,17 +736,20 @@ export const saveProjectScriptResource = async (
   const headerAbsolutePath = resolvePathWithinProject(normalizedProjectPath, paths.headerPath)
   const bank = await readProjectTrackedResourceBank(normalizedProjectPath, paths.resourcePath)
   const { managedSourcePrefix } = buildScriptTemplates(scriptKind, scriptName, bank)
-  const sourceContent = `${managedSourcePrefix}${editableSourceContent}`
+  const bankedEditableSourceContent = ensureBankedScriptVoidDefinitions(editableSourceContent)
+  const bankedFunctionNames = collectBankedScriptVoidFunctionNames(bankedEditableSourceContent)
+  const nextHeaderContent = ensureBankedScriptHeaderPrototypes(headerContent, bankedFunctionNames)
+  const sourceContent = `${managedSourcePrefix}${bankedEditableSourceContent}`
 
   await writeFile(sourceAbsolutePath, sourceContent, 'utf-8')
-  await writeFile(headerAbsolutePath, headerContent, 'utf-8')
+  await writeFile(headerAbsolutePath, nextHeaderContent, 'utf-8')
   await writeGeneratedScriptEnvironment(normalizedProjectPath)
 
   return {
     resourcePath: paths.resourcePath,
     scriptKind,
     sourceContent,
-    headerContent
+    headerContent: nextHeaderContent
   }
 }
 
@@ -768,7 +805,6 @@ export const renameProjectScriptFiles = async (
   await writeFile(nextHeaderAbsolutePath, updatedHeaderContent, 'utf-8')
   await writeGeneratedScriptEnvironment(normalizedProjectPath)
 }
-
 
 export const moveProjectScriptFilesToDeletedContainer = async (
   projectPath: string,
@@ -849,7 +885,73 @@ export const scriptFilesExist = async (
 const CALLBACK_FUNCTION_PATTERN =
   /(^|\n)\s*(?!static\b)void\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*void\s*\)\s*(?:BANKED|NONBANKED)?\s*\{/g
 
-// looks for any scripts that contain functions that match the callback pattern, returns candidates with the 
+const SCRIPT_PUBLIC_VOID_DEFINITION_PATTERN =
+  /(^|\n)([ \t]*(?!static\b)void\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*void\s*\))(\s*)(\{)/g
+
+const SCRIPT_PUBLIC_VOID_FUNCTION_PATTERN =
+  /(^|\n)\s*(?!static\b)void\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*void\s*\)\s*(BANKED|NONBANKED)?\s*\{/g
+
+const ensureBankedScriptVoidDefinitions = (sourceContent: string): string => {
+  return sourceContent.replace(
+    SCRIPT_PUBLIC_VOID_DEFINITION_PATTERN,
+    (_match, prefix: string, declaration: string, _functionName: string, spacing: string) => {
+      return `${prefix}${declaration} BANKED${spacing}{`
+    }
+  )
+}
+
+const collectBankedScriptVoidFunctionNames = (sourceContent: string): Set<string> => {
+  const names = new Set<string>()
+
+  for (const match of sourceContent.matchAll(SCRIPT_PUBLIC_VOID_FUNCTION_PATTERN)) {
+    const functionName = match[2]
+    const attribute = match[3]
+
+    if (functionName && attribute !== 'NONBANKED') {
+      names.add(functionName)
+    }
+  }
+
+  return names
+}
+
+const ensureBankedScriptHeaderPrototypes = (
+  headerContent: string,
+  functionNames: Set<string>
+): string => {
+  if (functionNames.size === 0) {
+    return headerContent
+  }
+
+  const escapedNames = [...functionNames]
+    .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  const prototypePattern = new RegExp(
+    `(^|\\n)([ \\t]*void\\s+(${escapedNames})\\s*\\(\\s*void\\s*\\))\\s*(?:BANKED|NONBANKED)?\\s*;`,
+    'g'
+  )
+
+  const nextHeaderContent = headerContent.replace(
+    prototypePattern,
+    (_match, prefix: string, declaration: string) => {
+      return `${prefix}${declaration} BANKED;`
+    }
+  )
+
+  if (
+    nextHeaderContent.includes(' BANKED;') &&
+    !/#include\s+"MainDefinitions\.h"/.test(nextHeaderContent)
+  ) {
+    return nextHeaderContent.replace(
+      /(#ifndef\s+[A-Za-z_][A-Za-z0-9_]*\s*\n#define\s+[A-Za-z_][A-Za-z0-9_]*\s*)/,
+      '$1\n#include "MainDefinitions.h"\n'
+    )
+  }
+
+  return nextHeaderContent
+}
+
+// looks for any scripts that contain functions that match the callback pattern, returns candidates with the
 // function name and script info
 export const listProjectScriptCallbackCandidates = async (
   projectPath: string,

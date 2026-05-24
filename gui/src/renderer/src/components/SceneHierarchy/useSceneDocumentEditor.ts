@@ -35,6 +35,7 @@ import {
   buildActorScriptPropertyChange,
   buildActorUpdateChange,
   buildCollisionCallbacksChange,
+  buildCollisionExitCallbacksChange,
   buildCollisionUpdateChange,
   buildFollowedActorChange,
   buildLoadedActorChange,
@@ -118,6 +119,7 @@ export interface SceneDocumentEditor {
     >
   ) => void
   setCollisionCallbacks: (nodeId: string, callbacks: SceneAssetCollisionCallback[]) => void
+  setCollisionExitCallbacks: (nodeId: string, callbacks: SceneAssetCollisionCallback[]) => void
   clampActorsToMap: (mapSize: SceneMapSize | null) => void
   setTilemapPath: (nextTilemapPath: string | null, nextTilemapSize?: SceneMapSize) => void
   setWindowPath: (nextWindowPath: string | null) => void
@@ -702,6 +704,27 @@ export const useSceneDocumentEditor = ({
     [commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
   )
 
+  const setCollisionExitCallbacks = useCallback(
+    (nodeId: string, callbacks: SceneAssetCollisionCallback[]) => {
+      if (!scene || editingNode) {
+        return
+      }
+
+      const callbackChange = buildCollisionExitCallbacksChange(
+        documentSnapshot.nodes,
+        nodeId,
+        callbacks
+      )
+
+      if (!callbackChange) {
+        return
+      }
+
+      commitHistoryValues(callbackChange)
+    },
+    [commitHistoryValues, documentSnapshot.nodes, editingNode, scene]
+  )
+
   const clampActorsToMap = useCallback(
     (mapSize: SceneMapSize | null) => {
       if (!scene || !mapSize) {
@@ -831,6 +854,7 @@ export const useSceneDocumentEditor = ({
     setNodeTags,
     updateCollision,
     setCollisionCallbacks,
+    setCollisionExitCallbacks,
     clampActorsToMap,
     setTilemapPath,
     setWindowPath,

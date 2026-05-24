@@ -530,6 +530,19 @@ export const buildCollisionCallbacksChange = (
   nodes: SceneAssetNode[],
   nodeId: string,
   callbacks: SceneAssetCollisionCallback[]
+): SceneNodeChange | null => buildCollisionCallbackListChange(nodes, nodeId, callbacks, 'callbacks')
+
+export const buildCollisionExitCallbacksChange = (
+  nodes: SceneAssetNode[],
+  nodeId: string,
+  callbacks: SceneAssetCollisionCallback[]
+): SceneNodeChange | null => buildCollisionCallbackListChange(nodes, nodeId, callbacks, 'exitCallbacks')
+
+const buildCollisionCallbackListChange = (
+  nodes: SceneAssetNode[],
+  nodeId: string,
+  callbacks: SceneAssetCollisionCallback[],
+  callbackField: 'callbacks' | 'exitCallbacks'
 ): SceneNodeChange | null => {
   const collision = findSceneNodeById(nodes, nodeId)
 
@@ -538,10 +551,11 @@ export const buildCollisionCallbacksChange = (
   }
 
   const nextCallbacks = callbacks.map((callback) => ({ ...callback }))
+  const currentCallbacks = collision[callbackField]
   const didChange =
-    nextCallbacks.length !== collision.callbacks.length ||
+    nextCallbacks.length !== currentCallbacks.length ||
     nextCallbacks.some((callback, index) => {
-      const currentCallback = collision.callbacks[index]
+      const currentCallback = currentCallbacks[index]
       return (
         !currentCallback ||
         currentCallback.scriptPath !== callback.scriptPath ||
@@ -558,7 +572,7 @@ export const buildCollisionCallbacksChange = (
       isSceneCollisionNode(node)
         ? {
             ...node,
-            callbacks: nextCallbacks
+            [callbackField]: nextCallbacks
           }
         : node
     ),

@@ -34,7 +34,7 @@ static void window_visibility_hide_isr(void) NONBANKED{
     HIDE_WIN;
 }
 
-static void window_visibility_clear_interrupts(void) BANKED{
+static void window_visibility_clear_interrupts(void){
     clear_lcd_scanline_interrupts_for_callback(window_visibility_show_isr);
     clear_lcd_scanline_interrupts_for_callback(window_visibility_hide_isr);
     remove_vblank_interrupt_callback(window_visibility_vblank_isr);
@@ -104,7 +104,7 @@ uint8_t window_visibility_add_band(uint8_t owner, uint8_t start_ly, uint8_t end_
     return 1;
 }
 
-static void window_visibility_merge_bands(void) BANKED{
+static void window_visibility_merge_bands(void){
     uint8_t source_index;
 
     window_visibility_merged_count = 0;

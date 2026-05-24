@@ -40,89 +40,85 @@ describe('projectCode collision callback helpers', () => {
     )
   })
 
-  it(
-    'collects compatible callbacks from general, actor, and scene scripts while excluding reserved entry points',
-    async () => {
-      const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
-      tempDirectories.push(workspaceDirectory)
-      const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+  it('collects compatible callbacks from general, actor, and scene scripts while excluding reserved entry points', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
 
-      const generalScript = await createProjectScriptResource(project.path, 'general', 'Shared')
-      const actorScript = await createProjectScriptResource(project.path, 'actor', 'Hero')
-      const sceneScript = await createProjectScriptResource(project.path, 'scene', 'Room')
+    const generalScript = await createProjectScriptResource(project.path, 'general', 'Shared')
+    const actorScript = await createProjectScriptResource(project.path, 'actor', 'Hero')
+    const sceneScript = await createProjectScriptResource(project.path, 'scene', 'Room')
 
-      const loadedGeneral = await loadProjectScriptResource(
-        project.path,
-        generalScript.resourcePath,
-        'general'
-      )
-      const loadedActor = await loadProjectScriptResource(
-        project.path,
-        actorScript.resourcePath,
-        'actor'
-      )
-      const loadedScene = await loadProjectScriptResource(
-        project.path,
-        sceneScript.resourcePath,
-        'scene'
-      )
+    const loadedGeneral = await loadProjectScriptResource(
+      project.path,
+      generalScript.resourcePath,
+      'general'
+    )
+    const loadedActor = await loadProjectScriptResource(
+      project.path,
+      actorScript.resourcePath,
+      'actor'
+    )
+    const loadedScene = await loadProjectScriptResource(
+      project.path,
+      sceneScript.resourcePath,
+      'scene'
+    )
 
-      await saveProjectScriptResource(
-        project.path,
-        generalScript.resourcePath,
-        'general',
-        'void OnSharedCollision(void){\n}\n\nstatic void HiddenShared(void){\n}\n\nvoid SharedNeedsArgs(uint8_t value){\n    value = value;\n}\n',
-        loadedGeneral.headerContent
-      )
-      await saveProjectScriptResource(
-        project.path,
-        actorScript.resourcePath,
-        'actor',
-        'void AINIT(void){\n}\n\nvoid AUPDATE(void){\n}\n\nvoid OnHeroCollision(void){\n}\n',
-        loadedActor.headerContent
-      )
-      await saveProjectScriptResource(
-        project.path,
-        sceneScript.resourcePath,
-        'scene',
-        'void SINIT(void) BANKED{\n}\n\nvoid SUPDATE(void){\n}\n\nvoid OnRoomCollision(void){\n}\n',
-        loadedScene.headerContent
-      )
+    await saveProjectScriptResource(
+      project.path,
+      generalScript.resourcePath,
+      'general',
+      'void OnSharedCollision(void){\n}\n\nstatic void HiddenShared(void){\n}\n\nvoid SharedNeedsArgs(uint8_t value){\n    value = value;\n}\n',
+      loadedGeneral.headerContent
+    )
+    await saveProjectScriptResource(
+      project.path,
+      actorScript.resourcePath,
+      'actor',
+      'void AINIT(void){\n}\n\nvoid AUPDATE(void){\n}\n\nvoid OnHeroCollision(void){\n}\n',
+      loadedActor.headerContent
+    )
+    await saveProjectScriptResource(
+      project.path,
+      sceneScript.resourcePath,
+      'scene',
+      'void SINIT(void) BANKED{\n}\n\nvoid SUPDATE(void){\n}\n\nvoid OnRoomCollision(void){\n}\n',
+      loadedScene.headerContent
+    )
 
-      const scripts = await listProjectScriptResources(project.path)
-      const candidates = await listProjectScriptCallbackCandidates(project.path, scripts)
+    const scripts = await listProjectScriptResources(project.path)
+    const candidates = await listProjectScriptCallbackCandidates(project.path, scripts)
 
-      expect(candidates).toEqual(
-        expect.arrayContaining([
-          {
-            scriptPath: generalScript.resourcePath,
-            scriptKind: 'general',
-            scriptName: 'Shared',
-            functionName: 'OnSharedCollision'
-          },
-          {
-            scriptPath: actorScript.resourcePath,
-            scriptKind: 'actor',
-            scriptName: 'Hero',
-            functionName: 'OnHeroCollision'
-          },
-          {
-            scriptPath: sceneScript.resourcePath,
-            scriptKind: 'scene',
-            scriptName: 'Room',
-            functionName: 'OnRoomCollision'
-          }
-        ])
-      )
-      expect(candidates.some((candidate) => candidate.functionName === 'AINIT')).toBe(false)
-      expect(candidates.some((candidate) => candidate.functionName === 'AUPDATE')).toBe(false)
-      expect(candidates.some((candidate) => candidate.functionName === 'SINIT')).toBe(false)
-      expect(candidates.some((candidate) => candidate.functionName === 'SUPDATE')).toBe(false)
-      expect(candidates.some((candidate) => candidate.functionName === 'HiddenShared')).toBe(false)
-      expect(candidates.some((candidate) => candidate.functionName === 'SharedNeedsArgs')).toBe(false)
-    },
-    60_000
-  )
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        {
+          scriptPath: generalScript.resourcePath,
+          scriptKind: 'general',
+          scriptName: 'Shared',
+          functionName: 'OnSharedCollision'
+        },
+        {
+          scriptPath: actorScript.resourcePath,
+          scriptKind: 'actor',
+          scriptName: 'Hero',
+          functionName: 'OnHeroCollision'
+        },
+        {
+          scriptPath: sceneScript.resourcePath,
+          scriptKind: 'scene',
+          scriptName: 'Room',
+          functionName: 'OnRoomCollision'
+        }
+      ])
+    )
+    expect(candidates.some((candidate) => candidate.functionName === 'AINIT')).toBe(false)
+    expect(candidates.some((candidate) => candidate.functionName === 'AUPDATE')).toBe(false)
+    expect(candidates.some((candidate) => candidate.functionName === 'SINIT')).toBe(false)
+    expect(candidates.some((candidate) => candidate.functionName === 'SUPDATE')).toBe(false)
+    expect(candidates.some((candidate) => candidate.functionName === 'HiddenShared')).toBe(false)
+    expect(candidates.some((candidate) => candidate.functionName === 'SharedNeedsArgs')).toBe(false)
+  }, 60_000)
 
   it('removes stale generated resource directories and registry entries after deleting a tracked asset', async () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
@@ -167,8 +163,12 @@ describe('projectCode collision callback helpers', () => {
     expect(emptyAnimationRegistryHeader).not.toContain('empty_sprite')
     expect(emptyAnimationRegistryHeader).toContain('NUMBER_OF_ANIMATIONS = 1')
     expect(emptyAnimationRegistrySource).not.toContain('empty_sprite')
-    expect(emptyAnimationRegistrySource).toContain('const Animation* animations[NUMBER_OF_ANIMATIONS] = {')
-    expect(emptyAnimationRegistrySource).toContain('const AssetEntry animation_data[NUMBER_OF_ANIMATIONS] = {')
+    expect(emptyAnimationRegistrySource).toContain(
+      'const Animation* animations[NUMBER_OF_ANIMATIONS] = {'
+    )
+    expect(emptyAnimationRegistrySource).toContain(
+      'const AssetEntry animation_data[NUMBER_OF_ANIMATIONS] = {'
+    )
   })
 
   it('rewrites generated resource output and dependent code when an asset changes', async () => {
@@ -747,8 +747,12 @@ describe('projectCode collision callback helpers', () => {
     expect(roomLogicSource).not.toContain('// BEGIN GENERATED SCENE INITIALIZATION')
     expect(roomSceneHeader).toContain('#include "CustomScenes/RoomLogic.h"')
     expect(roomSceneHeader).toContain('typedef RoomLogic room;')
-    expect(roomSceneSource).toContain('scene_init_state_RoomLogic();')
-    expect(roomSceneSource).toContain('scene_update_RoomLogic();')
+    expect(roomSceneSource).toContain(
+      'FAR_CALL(TO_FAR_PTR(scene_init_state_RoomLogic, BANK(RoomLogic_bankref)), RVoid_PVoid_BANKED);'
+    )
+    expect(roomSceneSource).toContain(
+      'FAR_CALL(TO_FAR_PTR(scene_update_RoomLogic, BANK(RoomLogic_bankref)), RVoid_PVoid_BANKED);'
+    )
     expect(roomSceneSource).toContain('// BEGIN GENERATED SCENE INITIALIZATION')
     expect(roomSceneSource).toContain('set_scene_map(maps[dungeon]);')
     await expect(stat(projectBindingsPath)).rejects.toMatchObject({ code: 'ENOENT' })
@@ -822,6 +826,7 @@ describe('projectCode collision callback helpers', () => {
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
     await prepareBundledGbdkFixture(workspaceDirectory)
     const scene = await createProjectResource(project.path, 'scene', '', 'Room')
+    await createProjectScriptResource(project.path, 'actor', 'Hero')
     const loadedScene = await loadProjectAssetFile(project.path, scene.resourcePath)
 
     if (loadedScene.document.kind !== 'scene') {
@@ -861,6 +866,12 @@ describe('projectCode collision callback helpers', () => {
               isBlocking: true,
               tags: ['hurtbox'],
               callbacks: [],
+              exitCallbacks: [
+                {
+                  scriptPath: 'src/CustomActors/Hero.c',
+                  functionName: 'OnHeroCollisionExit'
+                }
+              ],
               children: []
             }
           ]
@@ -874,16 +885,16 @@ describe('projectCode collision callback helpers', () => {
       join(project.path, 'src', 'Actor', 'ActorRegistry.h'),
       'utf-8'
     )
-    const sceneSource = await readFile(
-      join(project.path, 'src', 'CustomScenes', 'room.c'),
-      'utf-8'
-    )
+    const sceneSource = await readFile(join(project.path, 'src', 'CustomScenes', 'room.c'), 'utf-8')
 
     expect(actorRegistry).toContain('TAG_PLAYER,')
     expect(actorRegistry).toContain('TAG_HURT_BOX,')
     expect(sceneSource).toContain('generated_actor_0->physics_mode = HIGH_PERF;')
     expect(sceneSource).toContain('set_tag(TAG_PLAYER, 0);')
     expect(sceneSource).toContain('generated_actor_1_collider->tags[0] = TAG_HURT_BOX;')
+    expect(sceneSource).toContain(
+      'set_collision_exit_callback(generated_actor_1_collider, TO_FAR_PTR(OnHeroCollisionExit, BANK(Hero_bankref)));'
+    )
   })
 
   it('generates separate CustomScenes entries when multiple scenes share one scene script', async () => {
@@ -946,9 +957,13 @@ describe('projectCode collision callback helpers', () => {
     )
     const sharedScriptSource = await readFile(join(project.path, sceneScript.resourcePath), 'utf-8')
 
-    expect(firstSceneSource).toContain('scene_init_state_SharedRoomLogic();')
+    expect(firstSceneSource).toContain(
+      'FAR_CALL(TO_FAR_PTR(scene_init_state_SharedRoomLogic, BANK(SharedRoomLogic_bankref)), RVoid_PVoid_BANKED);'
+    )
     expect(firstSceneSource).toContain('set_scene_map(maps[first_dungeon]);')
-    expect(secondSceneSource).toContain('scene_init_state_SharedRoomLogic();')
+    expect(secondSceneSource).toContain(
+      'FAR_CALL(TO_FAR_PTR(scene_init_state_SharedRoomLogic, BANK(SharedRoomLogic_bankref)), RVoid_PVoid_BANKED);'
+    )
     expect(secondSceneSource).toContain('set_scene_map(maps[second_dungeon]);')
     expect(sceneRegistry).toContain('_SCENE(first_room)')
     expect(sceneRegistry).toContain('_SCENE(second_room)')

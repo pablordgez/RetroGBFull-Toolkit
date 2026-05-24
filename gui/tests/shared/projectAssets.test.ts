@@ -57,6 +57,18 @@ describe('projectAssets scene parsing', () => {
           width: 128,
           height: 64,
           isBlocking: true,
+          callbacks: [
+            {
+              scriptPath: 'src/CustomActors/Hero.c',
+              functionName: 'OnCollision'
+            }
+          ],
+          exitCallbacks: [
+            {
+              scriptPath: 'src/CustomActors/Hero.c',
+              functionName: 'OnCollisionExit'
+            }
+          ],
           children: []
         }
       ]
@@ -66,8 +78,15 @@ describe('projectAssets scene parsing', () => {
       type: 'collision',
       width: 128,
       height: 64,
-      isBlocking: true
+      isBlocking: true,
+      exitCallbacks: [
+        {
+          scriptPath: 'src/CustomActors/Hero.c',
+          functionName: 'OnCollisionExit'
+        }
+      ]
     })
+    expect(serializeProjectAssetDocument(document)).toContain('"exitCallbacks"')
     expect(serializeProjectAssetDocument(document)).toContain('"type": "collision"')
   })
 

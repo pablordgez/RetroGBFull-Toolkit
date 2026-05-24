@@ -48,6 +48,9 @@ void vwf_activate_font(uint8_t idx);
 uint8_t vwf_draw_text(uint8_t x, uint8_t y, uint8_t base_tile, const unsigned char * str);
 uint8_t vwf_draw_text_y_offset(uint8_t x, uint8_t y, uint8_t base_tile, const unsigned char * str, uint8_t y_offset);
 uint8_t vwf_measure_text(uint8_t x, uint8_t y, const unsigned char * str, vwf_text_metrics_t * out);
+uint8_t vwf_draw_text_banked(uint8_t x, uint8_t y, uint8_t base_tile, const unsigned char * str, uint8_t str_bank);
+uint8_t vwf_draw_text_y_offset_banked(uint8_t x, uint8_t y, uint8_t base_tile, const unsigned char * str, uint8_t y_offset, uint8_t str_bank);
+uint8_t vwf_measure_text_banked(uint8_t x, uint8_t y, const unsigned char * str, vwf_text_metrics_t * out, uint8_t str_bank);
 uint8_t vwf_next_tile(void);
 
 inline void vwf_set_mode(uint8_t mode) {

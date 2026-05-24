@@ -51,6 +51,7 @@ const createScene = (): SceneAssetDocument => ({
           height: 32,
           isBlocking: true,
           callbacks: [],
+          exitCallbacks: [],
           children: []
         }
       ]
@@ -190,6 +191,9 @@ const renderInspector = () => {
           }}
           onSetCollisionCallbacks={(nodeId, callbacks) => {
             editor.setCollisionCallbacks(nodeId, callbacks)
+          }}
+          onSetCollisionExitCallbacks={(nodeId, callbacks) => {
+            editor.setCollisionExitCallbacks(nodeId, callbacks)
           }}
         />
       </>
@@ -380,5 +384,22 @@ describe('SceneInspectorPane', () => {
 
     expect(screen.getByText('OnRoomCollision')).toBeInTheDocument()
     expect(screen.getByText('Room.c')).toBeInTheDocument()
+  })
+
+  it('adds collision exit callbacks with the same picker flow', () => {
+    renderInspector()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Collision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Exit Callback' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Add Collision Exit Callback')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /Shared/i }))
+    fireEvent.click(within(dialog).getByRole('button', { name: /OnSharedCollision/i }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('OnSharedCollision')).toBeInTheDocument()
+    expect(screen.getByText('Shared.c')).toBeInTheDocument()
   })
 })

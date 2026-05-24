@@ -93,34 +93,48 @@ uint8_t vwf_print_render(const unsigned char ch) {
 }
 
 uint8_t vwf_draw_text(uint8_t x, uint8_t y, uint8_t base_tile, const unsigned char * str) {
-    return vwf_draw_text_y_offset(x, y, base_tile, str, 0);
+    return vwf_draw_text_banked(x, y, base_tile, str, _current_bank);
 }
 
 uint8_t vwf_draw_text_y_offset(uint8_t x, uint8_t y, uint8_t base_tile, const unsigned char * str, uint8_t y_offset) {
+    return vwf_draw_text_y_offset_banked(x, y, base_tile, str, y_offset, _current_bank);
+}
+
+uint8_t vwf_draw_text_banked(uint8_t x, uint8_t y, uint8_t base_tile, const unsigned char * str, uint8_t str_bank) {
+    return vwf_draw_text_y_offset_banked(x, y, base_tile, str, 0, str_bank);
+}
+
+uint8_t vwf_draw_text_y_offset_banked(uint8_t x, uint8_t y, uint8_t base_tile, const unsigned char * str, uint8_t y_offset, uint8_t str_bank) {
     static uint8_t * ui_dest_base, *ui_dest_ptr;
     static const uint8_t * ui_text_ptr;
+    uint8_t ch;
     ui_dest_ptr = ui_dest_base = vwf_render_base_address + ((uint8_t)(y - y_offset) + DEVICE_SCREEN_Y_OFFSET) * (DEVICE_SCREEN_BUFFER_WIDTH * DEVICE_SCREEN_MAP_ENTRY_SIZE) + ((x + DEVICE_SCREEN_X_OFFSET) * DEVICE_SCREEN_MAP_ENTRY_SIZE);
     ui_text_ptr = str;
 
     vwf_print_reset(base_tile);
-    while (*ui_text_ptr) {
-        switch (*ui_text_ptr) {
+    while ((ch = vwf_read_banked_ubyte(ui_text_ptr, str_bank)) != 0) {
+        switch (ch) {
             case 0x01:
-                vwf_activate_font(*++ui_text_ptr);
+                ui_text_ptr++;
+                vwf_activate_font(vwf_read_banked_ubyte(ui_text_ptr, str_bank));
                 break;
             case 0x02:
-                ui_dest_ptr = ui_dest_base = vwf_render_base_address + ((uint8_t)(*++ui_text_ptr - y_offset) + DEVICE_SCREEN_Y_OFFSET) * (DEVICE_SCREEN_BUFFER_WIDTH * DEVICE_SCREEN_MAP_ENTRY_SIZE) + ((*++ui_text_ptr + DEVICE_SCREEN_X_OFFSET) * DEVICE_SCREEN_MAP_ENTRY_SIZE);
+                ui_text_ptr++;
+                ch = vwf_read_banked_ubyte(ui_text_ptr, str_bank);
+                ui_text_ptr++;
+                ui_dest_ptr = ui_dest_base = vwf_render_base_address + ((uint8_t)(ch - y_offset) + DEVICE_SCREEN_Y_OFFSET) * (DEVICE_SCREEN_BUFFER_WIDTH * DEVICE_SCREEN_MAP_ENTRY_SIZE) + ((vwf_read_banked_ubyte(ui_text_ptr, str_bank) + DEVICE_SCREEN_X_OFFSET) * DEVICE_SCREEN_MAP_ENTRY_SIZE);
                 if (vwf_current_offset) vwf_print_reset(vwf_current_tile + 1u);
                 break; 
             case 0x03:
-                vwf_inverse_map = *++ui_text_ptr;
+                ui_text_ptr++;
+                vwf_inverse_map = vwf_read_banked_ubyte(ui_text_ptr, str_bank);
                 break;
             case '\n':
                 ui_dest_ptr = ui_dest_base += (DEVICE_SCREEN_BUFFER_WIDTH * DEVICE_SCREEN_MAP_ENTRY_SIZE);
                 if (vwf_current_offset) vwf_print_reset(vwf_current_tile + 1u);
                 break; 
             default:
-                if (vwf_print_render(*ui_text_ptr)) {
+                if (vwf_print_render(ch)) {
                     if (vwf_mode & VWF_MODE_PRINT) set_vram_byte(ui_dest_ptr, vwf_current_tile - 1);
                     ui_dest_ptr += DEVICE_SCREEN_MAP_ENTRY_SIZE;
                 }
@@ -154,6 +168,10 @@ static void vwf_measure_activate_font(uint8_t idx, font_desc_t * font_desc, uint
 }
 
 uint8_t vwf_measure_text(uint8_t x, uint8_t y, const unsigned char * str, vwf_text_metrics_t * out) {
+    return vwf_measure_text_banked(x, y, str, out, _current_bank);
+}
+
+uint8_t vwf_measure_text_banked(uint8_t x, uint8_t y, const unsigned char * str, vwf_text_metrics_t * out, uint8_t str_bank) {
     const uint8_t * text_ptr = str;
     font_desc_t font_desc = vwf_current_font_desc;
     uint8_t font_bank = vwf_current_font_bank;
@@ -167,23 +185,27 @@ uint8_t vwf_measure_text(uint8_t x, uint8_t y, const unsigned char * str, vwf_te
     uint8_t min_y = y;
     uint8_t max_x = x;
     uint8_t max_y = y;
+    uint8_t ch;
 
     if(out == 0 || str == 0){
         return 0;
     }
 
-    while (*text_ptr) {
-        switch (*text_ptr) {
+    while ((ch = vwf_read_banked_ubyte(text_ptr, str_bank)) != 0) {
+        switch (ch) {
             case 0x01:
-                vwf_measure_activate_font(*++text_ptr, &font_desc, &font_bank);
+                text_ptr++;
+                vwf_measure_activate_font(vwf_read_banked_ubyte(text_ptr, str_bank), &font_desc, &font_bank);
                 break;
             case 0x02:
                 if (current_offset) {
                     current_tile++;
                     current_offset = 0;
                 }
-                cursor_y = *++text_ptr;
-                cursor_x = *++text_ptr;
+                text_ptr++;
+                cursor_y = vwf_read_banked_ubyte(text_ptr, str_bank);
+                text_ptr++;
+                cursor_x = vwf_read_banked_ubyte(text_ptr, str_bank);
                 base_x = cursor_x;
                 break;
             case 0x03:
@@ -198,7 +220,7 @@ uint8_t vwf_measure_text(uint8_t x, uint8_t y, const unsigned char * str, vwf_te
                 cursor_x = base_x;
                 break;
             default: {
-                uint8_t letter = vwf_read_banked_ubyte(font_desc.recode_table + (*text_ptr & ((font_desc.attr & RECODE_7BIT) ? 0x7fu : 0xffu)), font_bank);
+                uint8_t letter = vwf_read_banked_ubyte(font_desc.recode_table + (ch & ((font_desc.attr & RECODE_7BIT) ? 0x7fu : 0xffu)), font_bank);
 
                 if (font_desc.attr & FONT_VWF) {
                     uint8_t width = vwf_read_banked_ubyte(font_desc.widths + letter, font_bank);

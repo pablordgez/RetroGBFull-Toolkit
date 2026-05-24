@@ -71,17 +71,17 @@ const generalScriptPayload: ProjectScriptResourcePayload = {
   sourcePath: 'src/Scripts/Test.c',
   headerPath: 'src/Scripts/Test.h',
   sourceContent:
-    '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\n',
+    '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Test_bankref)\n\n',
   editableSourceContent: '',
   managedSourcePrefix:
-    '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\n',
+    '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Test_bankref)\n\n',
   headerContent: '#ifndef TEST_H\n#define TEST_H\n\n#endif // TEST_H\n'
 }
 
 const nonBlankGeneralScriptPayload: ProjectScriptResourcePayload = {
   ...generalScriptPayload,
   sourceContent:
-    '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\nvoid test(void) {\n}\n',
+    '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Test_bankref)\n\nvoid test(void) {\n}\n',
   editableSourceContent: 'void test(void) {\n}\n'
 }
 
@@ -92,10 +92,10 @@ const actorScriptPayload: ProjectScriptResourcePayload = {
   sourcePath: 'src/CustomActors/Hero.c',
   headerPath: 'src/CustomActors/Hero.h',
   sourceContent:
-    '#pragma bank 255\n#include "Hero.h"\n#include "ScriptEnvironment.h"\n\nvoid AINIT(void){\n}\n',
+    '#pragma bank 255\n#include "Hero.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Hero_bankref)\n\nvoid AINIT(void){\n}\n',
   editableSourceContent: 'void AINIT(void){\n}\n',
   managedSourcePrefix:
-    '#pragma bank 255\n#include "Hero.h"\n#include "ScriptEnvironment.h"\n\n',
+    '#pragma bank 255\n#include "Hero.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Hero_bankref)\n\n',
   headerContent: '#ifndef HERO_H\n#define HERO_H\n#include "Actor/Actor.h"\n\n#endif // HERO_H\n'
 }
 
@@ -118,7 +118,7 @@ describe('<ScriptEditor />', () => {
       resourcePath: 'src/Scripts/Test.c',
       scriptKind: 'general',
       sourceContent:
-        '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\n',
+        '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Test_bankref)\n\n',
       headerContent: '#ifndef TEST_H\n#define TEST_H\n\n#endif // TEST_H\n'
     })
   })
@@ -205,7 +205,11 @@ describe('<ScriptEditor />', () => {
 
   it('shows an error when the editor is opened without a valid script resource', async () => {
     render(
-      <MemoryRouter initialEntries={['/script-editor?projectPath=/projects/Test&resourcePath=src%2FScripts%2FTest.c']}>
+      <MemoryRouter
+        initialEntries={[
+          '/script-editor?projectPath=/projects/Test&resourcePath=src%2FScripts%2FTest.c'
+        ]}
+      >
         <ScriptEditor />
       </MemoryRouter>
     )
@@ -333,10 +337,7 @@ describe('<ScriptEditor />', () => {
       expect(createScriptEditorRuntimeMock).toHaveBeenCalled()
     })
 
-    expect(editor).toHaveAttribute(
-      'data-editor-path',
-      'file:///workspace/src/CustomActors/Hero.c'
-    )
+    expect(editor).toHaveAttribute('data-editor-path', 'file:///workspace/src/CustomActors/Hero.c')
     expect(editor).toHaveAttribute('data-theme', 'vs')
 
     fireEvent.click(screen.getByRole('button', { name: 'Hero.h' }))
@@ -345,10 +346,7 @@ describe('<ScriptEditor />', () => {
       expect(runtimeSessionMock.setActiveTab).toHaveBeenCalledWith('header')
     })
 
-    expect(editor).toHaveAttribute(
-      'data-editor-path',
-      'file:///workspace/src/CustomActors/Hero.h'
-    )
+    expect(editor).toHaveAttribute('data-editor-path', 'file:///workspace/src/CustomActors/Hero.h')
 
     fireEvent.change(editor, {
       target: {

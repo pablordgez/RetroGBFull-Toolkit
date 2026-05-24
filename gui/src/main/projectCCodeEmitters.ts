@@ -532,7 +532,9 @@ const assertValidMusicDocument = (music: ProjectAssetRecordLike): MusicAssetDocu
 
   for (const pattern of document.patterns) {
     if (pattern.steps.some((step) => step.noteIndex > 71 && step.noteIndex !== 0xff)) {
-      throw new ProjectLauncherError(`Music "${music.name}" has a pattern step with an invalid note.`)
+      throw new ProjectLauncherError(
+        `Music "${music.name}" has a pattern step with an invalid note.`
+      )
     }
 
     if (
@@ -565,7 +567,9 @@ const assertValidMusicDocument = (music: ProjectAssetRecordLike): MusicAssetDocu
     }
   }
 
-  const sequenceLength = Math.max(...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length))
+  const sequenceLength = Math.max(
+    ...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length)
+  )
 
   if (sequenceLength < 1 || sequenceLength > 255) {
     throw new ProjectLauncherError(`Music "${music.name}" has an invalid sequence length.`)
@@ -594,7 +598,9 @@ export const buildMusicResourceFiles = (
   const resourceDirectory = `res/${music.identifier}`
   const headerPath = `${resourceDirectory}/${music.identifier}.h`
   const sourcePath = `${resourceDirectory}/${music.identifier}.c`
-  const sequenceLength = Math.max(...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length))
+  const sequenceLength = Math.max(
+    ...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length)
+  )
   const patternsById = new Map(
     document.patterns.map((pattern, index) => [pattern.id, { ...pattern, index }])
   )
@@ -630,9 +636,7 @@ export const buildMusicResourceFiles = (
   const patternLines = document.patterns.flatMap((pattern, index) => [
     `const Pattern ${music.identifier}_pattern_${index} = {`,
     '    .steps = {',
-    ...pattern.steps.map(
-      (step) => `        ${formatMusicStep(step.noteIndex, step.instrument)},`
-    ),
+    ...pattern.steps.map((step) => `        ${formatMusicStep(step.noteIndex, step.instrument)},`),
     '    }',
     '};',
     ''
@@ -674,9 +678,7 @@ export const buildSongRegistryFiles = (
 ): { headerContent: string; sourceContent: string } => {
   const includeLines = songs.map((song) => `#include "${song.identifier}/${song.identifier}.h"`)
   const enumLines =
-    songs.length > 0
-      ? songs.map((song) => `    ${song.identifier},`)
-      : ['    NUMBER_OF_SONGS = 1']
+    songs.length > 0 ? songs.map((song) => `    ${song.identifier},`) : ['    NUMBER_OF_SONGS = 1']
   const headerContent = [
     '#ifndef SONG_REGISTRY_H',
     '#define SONG_REGISTRY_H',
@@ -711,7 +713,9 @@ export const buildSongRegistryFiles = (
 
   const songDefinitionLines = songs.flatMap((song) => {
     const document = assertValidMusicDocument(song)
-    const sequenceLength = Math.max(...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length))
+    const sequenceLength = Math.max(
+      ...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length)
+    )
 
     return [
       `BANKREF_EXTERN(${song.identifier}_bankref)`,
@@ -1020,14 +1024,15 @@ export const buildActorRegistryHeader = (
     '} ActorType;',
     '#undef _ACTOR',
     '',
-    'extern RVoid_PVoid actor_update_functions[NUM_ACTORS];',
-    'extern RVoid_PVoid actor_init_functions[NUM_ACTORS];',
+    'extern FAR_PTR actor_update_functions[NUM_ACTORS];',
+    'extern FAR_PTR actor_init_functions[NUM_ACTORS];',
     '',
     'void init_actor_functions(void);',
     '',
     '#define _ACTOR(name) \\',
-    '    void Actor_Update_##name(void); \\',
-    '    void Actor_Init_##name(void);',
+    '    BANKREF_EXTERN(name##_bankref) \\',
+    '    void Actor_Update_##name(void) BANKED; \\',
+    '    void Actor_Init_##name(void) BANKED;',
     'ACTORS',
     '#undef _ACTOR',
     '',
@@ -1070,14 +1075,15 @@ export const buildSceneRegistryHeader = (sceneIdentifiers: string[]): string => 
     '} SceneType; ',
     '#undef _SCENE',
     '',
-    'extern RVoid_PVoid_BANKED scene_init_state_functions[NUM_SCENES];',
-    'extern RVoid_PVoid scene_update_functions[NUM_SCENES]; ',
+    'extern FAR_PTR scene_init_state_functions[NUM_SCENES];',
+    'extern FAR_PTR scene_update_functions[NUM_SCENES]; ',
     '',
     'void init_scene_functions(void);',
     '',
     '#define _SCENE(name) \\',
+    '    BANKREF_EXTERN(name##_bankref) \\',
     '    void scene_init_state_##name(void) BANKED; \\',
-    '    void scene_update_##name(void); ',
+    '    void scene_update_##name(void) BANKED; ',
     '    SCENES ',
     '#undef _SCENE',
     '',

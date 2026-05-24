@@ -63,6 +63,7 @@ export interface SceneAssetCollisionNode extends BaseSceneAssetNode {
   isBlocking: boolean
   tags?: string[]
   callbacks: SceneAssetCollisionCallback[]
+  exitCallbacks: SceneAssetCollisionCallback[]
 }
 
 export type SceneAssetNode = SceneAssetFolderNode | SceneAssetActorNode | SceneAssetCollisionNode
@@ -598,24 +599,8 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
       height: Number(value.height),
       isBlocking: value.isBlocking,
       ...(normalizeSceneNodeTags(value.tags) ? { tags: normalizeSceneNodeTags(value.tags) } : {}),
-      callbacks: Array.isArray(value.callbacks)
-        ? value.callbacks.flatMap((callback): SceneAssetCollisionCallback[] => {
-            if (
-              !isRecord(callback) ||
-              typeof callback.scriptPath !== 'string' ||
-              typeof callback.functionName !== 'string'
-            ) {
-              return []
-            }
-
-            return [
-              {
-                scriptPath: callback.scriptPath,
-                functionName: callback.functionName
-              }
-            ]
-          })
-        : []
+      callbacks: normalizeSceneCollisionCallbacks(value.callbacks),
+      exitCallbacks: normalizeSceneCollisionCallbacks(value.exitCallbacks)
     }
   }
 
@@ -650,6 +635,27 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
   }
 }
 
+const normalizeSceneCollisionCallbacks = (value: unknown): SceneAssetCollisionCallback[] => {
+  return Array.isArray(value)
+    ? value.flatMap((callback): SceneAssetCollisionCallback[] => {
+        if (
+          !isRecord(callback) ||
+          typeof callback.scriptPath !== 'string' ||
+          typeof callback.functionName !== 'string'
+        ) {
+          return []
+        }
+
+        return [
+          {
+            scriptPath: callback.scriptPath,
+            functionName: callback.functionName
+          }
+        ]
+      })
+    : []
+}
+
 // serializes a scene node and its children from SceneAssetNode to a plain object
 const serializeSceneAssetNode = (
   node: SceneAssetNode,
@@ -669,6 +675,7 @@ const serializeSceneAssetNode = (
 
   if (node.type === 'collision') {
     const callbacks = Array.isArray(node.callbacks) ? node.callbacks : []
+    const exitCallbacks = Array.isArray(node.exitCallbacks) ? node.exitCallbacks : []
 
     return {
       id: node.id,
@@ -682,6 +689,10 @@ const serializeSceneAssetNode = (
       isBlocking: node.isBlocking,
       ...(node.tags && node.tags.length > 0 ? { tags: node.tags } : {}),
       callbacks: callbacks.map((callback) => ({
+        scriptPath: callback.scriptPath,
+        functionName: callback.functionName
+      })),
+      exitCallbacks: exitCallbacks.map((callback) => ({
         scriptPath: callback.scriptPath,
         functionName: callback.functionName
       })),

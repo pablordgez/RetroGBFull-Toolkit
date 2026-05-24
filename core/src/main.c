@@ -32,6 +32,7 @@ void main(void)
     GameManager gm;
     THIS_GAME_MANAGER = &gm;
     gm.current_scene = NULL;
+    gm.pending_scene = NULL;
 
     // BEGIN STARTING SCENE INSTANTIATION
     SampleScene* ss = (SampleScene*) malloc(sizeof(SampleScene));

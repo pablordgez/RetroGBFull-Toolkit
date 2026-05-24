@@ -12,7 +12,7 @@ static const TimerClockSetting timer_clock_settings[] = {
     { 4096U, INTERRUPT_TIMER_4KHZ }
 };
 
-static void resolve_timer_settings(uint16_t frequency_hz, uint8_t* clock_select, uint8_t* modulo) BANKED{
+static void resolve_timer_settings(uint16_t frequency_hz, uint8_t* clock_select, uint8_t* modulo){
     uint8_t clock_index;
 
     for(clock_index = 0; clock_index != (sizeof(timer_clock_settings) / sizeof(timer_clock_settings[0])); clock_index++){

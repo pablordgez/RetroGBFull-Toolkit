@@ -224,7 +224,7 @@ describe('project resource helpers', () => {
     const createdSource = await readFile(join(project.path, createdScript.resourcePath), 'utf-8')
 
     expect(createdSource).toBe(
-      '#pragma bank 255\n#include "Shared.h"\n#include "ScriptEnvironment.h"\n\n'
+      '#pragma bank 255\n#include "Shared.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Shared_bankref)\n\n'
     )
   })
 
@@ -241,7 +241,7 @@ describe('project resource helpers', () => {
 
     expect(loadedScript.editableSourceContent).toBe('')
     expect(loadedScript.managedSourcePrefix).toBe(
-      '#pragma bank 255\n#include "Shared.h"\n#include "ScriptEnvironment.h"\n\n'
+      '#pragma bank 255\n#include "Shared.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Shared_bankref)\n\n'
     )
   })
 
@@ -272,7 +272,11 @@ describe('project resource helpers', () => {
 
     expect(await readFile(environmentHeaderPath, 'utf-8')).toContain('#include "Scripts/Shared.h"')
 
-    const deletedScript = await deleteProjectResource(project.path, 'script', generalScript.resourcePath)
+    const deletedScript = await deleteProjectResource(
+      project.path,
+      'script',
+      generalScript.resourcePath
+    )
     expect(await readFile(environmentHeaderPath, 'utf-8')).not.toContain(
       '#include "Scripts/Shared.h"'
     )
@@ -408,10 +412,19 @@ describe('project resource helpers', () => {
     const initialView = await listProjectResources(project.path)
     expect(initialView.startingScenePath).toBe(scene.resourcePath)
 
-    const renamedScene = await renameProjectResource(project.path, 'scene', scene.resourcePath, 'Opening')
+    const renamedScene = await renameProjectResource(
+      project.path,
+      'scene',
+      scene.resourcePath,
+      'Opening'
+    )
     expect(renamedScene.view.startingScenePath).toBe(renamedScene.resourcePath)
 
-    const deletedScene = await deleteProjectResource(project.path, 'scene', renamedScene.resourcePath)
+    const deletedScene = await deleteProjectResource(
+      project.path,
+      'scene',
+      renamedScene.resourcePath
+    )
     expect(deletedScene.view.startingScenePath).toBeNull()
 
     const restoredScene = await restoreDeletedProjectResource(project.path, deletedScene.deletionId)

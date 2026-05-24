@@ -64,7 +64,11 @@ void move_animation(uint8_t x, uint8_t y) NONBANKED{
     if(THIS_ANIMATION->width == 8 && THIS_ANIMATION->height == 8){
         move_sprite(THIS_ANIMATION_STATE->sprite_slot, x, y);
     } else{
+        const AssetEntry* entry = &animation_data[THIS_ANIMATION->animation_id];
+        uint8_t prev_bank = _current_bank;
+        SWITCH_ROM(entry->bank);
         move_metasprite_ex(THIS_ANIMATION->metasprite, animation_tiles[THIS_ANIMATION->animation_id], THIS_ANIMATION_STATE->props, THIS_ANIMATION_STATE->sprite_slot, x, y);
+        SWITCH_ROM(prev_bank);
     }
 }
 
@@ -79,6 +83,9 @@ void set_animation_props(uint8_t props, uint8_t x, uint8_t y) NONBANKED{
         set_sprite_prop(THIS_ANIMATION_STATE->sprite_slot, props);
         move_sprite(THIS_ANIMATION_STATE->sprite_slot, x, y);
     } else{
+        const AssetEntry* entry = &animation_data[THIS_ANIMATION->animation_id];
+        uint8_t prev_bank = _current_bank;
+        SWITCH_ROM(entry->bank);
         move_metasprite_ex(
             THIS_ANIMATION->metasprite,
             animation_tiles[THIS_ANIMATION->animation_id] + (THIS_ANIMATION_STATE->current_frame * THIS_ANIMATION->width * THIS_ANIMATION->height / 64),
@@ -87,6 +94,7 @@ void set_animation_props(uint8_t props, uint8_t x, uint8_t y) NONBANKED{
             x,
             y
         );
+        SWITCH_ROM(prev_bank);
     }
 }
 
@@ -103,8 +111,12 @@ void update_animation(uint8_t x, uint8_t y) NONBANKED{
         set_sprite_tile(THIS_ANIMATION_STATE->sprite_slot, animation_tiles[THIS_ANIMATION->animation_id] + THIS_ANIMATION_STATE->current_frame);
         move_sprite(THIS_ANIMATION_STATE->sprite_slot, x, y); 
     } 
-    else{ 
+    else{
+        const AssetEntry* entry = &animation_data[THIS_ANIMATION->animation_id];
+        uint8_t prev_bank = _current_bank;
+        SWITCH_ROM(entry->bank);
         move_metasprite_ex(THIS_ANIMATION->metasprite, animation_tiles[THIS_ANIMATION->animation_id] + (THIS_ANIMATION_STATE->current_frame * THIS_ANIMATION->width * THIS_ANIMATION->height / 64), THIS_ANIMATION_STATE->props, THIS_ANIMATION_STATE->sprite_slot, x, y);
+        SWITCH_ROM(prev_bank);
     }   
 }
 
@@ -127,6 +139,10 @@ void hide_animation(void) NONBANKED{
         hide_sprite(THIS_ANIMATION_STATE->sprite_slot);
     }
     else{
+        const AssetEntry* entry = &animation_data[THIS_ANIMATION->animation_id];
+        uint8_t prev_bank = _current_bank;
+        SWITCH_ROM(entry->bank);
         hide_metasprite(THIS_ANIMATION->metasprite, THIS_ANIMATION_STATE->sprite_slot);
+        SWITCH_ROM(prev_bank);
     }
 }

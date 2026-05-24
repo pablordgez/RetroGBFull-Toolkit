@@ -134,6 +134,7 @@ describe('useSceneDocumentEditor script properties', () => {
         height: 128,
         isBlocking: true,
         callbacks: [],
+        exitCallbacks: [],
         children: []
       }
     ]
@@ -176,6 +177,24 @@ describe('useSceneDocumentEditor script properties', () => {
     })
 
     expect(result.current.nodes[0].children[0]).toBe(callbacksBeforeNoop)
+
+    act(() => {
+      result.current.setCollisionExitCallbacks('hero-collision', [
+        {
+          scriptPath: 'src/CustomActors/Hero.c',
+          functionName: 'OnHeroCollisionExit'
+        }
+      ])
+    })
+
+    expect(result.current.nodes[0].children[0]).toMatchObject({
+      exitCallbacks: [
+        {
+          scriptPath: 'src/CustomActors/Hero.c',
+          functionName: 'OnHeroCollisionExit'
+        }
+      ]
+    })
   })
 
   it('updates tilemap and window paths, snapshots actors, and rejects invalid actor insert locations', () => {

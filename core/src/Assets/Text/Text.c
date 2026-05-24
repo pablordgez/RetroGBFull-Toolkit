@@ -1,4 +1,5 @@
 #pragma bank 255
+#define TEXT_IMPLEMENTATION
 #include "Text.h"
 #include "Assets/Map/Map.h"
 #include "VWF/vwf.h"
@@ -13,7 +14,7 @@ static TextHandle* text_active_handles[TEXT_MAX_ACTIVE_HANDLES];
 static uint8_t text_active_handle_count = 0;
 static uint8_t text_current_font = 0;
 
-static uint8_t text_register_handle(TextHandle* handle) BANKED{
+static uint8_t text_register_handle(TextHandle* handle){
     uint8_t index;
 
     for(index = 0; index < text_active_handle_count; index++){
@@ -30,7 +31,7 @@ static uint8_t text_register_handle(TextHandle* handle) BANKED{
     return 1;
 }
 
-static void text_unregister_handle(TextHandle* handle) BANKED{
+static void text_unregister_handle(TextHandle* handle){
     uint8_t index = 0;
 
     while(index < text_active_handle_count){
@@ -49,7 +50,7 @@ static void text_unregister_handle(TextHandle* handle) BANKED{
     }
 }
 
-static void text_backup_tiles(TextHandle* handle) BANKED{
+static void text_backup_tiles(TextHandle* handle){
     if(handle->layer == TEXT_LAYER_WINDOW){
         get_win_tiles(handle->x, handle->tilemap_y, handle->width, handle->height, handle->saved_tiles);
     } else{
@@ -58,7 +59,7 @@ static void text_backup_tiles(TextHandle* handle) BANKED{
     handle->saved_tiles_valid = 1;
 }
 
-static void text_restore_tiles(TextHandle* handle) BANKED{
+static void text_restore_tiles(TextHandle* handle){
     if(handle->saved_tiles == (void*)0 || handle->saved_tiles_valid == 0 || handle->width == 0 || handle->height == 0){
         return;
     }
@@ -71,7 +72,7 @@ static void text_restore_tiles(TextHandle* handle) BANKED{
     handle->saved_tiles_valid = 0;
 }
 
-static uint8_t text_rebuild_window_texts(void) BANKED{
+static uint8_t text_rebuild_window_texts(void){
     uint8_t index;
 
     for(index = 0; index < text_active_handle_count; index++){
@@ -105,7 +106,7 @@ static uint8_t text_rebuild_window_texts(void) BANKED{
             vwf_activate_font(text_current_font);
             vwf_set_destination(VWF_RENDER_WIN);
             y_offset = (uint8_t)(handle->y - handle->tilemap_y);
-            vwf_draw_text_y_offset(handle->x, handle->y, handle->first_tile, handle->text, y_offset);
+            vwf_draw_text_y_offset_banked(handle->x, handle->y, handle->first_tile, handle->text, y_offset, handle->text_bank);
         }
     }
 
@@ -153,7 +154,7 @@ void destroy_text_handle(TextHandle* handle) BANKED{
     free(handle);
 }
 
-uint8_t measure_text(uint8_t x, uint8_t y, const unsigned char* text, TextMetrics* out) BANKED{
+uint8_t measure_text_banked(uint8_t x, uint8_t y, const unsigned char* text, TextMetrics* out, uint8_t text_bank) BANKED{
     vwf_text_metrics_t metrics;
 
     if(out == (void*)0 || text == (void*)0){
@@ -161,7 +162,7 @@ uint8_t measure_text(uint8_t x, uint8_t y, const unsigned char* text, TextMetric
     }
 
     vwf_activate_font(text_current_font);
-    if(vwf_measure_text(x, y, text, &metrics) == 0){
+    if(vwf_measure_text_banked(x, y, text, &metrics, text_bank) == 0){
         return 0;
     }
 
@@ -173,7 +174,7 @@ uint8_t measure_text(uint8_t x, uint8_t y, const unsigned char* text, TextMetric
     return 1;
 }
 
-uint8_t draw_text(TextHandle* handle, TextLayer layer, uint8_t x, uint8_t y, const unsigned char* text) BANKED{
+uint8_t draw_text_banked(TextHandle* handle, TextLayer layer, uint8_t x, uint8_t y, const unsigned char* text, uint8_t text_bank) BANKED{
     TextMetrics metrics;
     uint8_t* saved_tiles;
     uint8_t first_tile;
@@ -186,7 +187,7 @@ uint8_t draw_text(TextHandle* handle, TextLayer layer, uint8_t x, uint8_t y, con
         remove_text(handle);
     }
 
-    if(measure_text(x, y, text, &metrics) == 0 || metrics.tile_count == 0 || metrics.width == 0 || metrics.height == 0){
+    if(measure_text_banked(x, y, text, &metrics, text_bank) == 0 || metrics.tile_count == 0 || metrics.width == 0 || metrics.height == 0){
         return 0;
     }
 
@@ -213,6 +214,7 @@ uint8_t draw_text(TextHandle* handle, TextLayer layer, uint8_t x, uint8_t y, con
     handle->tile_count = metrics.tile_count;
     handle->saved_tiles = saved_tiles;
     handle->text = text;
+    handle->text_bank = text_bank;
 
     if(text_register_handle(handle) == 0){
         handle->active = 0;
@@ -236,7 +238,7 @@ uint8_t draw_text(TextHandle* handle, TextLayer layer, uint8_t x, uint8_t y, con
         text_backup_tiles(handle);
         vwf_activate_font(text_current_font);
         vwf_set_destination(VWF_RENDER_BKG);
-        vwf_draw_text(x, y, first_tile, text);
+        vwf_draw_text_banked(x, y, first_tile, text, text_bank);
     }
 
     return 1;
@@ -272,6 +274,7 @@ void remove_text(TextHandle* handle) BANKED{
 
 uint8_t move_text(TextHandle* handle, uint8_t x, uint8_t y) BANKED{
     const unsigned char* text;
+    uint8_t text_bank;
     TextLayer layer;
 
     if(handle == (void*)0 || handle->active == 0){
@@ -279,12 +282,13 @@ uint8_t move_text(TextHandle* handle, uint8_t x, uint8_t y) BANKED{
     }
 
     text = handle->text;
+    text_bank = handle->text_bank;
     layer = (TextLayer)handle->layer;
     remove_text(handle);
-    return draw_text(handle, layer, x, y, text);
+    return draw_text_banked(handle, layer, x, y, text, text_bank);
 }
 
-uint8_t update_text(TextHandle* handle, const unsigned char* text) BANKED{
+uint8_t update_text_banked(TextHandle* handle, const unsigned char* text, uint8_t text_bank) BANKED{
     TextLayer layer;
     uint8_t x;
     uint8_t y;
@@ -297,7 +301,7 @@ uint8_t update_text(TextHandle* handle, const unsigned char* text) BANKED{
     x = handle->x;
     y = handle->y;
     remove_text(handle);
-    return draw_text(handle, layer, x, y, text);
+    return draw_text_banked(handle, layer, x, y, text, text_bank);
 }
 
 void clear_all_text(void) BANKED{

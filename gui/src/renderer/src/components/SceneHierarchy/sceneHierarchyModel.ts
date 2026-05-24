@@ -499,6 +499,7 @@ export const buildDefaultSceneNode = (
       height: DEFAULT_SCENE_COLLISION_SIZE,
       isBlocking: true,
       callbacks: [],
+      exitCallbacks: [],
       children: []
     }
   }

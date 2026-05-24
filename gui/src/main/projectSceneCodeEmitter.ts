@@ -53,10 +53,7 @@ const getSceneSpritePalettes = (
   document: SceneAssetDocument,
   spriteAssetsByPath: Map<string, ProjectAssetRecordLike>
 ): [string[] | null, string[] | null] => {
-  const configuredPalettes = document.spritePalettes ?? [
-    document.spritePalette ?? null,
-    null
-  ]
+  const configuredPalettes = document.spritePalettes ?? [document.spritePalette ?? null, null]
 
   if (configuredPalettes[0]) {
     return [configuredPalettes[0], configuredPalettes[1] ?? configuredPalettes[0]]
@@ -144,12 +141,14 @@ const getSpriteAnchorOffset = (
   }
 
   const spriteDocument = spriteResource.document as SpriteAssetDocument
-  const offsetX = spriteDocument.width === 8 && spriteDocument.height === 8
-    ? 8
-    : Math.floor(spriteDocument.width / 2) + 8
-  const offsetY = spriteDocument.width === 8 && spriteDocument.height === 8
-    ? 16
-    : Math.floor(spriteDocument.height / 2) + 16
+  const offsetX =
+    spriteDocument.width === 8 && spriteDocument.height === 8
+      ? 8
+      : Math.floor(spriteDocument.width / 2) + 8
+  const offsetY =
+    spriteDocument.width === 8 && spriteDocument.height === 8
+      ? 16
+      : Math.floor(spriteDocument.height / 2) + 16
 
   return {
     x: offsetX << 4,
@@ -170,7 +169,8 @@ export const createNodeEmitter = (
   spriteAssetsByPath: Map<string, ProjectAssetRecordLike>,
   actorScriptsByPath: Map<string, ProjectScriptRecordResolved>,
   projectTags: ProjectTagEntry[] = [],
-  maxTagSlots = 5
+  maxTagSlots = 5,
+  collisionCallbackScriptsByPath: Map<string, ProjectScriptRecordResolved> = actorScriptsByPath
 ): SceneNodeEmitter => {
   // helpers to get the tag enum names from their ids
   const tagEnumNamesById = new Map(
@@ -183,6 +183,20 @@ export const createNodeEmitter = (
         return enumName ? [enumName] : []
       })
       .slice(0, maxTagSlots)
+  }
+  const buildCollisionCallbackExpression = (callback: {
+    scriptPath: string
+    functionName: string
+  }): string => {
+    const script = collisionCallbackScriptsByPath.get(callback.scriptPath)
+
+    if (!script) {
+      throw new ProjectLauncherError(
+        `Collision callback "${callback.functionName}" references a missing script resource: ${callback.scriptPath}`
+      )
+    }
+
+    return `TO_FAR_PTR(${callback.functionName}, BANK(${script.identifier}_bankref))`
   }
 
   // function takes a node, the variable name of its parent actor if it has one, an array to push lines of code
@@ -217,7 +231,9 @@ export const createNodeEmitter = (
         lines.push(`    Actor* ${actorVariable} = (Actor*) malloc(sizeof(Actor));`)
         lines.push(`    ${actorVariable}->type = _${MANAGED_DEFAULT_ACTOR_IDENTIFIER};`)
         lines.push(`    THIS_ACTOR = ${actorVariable};`)
-        lines.push(`    actor_init_functions[${actorVariable}->type]();`)
+        lines.push(
+          `    FAR_CALL(actor_init_functions[${actorVariable}->type], RVoid_PVoid_BANKED);`
+        )
         lines.push(`    set_actor_position(${collisionNode.x}, ${collisionNode.y});`)
         lines.push(`    add_actor(${actorVariable});`)
       }
@@ -242,8 +258,15 @@ export const createNodeEmitter = (
       lines.push(`    THIS_ACTOR = ${parentActor?.variable ?? actorVariable};`)
       lines.push(`    set_collider(${colliderVariable});`)
 
-      for (const callback of collisionNode.callbacks) {
-        lines.push(`    set_collision_callback(${colliderVariable}, ${callback.functionName});`)
+      for (const callback of collisionNode.callbacks ?? []) {
+        lines.push(
+          `    set_collision_callback(${colliderVariable}, ${buildCollisionCallbackExpression(callback)});`
+        )
+      }
+      for (const callback of collisionNode.exitCallbacks ?? []) {
+        lines.push(
+          `    set_collision_exit_callback(${colliderVariable}, ${buildCollisionCallbackExpression(callback)});`
+        )
       }
 
       return parentActor?.variable ?? actorVariable
@@ -257,7 +280,7 @@ export const createNodeEmitter = (
     lines.push(`    Actor* ${actorVariable} = (Actor*) malloc(sizeof(${allocationType}));`)
     lines.push(`    ${actorVariable}->type = _${actorType};`)
     lines.push(`    THIS_ACTOR = ${actorVariable};`)
-    lines.push(`    actor_init_functions[${actorVariable}->type]();`)
+    lines.push(`    FAR_CALL(actor_init_functions[${actorVariable}->type], RVoid_PVoid_BANKED);`)
     lines.push(
       `    ${actorVariable}->physics_mode = ${PHYSICS_MODE_ENUM_BY_SCENE_VALUE[node.physicsMode]};`
     )
@@ -332,21 +355,15 @@ export const buildSceneInitializationLines = (
   const spritePalettes = getSceneSpritePalettes(document, spriteAssetsByPath)
 
   if (backgroundPalette) {
-    lines.push(
-      `    BGP_REG = ${formatHexByte(buildDmgPaletteRegisterValue(backgroundPalette))};`
-    )
+    lines.push(`    BGP_REG = ${formatHexByte(buildDmgPaletteRegisterValue(backgroundPalette))};`)
   }
 
   if (spritePalettes[0]) {
-    lines.push(
-      `    OBP0_REG = ${formatHexByte(buildDmgPaletteRegisterValue(spritePalettes[0]))};`
-    )
+    lines.push(`    OBP0_REG = ${formatHexByte(buildDmgPaletteRegisterValue(spritePalettes[0]))};`)
   }
 
   if (spritePalettes[1]) {
-    lines.push(
-      `    OBP1_REG = ${formatHexByte(buildDmgPaletteRegisterValue(spritePalettes[1]))};`
-    )
+    lines.push(`    OBP1_REG = ${formatHexByte(buildDmgPaletteRegisterValue(spritePalettes[1]))};`)
   }
 
   if (document.tilemapPath) {

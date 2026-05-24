@@ -76,6 +76,7 @@ interface SceneInspectorPaneProps {
   ) => void
   onRefreshCollisionCallbackCandidates?: () => void
   onSetCollisionCallbacks?: (nodeId: string, callbacks: SceneAssetCollisionCallback[]) => void
+  onSetCollisionExitCallbacks?: (nodeId: string, callbacks: SceneAssetCollisionCallback[]) => void
 }
 
 const buildClassName = (baseClassName: string, extraClassName?: string): string => {
@@ -145,7 +146,8 @@ export const SceneInspectorPane = ({
   onSetSceneScriptProperty = () => undefined,
   onSetActorScriptProperty = () => undefined,
   onRefreshCollisionCallbackCandidates = () => undefined,
-  onSetCollisionCallbacks = () => undefined
+  onSetCollisionCallbacks = () => undefined,
+  onSetCollisionExitCallbacks = () => undefined
 }: SceneInspectorPaneProps): ReactElement => {
   const selectedNode = editor.selectedNode
   const selectedActor = editor.selectedActor
@@ -166,7 +168,14 @@ export const SceneInspectorPane = ({
   const [heightDraft, setHeightDraft] = useState('8')
   const [scriptPropertyDrafts, setScriptPropertyDrafts] = useState<Record<string, string>>({})
   const [scriptPropertyErrors, setScriptPropertyErrors] = useState<Record<string, string>>({})
-  const [isCollisionCallbackPickerOpen, setIsCollisionCallbackPickerOpen] = useState(false)
+  const [collisionCallbackPicker, setCollisionCallbackPicker] = useState<{
+    nodeId: string
+    mode: 'collision' | 'exit'
+  } | null>(null)
+  const collisionCallbackPickerMode =
+    selectedCollision && collisionCallbackPicker?.nodeId === selectedCollision.id
+      ? collisionCallbackPicker.mode
+      : null
 
   useEffect(() => {
     if (selectedActor) {
@@ -188,10 +197,6 @@ export const SceneInspectorPane = ({
     setWidthDraft('8')
     setHeightDraft('8')
   }, [collisionParentActor, selectedActor, selectedCollision])
-
-  useEffect(() => {
-    setIsCollisionCallbackPickerOpen(false)
-  }, [selectedCollision?.id])
 
   const activeScriptPropertyDefinitions = useMemo(() => {
     if (!selectedNode) {
@@ -695,8 +700,12 @@ export const SceneInspectorPane = ({
       return []
     }
 
+    const assignedCallbacks =
+      collisionCallbackPickerMode === 'exit'
+        ? selectedCollision.exitCallbacks
+        : selectedCollision.callbacks
     const assignedKeys = new Set(
-      (selectedCollision.callbacks ?? []).map(
+      (assignedCallbacks ?? []).map(
         (callback) => `${callback.scriptPath}::${callback.functionName}`
       )
     )
@@ -704,7 +713,7 @@ export const SceneInspectorPane = ({
     return collisionCallbackCandidates.filter((candidate) => {
       return !assignedKeys.has(`${candidate.scriptPath}::${candidate.functionName}`)
     })
-  }, [collisionCallbackCandidates, selectedCollision])
+  }, [collisionCallbackCandidates, collisionCallbackPickerMode, selectedCollision])
 
   const getSelectionTypeLabel = (node: SceneAssetNode | null): string => {
     if (!node) {
@@ -727,14 +736,23 @@ export const SceneInspectorPane = ({
       return
     }
 
-    onSetCollisionCallbacks(selectedCollision.id, [
-      ...(selectedCollision.callbacks ?? []),
-      {
-        scriptPath: candidate.scriptPath,
-        functionName: candidate.functionName
-      }
-    ])
-    setIsCollisionCallbackPickerOpen(false)
+    const nextCallback = {
+      scriptPath: candidate.scriptPath,
+      functionName: candidate.functionName
+    }
+
+    if (collisionCallbackPickerMode === 'exit') {
+      onSetCollisionExitCallbacks(selectedCollision.id, [
+        ...(selectedCollision.exitCallbacks ?? []),
+        nextCallback
+      ])
+    } else {
+      onSetCollisionCallbacks(selectedCollision.id, [
+        ...(selectedCollision.callbacks ?? []),
+        nextCallback
+      ])
+    }
+    setCollisionCallbackPicker(null)
   }
 
   const showLegacyEmptyState =
@@ -1125,7 +1143,7 @@ export const SceneInspectorPane = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setIsCollisionCallbackPickerOpen(true)
+                    setCollisionCallbackPicker({ nodeId: selectedCollision.id, mode: 'collision' })
                   }}
                   disabled={
                     maxCollisionCallbacks > 0 &&
@@ -1136,15 +1154,73 @@ export const SceneInspectorPane = ({
                 </button>
               </div>
 
+              <div className="scene-inspector-pane__field">
+                <span>Collision Exit Callbacks</span>
+                <strong>
+                  {(selectedCollision.exitCallbacks ?? []).length} / {maxCollisionCallbacks || 0}
+                </strong>
+              </div>
+
+              <div className="scene-inspector-pane__callback-list">
+                {(selectedCollision.exitCallbacks ?? []).length === 0 && (
+                  <div className="scene-inspector-pane__hint">No collision exit callbacks assigned.</div>
+                )}
+
+                {(selectedCollision.exitCallbacks ?? []).map((callback, index) => (
+                  <div
+                    key={`${callback.scriptPath}:${callback.functionName}`}
+                    className="scene-inspector-pane__callback-item"
+                  >
+                    <div>
+                      <strong>{callback.functionName}</strong>
+                      <span>{getPathLabel(callback.scriptPath, 'Script')}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSetCollisionExitCallbacks(
+                          selectedCollision.id,
+                          (selectedCollision.exitCallbacks ?? []).filter(
+                            (_, callbackIndex) => callbackIndex !== index
+                          )
+                        )
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="scene-inspector-pane__callback-adder">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCollisionCallbackPicker({ nodeId: selectedCollision.id, mode: 'exit' })
+                  }}
+                  disabled={
+                    maxCollisionCallbacks > 0 &&
+                    (selectedCollision.exitCallbacks ?? []).length >= maxCollisionCallbacks
+                  }
+                >
+                  Add Exit Callback
+                </button>
+              </div>
+
               {renderTagControls()}
 
               <p className="scene-inspector-pane__hint">
                 Local under actors; scene coordinates at the root.
               </p>
 
-              {isCollisionCallbackPickerOpen && (
+              {collisionCallbackPickerMode && (
                 <ProjectScriptCallbackPickerModal
-                  title="Add Collision Callback"
+                  title={
+                    collisionCallbackPickerMode === 'exit'
+                      ? 'Add Collision Exit Callback'
+                      : 'Add Collision Callback'
+                  }
                   description="Pick a compatible callback."
                   candidates={availableCollisionCandidates}
                   isLoading={isCollisionCallbackPickerLoading}
@@ -1152,7 +1228,7 @@ export const SceneInspectorPane = ({
                   emptyMessage="No compatible callbacks found."
                   onRefresh={onRefreshCollisionCallbackCandidates}
                   onClose={() => {
-                    setIsCollisionCallbackPickerOpen(false)
+                    setCollisionCallbackPicker(null)
                   }}
                   onSelect={handleSelectCollisionCallback}
                 />

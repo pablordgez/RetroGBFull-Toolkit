@@ -7,7 +7,7 @@
 
 Scene* THIS_SCENE;
 
-static void configure_window_split(Map* map) BANKED{
+static void configure_window_split(Map* map){
     uint8_t top_end;
     uint8_t bottom_start;
     uint16_t top_ly;
@@ -90,7 +90,7 @@ void remove_actor(Actor* actor) BANKED{
 void update_actors(void) NONBANKED{
     for(int i = 0; i < THIS_SCENE->num_actors; i++){
         THIS_ACTOR = THIS_SCENE->actors[i];
-        actor_update_functions[THIS_ACTOR->type]();
+        FAR_CALL(actor_update_functions[THIS_ACTOR->type], RVoid_PVoid_BANKED);
         if(THIS_ACTOR->followed){
             update_camera(THIS_ACTOR->x, THIS_ACTOR->y);
         }
@@ -131,7 +131,7 @@ void cleanup_scene(Scene* scene) BANKED{
     free(scene);
 }
 
-void set_scene_map(Map* map) NONBANKED{
+void set_scene_map(Map* map) BANKED{
     if(THIS_SCENE->map != NULL){
         unload_map();
     }
@@ -142,7 +142,7 @@ void set_scene_map(Map* map) NONBANKED{
     }
 }
 
-void set_scene_window(Map* map) NONBANKED{
+void set_scene_window(Map* map) BANKED{
     if(THIS_SCENE->window != NULL){
         THIS_MAP = THIS_SCENE->window;
         unload_map();

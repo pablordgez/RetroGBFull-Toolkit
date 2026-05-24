@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <gb/gb.h>
+#include <gbdk/far_ptr.h>
 
 #define _CONCAT_DELAY(A,B) A ## B
 #define CONCAT(A,B) _CONCAT_DELAY(A,B)

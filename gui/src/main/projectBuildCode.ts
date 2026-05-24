@@ -396,7 +396,8 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
     spriteAssetsByPath,
     new Map(actorScripts.map((script) => [script.path, script])),
     projectTagState.entries,
-    maxTagSlots
+    maxTagSlots,
+    new Map(scripts.map((script) => [script.path, script]))
   )
   const writtenFiles: string[] = []
   const managedResourceDirectories = new Set<string>()

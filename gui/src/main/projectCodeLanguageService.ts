@@ -90,6 +90,7 @@ typedef int8_t BYTE;
 typedef uint16_t UWORD;
 typedef int16_t WORD;
 typedef uint8_t BOOLEAN;
+typedef uint32_t FAR_PTR;
 
 #define TRUE 1
 #define FALSE 0
@@ -100,6 +101,8 @@ typedef uint8_t BOOLEAN;
 #define BANKREF(name) extern const void* name
 #define BANKREF_EXTERN(name) extern const void* name
 #define BANK(name) 0
+#define TO_FAR_PTR(ofs, seg) ((FAR_PTR)0)
+#define FAR_CALL(ptr, typ, ...) ((typ)0)
 #define SWITCH_ROM(bank) ((void)(bank))
 
 #define DISPLAY_ON ((void)0)
