@@ -1,8 +1,10 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
 import type { GbdkInstallResult, GbdkToolchainStatus } from '../shared/projectGbdk'
+import type { MakeInstallResult, MakeToolchainStatus } from '../shared/projectMake'
 import type { ProjectSaveDataState } from '../shared/projectSaveData'
 import type { ProjectTagState } from '../shared/projectTags'
+import type { RuntimePlatform } from '../shared/runtimePlatform'
 import type {
   BuildProjectCodeResult,
   CopyEngineCoreResult,
@@ -81,8 +83,11 @@ declare global {
       closeCurrentProject: () => Promise<boolean>
       openProjectInFileExplorer: (projectPath: string) => Promise<boolean>
       getRecentProjects: () => Promise<RecentProject[]>
+      getRuntimePlatform: () => Promise<RuntimePlatform>
       getGbdkToolchainStatus: () => Promise<GbdkToolchainStatus>
       installLatestGbdkToolchain: () => Promise<GbdkInstallResult>
+      getMakeToolchainStatus: () => Promise<MakeToolchainStatus>
+      installLatestMakeToolchain: () => Promise<MakeInstallResult>
       loadProjectSaveData: (projectPath: string) => Promise<ProjectSaveDataState>
       saveProjectSaveData: (
         projectPath: string,

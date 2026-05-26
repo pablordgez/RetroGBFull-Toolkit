@@ -2,8 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
 import type { GbdkInstallResult, GbdkToolchainStatus } from '../shared/projectGbdk'
+import type { MakeInstallResult, MakeToolchainStatus } from '../shared/projectMake'
 import type { ProjectSaveDataState } from '../shared/projectSaveData'
 import type { ProjectTagState } from '../shared/projectTags'
+import type { RuntimePlatform } from '../shared/runtimePlatform'
 import type {
   BuildProjectCodeResult,
   CopyEngineCoreResult,
@@ -88,9 +90,13 @@ const api = {
   openProjectInFileExplorer: (projectPath: string) =>
     ipcRenderer.invoke('project:open-in-file-explorer', projectPath) as Promise<boolean>,
   getRecentProjects: () => ipcRenderer.invoke('project:list-recent') as Promise<RecentProject[]>,
+  getRuntimePlatform: () => ipcRenderer.invoke('app:runtime-platform') as Promise<RuntimePlatform>,
   getGbdkToolchainStatus: () => ipcRenderer.invoke('gbdk:status') as Promise<GbdkToolchainStatus>,
   installLatestGbdkToolchain: () =>
     ipcRenderer.invoke('gbdk:install-latest') as Promise<GbdkInstallResult>,
+  getMakeToolchainStatus: () => ipcRenderer.invoke('make:status') as Promise<MakeToolchainStatus>,
+  installLatestMakeToolchain: () =>
+    ipcRenderer.invoke('make:install-latest') as Promise<MakeInstallResult>,
   loadProjectSaveData: (projectPath: string) =>
     ipcRenderer.invoke('project:save-data:load', projectPath) as Promise<ProjectSaveDataState>,
   saveProjectSaveData: (projectPath: string, saveDataState: ProjectSaveDataState) =>

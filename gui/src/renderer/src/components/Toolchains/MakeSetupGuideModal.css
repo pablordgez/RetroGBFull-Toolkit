@@ -1,0 +1,261 @@
+.make-setup-guide__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background-color: rgba(15, 56, 15, 0.64);
+  backdrop-filter: blur(3px);
+}
+
+.make-setup-guide {
+  width: min(100%, 960px);
+  max-height: min(92vh, 920px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px;
+  border: 4px solid #0f380f;
+  border-radius: 10px;
+  color: #0f380f;
+  background-color: #9bbc0f;
+  box-shadow: 14px 14px 0 rgba(15, 56, 15, 0.26);
+}
+
+.make-setup-guide__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(220px, 0.9fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.make-setup-guide__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.make-setup-guide__eyebrow {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.make-setup-guide__heading h2 {
+  margin: 0;
+  font-size: 2.2rem;
+  line-height: 0.95;
+  text-transform: uppercase;
+}
+
+.make-setup-guide__summary {
+  margin: 0;
+  max-width: 58ch;
+  line-height: 1.5;
+}
+
+.make-setup-guide__status-card,
+.make-setup-guide__callout,
+.make-setup-guide__step,
+.make-setup-guide__footer {
+  border: 3px solid #0f380f;
+  background-color: rgba(196, 190, 187, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(15, 56, 15, 0.08);
+}
+
+.make-setup-guide__status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.make-setup-guide__platform {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 2px solid #0f380f;
+  background-color: #9bbc0f;
+  font-size: 0.82rem;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.make-setup-guide__status-card strong {
+  font-size: 1.25rem;
+}
+
+.make-setup-guide__status-card span {
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.make-setup-guide__callout {
+  padding: 14px 16px;
+  background-color: #c98364;
+  color: #2f130c;
+  font-weight: bold;
+  line-height: 1.45;
+}
+
+.make-setup-guide__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.make-setup-guide__step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px;
+}
+
+.make-setup-guide__step-index {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid #0f380f;
+  background-color: #9bbc0f;
+  font-size: 1.1rem;
+  font-weight: bold;
+  box-shadow: 4px 4px 0 rgba(15, 56, 15, 0.14);
+}
+
+.make-setup-guide__step-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.make-setup-guide__step-body h3,
+.make-setup-guide__step-body p {
+  margin: 0;
+}
+
+.make-setup-guide__step-body h3 {
+  font-size: 1.2rem;
+  text-transform: uppercase;
+}
+
+.make-setup-guide__step-body p {
+  line-height: 1.5;
+}
+
+.make-setup-guide__command-list {
+  display: grid;
+  gap: 10px;
+}
+
+.make-setup-guide__command-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 2px solid #0f380f;
+  background-color: rgba(196, 190, 187, 0.9);
+}
+
+.make-setup-guide__command-card span {
+  font-size: 0.82rem;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.make-setup-guide__command-card code {
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.94rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.make-setup-guide__note {
+  color: rgba(15, 56, 15, 0.8);
+}
+
+.make-setup-guide__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+}
+
+.make-setup-guide__footer-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.make-setup-guide__footer-copy strong {
+  font-size: 1.05rem;
+}
+
+.make-setup-guide__footer-copy span {
+  line-height: 1.45;
+}
+
+.make-setup-guide__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+@media (max-width: 860px) {
+  .make-setup-guide {
+    padding: 18px;
+  }
+
+  .make-setup-guide__hero {
+    grid-template-columns: 1fr;
+  }
+
+  .make-setup-guide__footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .make-setup-guide__actions {
+    justify-content: stretch;
+  }
+
+  .make-setup-guide__actions button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .make-setup-guide__backdrop {
+    padding: 10px;
+  }
+
+  .make-setup-guide {
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .make-setup-guide__heading h2 {
+    font-size: 1.8rem;
+  }
+
+  .make-setup-guide__step {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}

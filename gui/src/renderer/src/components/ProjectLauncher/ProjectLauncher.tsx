@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import '../style/SpriteEditor.css';
 import './ProjectLauncher.css';
+import { MakeSetupGuideModal } from '../Toolchains/MakeSetupGuideModal';
 import type { GbdkToolchainStatus } from '../../../../shared/projectGbdk';
+import type { MakeToolchainStatus } from '../../../../shared/projectMake';
+import type { RuntimePlatform } from '../../../../shared/runtimePlatform';
 
 type StatusTone = 'success' | 'error' | 'info';
 
@@ -53,6 +56,11 @@ export const ProjectLauncher = () => {
     const [isBusy, setIsBusy] = useState(false);
     const [gbdkStatus, setGbdkStatus] = useState<GbdkToolchainStatus | null>(null);
     const [isInstallingGbdk, setIsInstallingGbdk] = useState(false);
+    const [makeStatus, setMakeStatus] = useState<MakeToolchainStatus | null>(null);
+    const [isInstallingMake, setIsInstallingMake] = useState(false);
+    const [isRefreshingMakeStatus, setIsRefreshingMakeStatus] = useState(false);
+    const [runtimePlatform, setRuntimePlatform] = useState<RuntimePlatform>('unknown');
+    const [isMakeGuideOpen, setIsMakeGuideOpen] = useState(false);
 
     const showError = (text: string) => {
         setStatusMessage({
@@ -87,16 +95,48 @@ export const ProjectLauncher = () => {
         void loadRecentProjects();
     }, []);
 
+    const refreshMakeStatus = async (options?: { announceSuccess?: boolean }) => {
+        setIsRefreshingMakeStatus(true);
+
+        try {
+            const nextMakeStatus = await window.api.getMakeToolchainStatus();
+            setMakeStatus(nextMakeStatus);
+
+            if (nextMakeStatus.installed) {
+                if (options?.announceSuccess) {
+                    setStatusMessage({
+                        tone: 'info',
+                        text: `GNU Make detected at ${nextMakeStatus.executablePath}.`
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('[project-launcher] getMakeToolchainStatus failed', error);
+            showError('Something went wrong while checking GNU Make.');
+        } finally {
+            setIsRefreshingMakeStatus(false);
+        }
+    };
+
     useEffect(() => {
-        const loadGbdkStatus = async () => {
+        const loadToolchainStatuses = async () => {
+            try {
+                setRuntimePlatform(await window.api.getRuntimePlatform());
+            } catch (error) {
+                console.error('[project-launcher] getRuntimePlatform failed', error);
+                setRuntimePlatform('unknown');
+            }
+
             try {
                 setGbdkStatus(await window.api.getGbdkToolchainStatus());
             } catch (error) {
                 console.error('[project-launcher] getGbdkToolchainStatus failed', error);
             }
+
+            await refreshMakeStatus();
         };
 
-        void loadGbdkStatus();
+        void loadToolchainStatuses();
     }, []);
 
     const applyActionResponse = async (response: ProjectActionResponse) => {
@@ -231,6 +271,27 @@ export const ProjectLauncher = () => {
         }
     };
 
+    const handleInstallMake = async () => {
+        setIsInstallingMake(true);
+
+        try {
+            const result = await window.api.installLatestMakeToolchain();
+            setMakeStatus(result);
+            setStatusMessage({
+                tone: 'success',
+                text: `Installed GNU Make ${result.releaseVersion} from ${result.archiveName}.`
+            });
+        } catch (error) {
+            console.error('[project-launcher] installLatestMakeToolchain failed', error);
+            setIsMakeGuideOpen(true);
+            showError(error instanceof Error ? error.message : 'Something went wrong while installing GNU Make.');
+        } finally {
+            setIsInstallingMake(false);
+        }
+    };
+
+    const isToolchainBusy = isInstallingGbdk || isInstallingMake;
+
     const selectedProject = recentProjects.find((project) => project.path === selectedProjectPath) ?? null;
 
     return (
@@ -248,37 +309,68 @@ export const ProjectLauncher = () => {
                 )}
 
                 <div className="launcher-action-group">
-                    <button type="button" onClick={handleCreateClick} disabled={isBusy || isInstallingGbdk}>
+                    <button type="button" onClick={handleCreateClick} disabled={isBusy || isToolchainBusy}>
                         Create
                     </button>
-                    <button type="button" onClick={handleOpenClick} disabled={isBusy || isInstallingGbdk}>
+                    <button type="button" onClick={handleOpenClick} disabled={isBusy || isToolchainBusy}>
                         Open...
                     </button>
                     <button
                         type="button"
                         onClick={handleLoadClick}
-                        disabled={isBusy || isInstallingGbdk || !selectedProjectPath}
+                        disabled={isBusy || isToolchainBusy || !selectedProjectPath}
                     >
                         Load
                     </button>
-                    <button type="button" onClick={handleInstallGbdk} disabled={isBusy || isInstallingGbdk}>
+                    <button type="button" onClick={handleInstallGbdk} disabled={isBusy || isToolchainBusy}>
                         {isInstallingGbdk ? 'Installing GBDK...' : 'Install / Reinstall GBDK'}
+                    </button>
+                    <button type="button" onClick={handleInstallMake} disabled={isBusy || isToolchainBusy}>
+                        {isInstallingMake ? 'Installing GNU Make...' : 'Install / Reinstall GNU Make'}
+                    </button>
+                    <button type="button" onClick={() => setIsMakeGuideOpen(true)} disabled={isBusy || isToolchainBusy}>
+                        GNU Make Setup Guide
                     </button>
                 </div>
 
-                {gbdkStatus && (
-                    <div className={`launcher-gbdk-card${gbdkStatus.installed ? '' : ' launcher-gbdk-card--missing'}`}>
-                        <p className="launcher-eyebrow">GBDK Toolchain</p>
-                        <strong>{gbdkStatus.installed ? 'Ready' : 'Missing'}</strong>
-                        <span>{gbdkStatus.installPath}</span>
-                        {gbdkStatus.version && <span>Version {gbdkStatus.version}</span>}
-                        {!gbdkStatus.installed && (
-                            <button type="button" onClick={handleInstallGbdk} disabled={isBusy || isInstallingGbdk}>
-                                {isInstallingGbdk ? 'Installing GBDK...' : 'Install GBDK'}
-                            </button>
-                        )}
-                    </div>
-                )}
+                <div className="launcher-toolchain-list">
+                    {gbdkStatus && (
+                        <div className={`launcher-toolchain-card${gbdkStatus.installed ? '' : ' launcher-toolchain-card--missing'}`}>
+                            <p className="launcher-eyebrow">GBDK Toolchain</p>
+                            <strong>{gbdkStatus.installed ? 'Ready' : 'Missing'}</strong>
+                            <span>{gbdkStatus.installPath}</span>
+                            {gbdkStatus.version && <span>Version {gbdkStatus.version}</span>}
+                            {!gbdkStatus.installed && (
+                                <button type="button" onClick={handleInstallGbdk} disabled={isBusy || isToolchainBusy}>
+                                    {isInstallingGbdk ? 'Installing GBDK...' : 'Install GBDK'}
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {makeStatus && (
+                        <div className={`launcher-toolchain-card${makeStatus.installed ? '' : ' launcher-toolchain-card--missing'}`}>
+                            <p className="launcher-eyebrow">GNU Make</p>
+                            <strong>{makeStatus.installed ? 'Ready' : 'Missing'}</strong>
+                            <span>{makeStatus.installPath}</span>
+                            {makeStatus.version && <span>Version {makeStatus.version}</span>}
+                            {!makeStatus.installed && (
+                                <div className="launcher-toolchain-card__actions">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsMakeGuideOpen(true)}
+                                        disabled={isBusy || isToolchainBusy}
+                                    >
+                                        Open Setup Guide
+                                    </button>
+                                    <button type="button" onClick={handleInstallMake} disabled={isBusy || isToolchainBusy}>
+                                        {isInstallingMake ? 'Installing GNU Make...' : 'Try Install Anyway'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
             </section>
 
             <section className="launcher-panel launcher-panel--recent">
@@ -380,6 +472,18 @@ export const ProjectLauncher = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {isMakeGuideOpen && (
+                <MakeSetupGuideModal
+                    platform={runtimePlatform}
+                    status={makeStatus}
+                    isRefreshing={isRefreshingMakeStatus}
+                    onRefresh={() => {
+                        void refreshMakeStatus({ announceSuccess: true });
+                    }}
+                    onClose={() => setIsMakeGuideOpen(false)}
+                />
             )}
         </div>
     );

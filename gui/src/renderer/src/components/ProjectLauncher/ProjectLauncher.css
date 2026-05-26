@@ -1,10 +1,12 @@
 .launcher-screen {
     min-height: 100%;
+    height: 100%;
     display: grid;
     grid-template-columns: minmax(300px, 380px) minmax(420px, 1fr);
     gap: 24px;
     padding: 24px;
     box-sizing: border-box;
+    overflow: auto;
     background:
         radial-gradient(circle at top left, rgba(15, 56, 15, 0.12), transparent 32%),
         linear-gradient(180deg, rgba(196, 190, 187, 0.92) 0%, rgba(139, 172, 15, 0.18) 100%);
@@ -40,6 +42,8 @@
 
 .launcher-panel--hero {
     justify-content: flex-start;
+    min-height: 0;
+    overflow: auto;
 }
 
 .launcher-panel--recent {
@@ -192,7 +196,12 @@
     margin-bottom: 4px;
 }
 
-.launcher-gbdk-card {
+.launcher-toolchain-list {
+    display: grid;
+    gap: 12px;
+}
+
+.launcher-toolchain-card {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -202,23 +211,33 @@
     line-height: 1.4;
 }
 
-.launcher-gbdk-card--missing {
+.launcher-toolchain-card--missing {
     background-color: #c98364;
     color: #2f130c;
 }
 
-.launcher-gbdk-card strong {
+.launcher-toolchain-card strong {
     font-size: 1.15rem;
 }
 
-.launcher-gbdk-card span {
+.launcher-toolchain-card span {
     word-break: break-word;
     opacity: 0.86;
 }
 
-.launcher-gbdk-card button {
+.launcher-toolchain-card button {
     margin-top: 4px;
     align-self: flex-start;
+}
+
+.launcher-toolchain-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.launcher-toolchain-card__actions button {
+    margin-top: 4px;
 }
 
 .launcher-modal-backdrop {
@@ -270,5 +289,9 @@
 
     .launcher-copy {
         max-width: none;
+    }
+
+    .launcher-toolchain-card__actions button {
+        width: 100%;
     }
 }

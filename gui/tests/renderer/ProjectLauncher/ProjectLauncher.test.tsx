@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectLauncher } from '../../../src/renderer/src/components/ProjectLauncher/ProjectLauncher';
@@ -25,6 +25,8 @@ describe('<ProjectLauncher />', () => {
     beforeEach(() => {
         vi.mocked(window.api.getRecentProjects).mockReset();
         vi.mocked(window.api.getRecentProjects).mockResolvedValue([]);
+        vi.mocked(window.api.getRuntimePlatform).mockReset();
+        vi.mocked(window.api.getRuntimePlatform).mockResolvedValue('win32');
         vi.mocked(window.api.getGbdkToolchainStatus).mockReset();
         vi.mocked(window.api.getGbdkToolchainStatus).mockResolvedValue({
             installed: true,
@@ -35,6 +37,16 @@ describe('<ProjectLauncher />', () => {
             message: 'GBDK is available at /toolchains/gbdk.'
         });
         vi.mocked(window.api.installLatestGbdkToolchain).mockReset();
+        vi.mocked(window.api.getMakeToolchainStatus).mockReset();
+        vi.mocked(window.api.getMakeToolchainStatus).mockResolvedValue({
+            installed: true,
+            installPath: '/toolchains/make',
+            executablePath: '/toolchains/make/bin/make',
+            version: '4.4.1',
+            source: 'runtime-managed',
+            message: 'GNU Make is available at /toolchains/make/bin/make.'
+        });
+        vi.mocked(window.api.installLatestMakeToolchain).mockReset();
         vi.mocked(window.api.pickProjectParentDirectory).mockReset();
         vi.mocked(window.api.pickProjectParentDirectory).mockResolvedValue(null);
         vi.mocked(window.api.createProject).mockReset();
@@ -173,5 +185,94 @@ describe('<ProjectLauncher />', () => {
         expect(await screen.findByRole('status')).toHaveTextContent(
             'Installed gbdk-4.5.0 from gbdk-win64.zip.'
         );
+    });
+
+    it('shows the missing GNU Make card and installs from the launcher', async () => {
+        vi.mocked(window.api.getMakeToolchainStatus).mockResolvedValue({
+            installed: false,
+            installPath: '/toolchains/make',
+            executablePath: '/toolchains/make/bin/make',
+            version: null,
+            source: 'runtime-managed',
+            message: 'GNU Make was not found at /toolchains/make.'
+        });
+        vi.mocked(window.api.installLatestMakeToolchain).mockResolvedValue({
+            installed: true,
+            installPath: '/toolchains/make',
+            executablePath: '/toolchains/make/bin/make',
+            version: '4.4.1',
+            source: 'runtime-managed',
+            message: 'Installed GNU Make 4.4.1 to /toolchains/make.',
+            releaseVersion: '4.4.1',
+            archiveName: 'make-4.4.1.tar.gz',
+            replacedExisting: false
+        });
+
+        render(<ProjectLauncher />);
+
+        expect(await screen.findByText('GNU Make')).toBeInTheDocument();
+        expect(await screen.findAllByText('Missing')).toHaveLength(1);
+
+        await userEvent.click(screen.getByRole('button', { name: 'Try Install Anyway' }));
+
+        await waitFor(() => {
+            expect(window.api.installLatestMakeToolchain).toHaveBeenCalledTimes(1);
+        });
+        expect(await screen.findByRole('status')).toHaveTextContent(
+            'Installed GNU Make 4.4.1 from make-4.4.1.tar.gz.'
+        );
+    });
+
+    it('opens the GNU Make setup guide after an install failure', async () => {
+        vi.mocked(window.api.getMakeToolchainStatus).mockResolvedValue({
+            installed: false,
+            installPath: '/toolchains/make',
+            executablePath: '/toolchains/make/bin/make',
+            version: null,
+            source: 'runtime-managed',
+            message: 'GNU Make was not found at /toolchains/make.'
+        });
+        vi.mocked(window.api.installLatestMakeToolchain).mockRejectedValue(
+            new Error('Automatic GNU Make installation requires additional dependencies.')
+        );
+
+        render(<ProjectLauncher />);
+
+        expect(await screen.findByText('GNU Make')).toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: 'Try Install Anyway' }));
+
+        expect(await screen.findByRole('dialog', { name: 'GNU Make Setup Guide' })).toBeInTheDocument();
+        expect(screen.getByText('winget install --id ezwinports.make -e')).toBeInTheDocument();
+    });
+
+    it('keeps the GNU Make setup guide open after Check Again finds GNU Make', async () => {
+        vi.mocked(window.api.getMakeToolchainStatus)
+            .mockResolvedValueOnce({
+                installed: false,
+                installPath: '/toolchains/make',
+                executablePath: '/toolchains/make/bin/make',
+                version: null,
+                source: 'runtime-managed',
+                message: 'GNU Make was not found at /toolchains/make.'
+            })
+            .mockResolvedValueOnce({
+                installed: true,
+                installPath: '/toolchains/make',
+                executablePath: '/toolchains/make/bin/make',
+                version: '4.4.1',
+                source: 'runtime-managed',
+                message: 'GNU Make is available at /toolchains/make/bin/make.'
+            });
+
+        render(<ProjectLauncher />);
+
+        await userEvent.click(await screen.findByRole('button', { name: 'GNU Make Setup Guide' }));
+        expect(await screen.findByRole('dialog', { name: 'GNU Make Setup Guide' })).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Check Again' }));
+
+        const guideDialog = await screen.findByRole('dialog', { name: 'GNU Make Setup Guide' });
+        expect(guideDialog).toBeInTheDocument();
+        expect(await within(guideDialog).findByText('Ready')).toBeInTheDocument();
     });
 });

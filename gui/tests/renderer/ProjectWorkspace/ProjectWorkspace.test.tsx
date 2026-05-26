@@ -76,6 +76,7 @@ describe('<ProjectWorkspace />', () => {
     vi.clearAllMocks()
     vi.mocked(window.api.openProjectAssetEditor).mockResolvedValue(true)
     vi.mocked(window.api.getRecentProjects).mockResolvedValue([])
+    vi.mocked(window.api.getRuntimePlatform).mockResolvedValue('linux')
     vi.mocked(window.api.getGbdkToolchainStatus).mockResolvedValue({
       installed: true,
       installPath: '/toolchains/gbdk',
@@ -93,6 +94,25 @@ describe('<ProjectWorkspace />', () => {
       message: 'Installed gbdk-4.5.0 to /toolchains/gbdk.',
       releaseTag: 'gbdk-4.5.0',
       assetName: 'gbdk-win64.zip',
+      replacedExisting: false
+    })
+    vi.mocked(window.api.getMakeToolchainStatus).mockResolvedValue({
+      installed: true,
+      installPath: '/toolchains/make',
+      executablePath: '/toolchains/make/bin/make',
+      version: '4.4.1',
+      source: 'runtime-managed',
+      message: 'GNU Make is available at /toolchains/make/bin/make.'
+    })
+    vi.mocked(window.api.installLatestMakeToolchain).mockResolvedValue({
+      installed: true,
+      installPath: '/toolchains/make',
+      executablePath: '/toolchains/make/bin/make',
+      version: '4.4.1',
+      source: 'runtime-managed',
+      message: 'Installed GNU Make 4.4.1 to /toolchains/make.',
+      releaseVersion: '4.4.1',
+      archiveName: 'make-4.4.1.tar.gz',
       replacedExisting: false
     })
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
@@ -160,6 +180,67 @@ describe('<ProjectWorkspace />', () => {
       expect(window.api.installLatestGbdkToolchain).toHaveBeenCalledTimes(1)
     })
     expect(await screen.findByText('Installed gbdk-4.5.0 from gbdk-win64.zip.')).toBeInTheDocument()
+  })
+
+  it('shows the missing GNU Make banner and installs from the Code menu', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: []
+    })
+    vi.mocked(window.api.getMakeToolchainStatus).mockResolvedValue({
+      installed: false,
+      installPath: '/toolchains/make',
+      executablePath: '/toolchains/make/bin/make',
+      version: null,
+      source: 'runtime-managed',
+      message: 'GNU Make was not found at /toolchains/make.'
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    expect(await screen.findByText('GNU Make is missing')).toBeInTheDocument()
+
+    openCodeMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Install GNU Make' }))
+
+    await waitFor(() => {
+      expect(window.api.installLatestMakeToolchain).toHaveBeenCalledTimes(1)
+    })
+    expect(
+      await screen.findByText('Installed GNU Make 4.4.1 from make-4.4.1.tar.gz.')
+    ).toBeInTheDocument()
+  })
+
+  it('opens the GNU Make setup guide from the missing-toolchain banner', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: []
+    })
+    vi.mocked(window.api.getMakeToolchainStatus).mockResolvedValue({
+      installed: false,
+      installPath: '/toolchains/make',
+      executablePath: '/toolchains/make/bin/make',
+      version: null,
+      source: 'runtime-managed',
+      message: 'GNU Make was not found at /toolchains/make.'
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Setup Guide' }))
+
+    expect(await screen.findByRole('dialog', { name: 'GNU Make Setup Guide' })).toBeInTheDocument()
+    expect(screen.getByText('sudo apt update && sudo apt install -y make')).toBeInTheDocument()
   })
 
   it('opens a project from the integrated project menu', async () => {

@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'path'
 import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
 import { resolvePathWithinProject as resolveProjectResourcePath } from './projectResourcePaths'
 import type { GbdkToolchainSource } from '../shared/projectGbdk'
+import type { MakeToolchainSource } from '../shared/projectMake'
 
 export const IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES = new Set(['deleted-resources'])
 export const INTERNAL_GENERATION_DIRECTORY = '.retrogbfull'
@@ -55,6 +56,26 @@ export const getBundledGbdkPath = (): string => {
     process.env['RETROGBFULL_BUNDLED_GBDK_PATH'] ??
     process.env['RETROGBFULL_RUNTIME_GBDK_PATH'] ??
     resolve(__dirname, '../../../gbdk')
+  )
+}
+
+export const getBundledMakeSource = (): MakeToolchainSource => {
+  if (process.env['RETROGBFULL_BUNDLED_MAKE_PATH']) {
+    return 'override'
+  }
+
+  if (process.env['RETROGBFULL_RUNTIME_MAKE_PATH']) {
+    return 'runtime-managed'
+  }
+
+  return 'development-root'
+}
+
+export const getBundledMakePath = (): string => {
+  return (
+    process.env['RETROGBFULL_BUNDLED_MAKE_PATH'] ??
+    process.env['RETROGBFULL_RUNTIME_MAKE_PATH'] ??
+    resolve(__dirname, '../../../make')
   )
 }
 

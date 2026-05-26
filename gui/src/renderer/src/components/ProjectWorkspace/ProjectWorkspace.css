@@ -70,7 +70,7 @@
   color: #0f380f;
 }
 
-.project-workspace__gbdk-banner {
+.project-workspace__toolchain-banner {
   width: 100%;
   box-sizing: border-box;
   display: flex;
@@ -84,15 +84,22 @@
   box-shadow: inset 0 0 0 2px rgba(15, 56, 15, 0.08);
 }
 
-.project-workspace__gbdk-copy {
+.project-workspace__toolchain-copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.project-workspace__gbdk-copy span {
+.project-workspace__toolchain-copy span {
   word-break: break-word;
+}
+
+.project-workspace__toolchain-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .project-workspace__layout {
@@ -194,9 +201,17 @@
     text-align: left;
   }
 
-  .project-workspace__gbdk-banner {
+  .project-workspace__toolchain-banner {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .project-workspace__toolchain-actions {
+    width: 100%;
+  }
+
+  .project-workspace__toolchain-actions button {
+    width: 100%;
   }
 
   .project-workspace__project-summary strong,

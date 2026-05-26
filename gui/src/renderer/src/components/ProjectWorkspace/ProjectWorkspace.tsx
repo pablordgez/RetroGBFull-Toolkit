@@ -6,9 +6,12 @@ import { ResizablePaneLayout } from '../Layout/ResizablePaneLayout'
 import { AppMenuBar, AppMenuDefinition, AppMenuItem } from '../MenuBar/AppMenuBar'
 import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt'
 import { SceneEditorWorkspace } from './SceneEditorWorkspace'
+import { MakeSetupGuideModal } from '../Toolchains/MakeSetupGuideModal'
 import { useSceneWorkspaceSession } from './useSceneWorkspaceSession'
 import './ProjectWorkspace.css'
 import type { GbdkToolchainStatus } from '../../../../shared/projectGbdk'
+import type { MakeToolchainStatus } from '../../../../shared/projectMake'
+import type { RuntimePlatform } from '../../../../shared/runtimePlatform'
 
 interface RecentProject {
   name: string
@@ -73,6 +76,11 @@ export const ProjectWorkspace = (): ReactElement => {
   const [isBusy, setIsBusy] = useState(false)
   const [gbdkStatus, setGbdkStatus] = useState<GbdkToolchainStatus | null>(null)
   const [isInstallingGbdk, setIsInstallingGbdk] = useState(false)
+  const [makeStatus, setMakeStatus] = useState<MakeToolchainStatus | null>(null)
+  const [isInstallingMake, setIsInstallingMake] = useState(false)
+  const [isRefreshingMakeStatus, setIsRefreshingMakeStatus] = useState(false)
+  const [runtimePlatform, setRuntimePlatform] = useState<RuntimePlatform>('unknown')
+  const [isMakeGuideOpen, setIsMakeGuideOpen] = useState(false)
 
   const showStatus = (tone: WorkspaceStatusTone, text: string): void => {
     setStatusMessage({ tone, text })
@@ -109,21 +117,50 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [])
 
+  const refreshMakeStatus = useCallback(async (options?: { announceSuccess?: boolean }) => {
+    setIsRefreshingMakeStatus(true)
+
+    try {
+      const nextMakeStatus = await window.api.getMakeToolchainStatus()
+      setMakeStatus(nextMakeStatus)
+
+      if (nextMakeStatus.installed) {
+        if (options?.announceSuccess) {
+          showStatus('info', `GNU Make detected at ${nextMakeStatus.executablePath}.`)
+        }
+      }
+    } catch (error) {
+      console.error('[project-workspace] getMakeToolchainStatus failed', error)
+      showStatus('error', 'Something went wrong while checking GNU Make.')
+    } finally {
+      setIsRefreshingMakeStatus(false)
+    }
+  }, [])
+
   useEffect(() => {
     void loadRecentProjects()
   }, [loadRecentProjects])
 
   useEffect(() => {
-    const loadGbdkStatus = async () => {
+    const loadToolchainStatuses = async () => {
+      try {
+        setRuntimePlatform(await window.api.getRuntimePlatform())
+      } catch (error) {
+        console.error('[project-workspace] getRuntimePlatform failed', error)
+        setRuntimePlatform('unknown')
+      }
+
       try {
         setGbdkStatus(await window.api.getGbdkToolchainStatus())
       } catch (error) {
         console.error('[project-workspace] getGbdkToolchainStatus failed', error)
       }
+
+      await refreshMakeStatus()
     }
 
-    void loadGbdkStatus()
-  }, [projectPath])
+    void loadToolchainStatuses()
+  }, [projectPath, refreshMakeStatus])
 
   const handleOpenProject = useCallback(async () => {
     setIsBusy(true)
@@ -296,6 +333,27 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [])
 
+  const handleInstallMake = useCallback(async () => {
+    setIsInstallingMake(true)
+
+    try {
+      const result = await window.api.installLatestMakeToolchain()
+      setMakeStatus(result)
+      showStatus('info', `Installed GNU Make ${result.releaseVersion} from ${result.archiveName}.`)
+    } catch (error) {
+      console.error('[project-workspace] installLatestMakeToolchain failed', error)
+      setIsMakeGuideOpen(true)
+      showStatus(
+        'error',
+        error instanceof Error ? error.message : 'Something went wrong while installing GNU Make.'
+      )
+    } finally {
+      setIsInstallingMake(false)
+    }
+  }, [])
+
+  const isInstallingToolchain = isInstallingGbdk || isInstallingMake
+
   const handleOpenTagEditor = useCallback(async () => {
     if (!projectPath) {
       return
@@ -404,7 +462,7 @@ export const ProjectWorkspace = (): ReactElement => {
           {
             id: 'copy-engine-core',
             label: 'Copy Engine Core',
-            disabled: isBusy || isInstallingGbdk || !projectPath,
+            disabled: isBusy || isInstallingToolchain || !projectPath,
             onSelect: () => void handleCopyEngineCore()
           },
           {
@@ -413,13 +471,28 @@ export const ProjectWorkspace = (): ReactElement => {
               isInstallingGbdk || !gbdkStatus?.installed
                 ? 'Install GBDK'
                 : 'Reinstall GBDK',
-            disabled: isBusy || isInstallingGbdk,
+            disabled: isBusy || isInstallingToolchain,
             onSelect: () => void handleInstallGbdk()
+          },
+          {
+            id: 'install-make',
+            label:
+              isInstallingMake || !makeStatus?.installed
+                ? 'Install GNU Make'
+                : 'Reinstall GNU Make',
+            disabled: isBusy || isInstallingToolchain,
+            onSelect: () => void handleInstallMake()
+          },
+          {
+            id: 'open-make-guide',
+            label: 'GNU Make Setup Guide...',
+            disabled: isBusy || isInstallingToolchain,
+            onSelect: () => setIsMakeGuideOpen(true)
           },
           {
             id: 'build-project-code',
             label: 'Build Project Code',
-            disabled: isBusy || isInstallingGbdk || !projectPath,
+            disabled: isBusy || isInstallingToolchain || !projectPath,
             onSelect: () => void handleBuildProjectCode()
           }
         ]
@@ -430,14 +503,18 @@ export const ProjectWorkspace = (): ReactElement => {
     handleCloseProject,
     handleCopyEngineCore,
     handleInstallGbdk,
+    handleInstallMake,
     handleOpenSaveDataEditor,
     handleOpenTagEditor,
     handleOpenProject,
     handleOpenProjectInExplorer,
     handleScanProjectDirectory,
     gbdkStatus?.installed,
+    makeStatus?.installed,
     isBusy,
     isInstallingGbdk,
+    isInstallingMake,
+    isInstallingToolchain,
     loadRecentProjects,
     projectPath,
     recentProjectItems
@@ -466,14 +543,31 @@ export const ProjectWorkspace = (): ReactElement => {
       )}
 
       {gbdkStatus && !gbdkStatus.installed && (
-        <div className="project-workspace__gbdk-banner" role="status">
-          <div className="project-workspace__gbdk-copy">
+        <div className="project-workspace__toolchain-banner" role="status">
+          <div className="project-workspace__toolchain-copy">
             <strong>GBDK is missing</strong>
             <span>{gbdkStatus.installPath}</span>
           </div>
-          <button type="button" onClick={() => void handleInstallGbdk()} disabled={isBusy || isInstallingGbdk}>
+          <button type="button" onClick={() => void handleInstallGbdk()} disabled={isBusy || isInstallingToolchain}>
             {isInstallingGbdk ? 'Installing GBDK...' : 'Install GBDK'}
           </button>
+        </div>
+      )}
+
+      {makeStatus && !makeStatus.installed && (
+        <div className="project-workspace__toolchain-banner" role="status">
+          <div className="project-workspace__toolchain-copy">
+            <strong>GNU Make is missing</strong>
+            <span>{makeStatus.installPath}</span>
+          </div>
+          <div className="project-workspace__toolchain-actions">
+            <button type="button" onClick={() => setIsMakeGuideOpen(true)} disabled={isBusy || isInstallingToolchain}>
+              Open Setup Guide
+            </button>
+            <button type="button" onClick={() => void handleInstallMake()} disabled={isBusy || isInstallingToolchain}>
+              {isInstallingMake ? 'Installing GNU Make...' : 'Try Install Anyway'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -524,6 +618,18 @@ export const ProjectWorkspace = (): ReactElement => {
           onCloseDecision={(decision) => {
             void handleSceneCloseDecision(decision)
           }}
+        />
+      )}
+
+      {isMakeGuideOpen && (
+        <MakeSetupGuideModal
+          platform={runtimePlatform}
+          status={makeStatus}
+          isRefreshing={isRefreshingMakeStatus}
+          onRefresh={() => {
+            void refreshMakeStatus({ announceSuccess: true })
+          }}
+          onClose={() => setIsMakeGuideOpen(false)}
         />
       )}
     </div>

@@ -57,9 +57,11 @@ import {
   saveProjectScriptResource
 } from './projectCode'
 import { getGbdkToolchainStatus, installLatestGbdkToolchain } from './projectGbdk'
+import { getMakeToolchainStatus, installLatestMakeToolchain } from './projectMake'
 import { getProjectCodeWorkspaceSnapshot } from './projectCodeLanguageService'
 import { getProjectCodeSymbolIndex } from './projectCodeIntelligence'
 import { PROJECT_SCRIPT_LABELS, ProjectScriptKind, getProjectScriptDisplayName } from '../shared/projectScripts'
+import { getCurrentRuntimePlatform } from '../shared/runtimePlatform'
 
 interface ProjectActionResponse {
   ok: boolean
@@ -419,6 +421,10 @@ function createWindow(): void {
 app.whenReady().then(() => {
   if (!is.dev && !process.env['RETROGBFULL_RUNTIME_GBDK_PATH']) {
     process.env['RETROGBFULL_RUNTIME_GBDK_PATH'] = join(app.getPath('userData'), 'gbdk')
+  }
+
+  if (!is.dev && !process.env['RETROGBFULL_RUNTIME_MAKE_PATH']) {
+    process.env['RETROGBFULL_RUNTIME_MAKE_PATH'] = join(app.getPath('userData'), 'make')
   }
 
   // Set app user model id for windows
@@ -785,6 +791,18 @@ ipcMain.handle('gbdk:status', async () => {
 
 ipcMain.handle('gbdk:install-latest', async () => {
   return installLatestGbdkToolchain()
+})
+
+ipcMain.handle('make:status', async () => {
+  return getMakeToolchainStatus()
+})
+
+ipcMain.handle('make:install-latest', async () => {
+  return installLatestMakeToolchain()
+})
+
+ipcMain.handle('app:runtime-platform', async () => {
+  return getCurrentRuntimePlatform(process.platform)
 })
 
 ipcMain.handle('editor:confirm-close', async (event) => {
