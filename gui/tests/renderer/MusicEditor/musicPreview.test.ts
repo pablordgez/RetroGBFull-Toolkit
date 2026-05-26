@@ -4,6 +4,7 @@ import {
   decodePulseInstrument,
   getNoiseClockHz,
   getPulseFrequencyHz,
+  MusicPreviewPlayer,
   renderMusicPreviewSamples
 } from '../../../src/renderer/src/components/MusicEditor/musicPreview'
 import type { MusicAssetDocument } from '../../../src/shared/projectAssets'
@@ -68,5 +69,63 @@ describe('music preview audio helpers', () => {
     expect(firstRender.length).toBe(secondRender.length)
     expect(firstRender.some((sample) => sample !== 0)).toBe(true)
     expect(firstRender.slice(0, 512)).toEqual(secondRender.slice(0, 512))
+  })
+
+  it('loops preview audio at the playable step duration instead of the rendered tail', async () => {
+    const originalAudioContext = window.AudioContext
+    const originalRequestAnimationFrame = window.requestAnimationFrame
+    const originalCancelAnimationFrame = window.cancelAnimationFrame
+    const source = {
+      buffer: null as AudioBuffer | null,
+      loop: false,
+      loopStart: -1,
+      loopEnd: -1,
+      onended: null as (() => void) | null,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn()
+    }
+    const context = {
+      sampleRate: 60,
+      state: 'running',
+      currentTime: 0,
+      destination: {},
+      resume: vi.fn(),
+      createBuffer: vi.fn((_channels: number, length: number, sampleRate: number) => ({
+        length,
+        sampleRate,
+        getChannelData: vi.fn(() => new Float32Array(length))
+      })),
+      createBufferSource: vi.fn(() => source)
+    }
+
+    Object.defineProperty(window, 'AudioContext', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(function AudioContextMock() {
+        return context
+      })
+    })
+    window.requestAnimationFrame = vi.fn(() => 1)
+    window.cancelAnimationFrame = vi.fn()
+
+    try {
+      const document = { ...createMusicDocument(), loop: true, speed: 6 }
+      await new MusicPreviewPlayer().play(document)
+
+      expect(source.loop).toBe(true)
+      expect(source.loopStart).toBe(0)
+      expect(source.loopEnd).toBeCloseTo(1.6)
+      expect(source.start).toHaveBeenCalledWith(0, 0)
+    } finally {
+      Object.defineProperty(window, 'AudioContext', {
+        configurable: true,
+        writable: true,
+        value: originalAudioContext
+      })
+      window.requestAnimationFrame = originalRequestAnimationFrame
+      window.cancelAnimationFrame = originalCancelAnimationFrame
+    }
   })
 })

@@ -393,6 +393,8 @@ export class MusicPreviewPlayer {
     const source = this.context.createBufferSource()
     source.buffer = buffer
     source.loop = document.loop
+    source.loopStart = 0
+    source.loopEnd = playableDurationSeconds
     source.connect(this.context.destination)
     source.onended = () => {
       if (this.source === source) {

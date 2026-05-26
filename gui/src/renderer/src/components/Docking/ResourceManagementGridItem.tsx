@@ -47,6 +47,13 @@ export const ResourceManagementGridItem = ({
   startingScenePath
 }: ResourceManagementGridItemProps): ReactElement => {
   const resourceType = getTrackedResourceKind(resource)
+  const itemClassName = `resource-management-pane__item ${
+    resource.type === 'folder'
+      ? 'resource-management-pane__item--folder'
+      : isSceneResource(resource)
+        ? 'resource-management-pane__item--scene'
+        : 'resource-management-pane__item--asset'
+  }`
 
   if (!resourceType || !menuOptions) {
     return (
@@ -74,11 +81,7 @@ export const ResourceManagementGridItem = ({
     >
       {isEditing ? (
         <div
-          className={`resource-management-pane__item ${
-            resource.type === 'folder'
-              ? 'resource-management-pane__item--folder'
-              : 'resource-management-pane__item--asset'
-          } ${isSelected ? 'resource-management-pane__item--selected' : ''} ${
+          className={`${itemClassName} ${isSelected ? 'resource-management-pane__item--selected' : ''} ${
             isPendingCut ? 'resource-management-pane__item--cut' : ''
           }`}
           role="listitem"
@@ -116,11 +119,7 @@ export const ResourceManagementGridItem = ({
       ) : (
         <button
           type="button"
-          className={`resource-management-pane__item ${
-            resource.type === 'folder'
-              ? 'resource-management-pane__item--folder'
-              : 'resource-management-pane__item--asset'
-          } ${isSelected ? 'resource-management-pane__item--selected' : ''} ${
+          className={`${itemClassName} ${isSelected ? 'resource-management-pane__item--selected' : ''} ${
             isPendingCut ? 'resource-management-pane__item--cut' : ''
           }`}
           role="listitem"

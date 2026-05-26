@@ -58,4 +58,37 @@ describe('MusicEditor', () => {
       )
     })
   })
+
+  it('offers undo and redo controls for music document edits', async () => {
+    const document = createDefaultProjectAssetDocument('music') as MusicAssetDocument
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue({
+      assetKind: 'music',
+      resourcePath: 'Audio/Battle.rgbmusic.json',
+      document
+    })
+
+    renderEditor()
+
+    expect(await screen.findByRole('heading', { name: 'Battle' })).toBeInTheDocument()
+    const speedInput = screen.getByLabelText('Speed')
+    const undoButton = screen.getByRole('button', { name: 'Undo' })
+    const redoButton = screen.getByRole('button', { name: 'Redo' })
+
+    expect(undoButton).toBeDisabled()
+    expect(redoButton).toBeDisabled()
+
+    fireEvent.change(speedInput, { target: { value: '10' } })
+
+    await waitFor(() => expect(undoButton).toBeEnabled())
+    expect(speedInput).toHaveValue(10)
+
+    fireEvent.click(undoButton)
+
+    await waitFor(() => expect(speedInput).toHaveValue(document.speed))
+    expect(redoButton).toBeEnabled()
+
+    fireEvent.click(redoButton)
+
+    await waitFor(() => expect(speedInput).toHaveValue(10))
+  })
 })

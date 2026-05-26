@@ -233,6 +233,7 @@ export const MusicEditor = (): ReactElement => {
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false)
   const [draftInstrument, setDraftInstrument] = useState<MusicInstrument | null>(null)
   const [draftInstrumentIndex, setDraftInstrumentIndex] = useState<number | null>(null)
+  const [, setHistoryRevision] = useState(0)
   const previewRef = useRef<MusicPreviewPlayer | null>(null)
   const undoStackRef = useRef<MusicAssetDocument[]>([])
   const redoStackRef = useRef<MusicAssetDocument[]>([])
@@ -338,6 +339,7 @@ export const MusicEditor = (): ReactElement => {
       redoStackRef.current = []
       return nextDocument
     })
+    setHistoryRevision((revision) => revision + 1)
   }, [])
 
   const undoDocument = useCallback(() => {
@@ -351,6 +353,7 @@ export const MusicEditor = (): ReactElement => {
       redoStackRef.current = [...redoStackRef.current.slice(-99), current]
       return previousDocument
     })
+    setHistoryRevision((revision) => revision + 1)
   }, [])
 
   const redoDocument = useCallback(() => {
@@ -364,7 +367,11 @@ export const MusicEditor = (): ReactElement => {
       undoStackRef.current = [...undoStackRef.current.slice(-99), current]
       return nextDocument
     })
+    setHistoryRevision((revision) => revision + 1)
   }, [])
+
+  const canUndo = undoStackRef.current.length > 0
+  const canRedo = redoStackRef.current.length > 0
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -1255,85 +1262,87 @@ export const MusicEditor = (): ReactElement => {
           ) : null}
         </div>
       </div>
-      <div className="music-editor__step-strip">
-        {Array.from({ length: MUSIC_PATTERN_LENGTH }, (_, stepIndex) => {
-          const absoluteStep = selectedSequenceIndex * MUSIC_PATTERN_LENGTH + stepIndex
-          return (
-            <button
-              type="button"
-              key={stepIndex}
-              className={[
-                stepIndex === selectedStepIndex ? 'is-selected' : '',
-                absoluteStep === playheadStep ? 'is-playing' : ''
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              onClick={() => seekToStep(absoluteStep)}
-            >
-              {stepIndex + 1}
-            </button>
-          )
-        })}
-      </div>
-      <div className="music-editor__piano-roll">
-        {Array.from({ length: MUSIC_PATTERN_LENGTH }, (_, stepIndex) => {
-          const step = editedPattern?.steps[stepIndex]
-          const absoluteStep = selectedSequenceIndex * MUSIC_PATTERN_LENGTH + stepIndex
-          const isRest = !step || step.noteIndex === MUSIC_NOTE_REST
-          const pitchPercent = isRest ? 6 : 8 + (step.noteIndex / (NOTE_NAMES.length - 1)) * 78
+      <div className="music-editor__pattern-grid">
+        <div className="music-editor__step-strip">
+          {Array.from({ length: MUSIC_PATTERN_LENGTH }, (_, stepIndex) => {
+            const absoluteStep = selectedSequenceIndex * MUSIC_PATTERN_LENGTH + stepIndex
+            return (
+              <button
+                type="button"
+                key={stepIndex}
+                className={[
+                  stepIndex === selectedStepIndex ? 'is-selected' : '',
+                  absoluteStep === playheadStep ? 'is-playing' : ''
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                onClick={() => seekToStep(absoluteStep)}
+              >
+                {stepIndex + 1}
+              </button>
+            )
+          })}
+        </div>
+        <div className="music-editor__piano-roll">
+          {Array.from({ length: MUSIC_PATTERN_LENGTH }, (_, stepIndex) => {
+            const step = editedPattern?.steps[stepIndex]
+            const absoluteStep = selectedSequenceIndex * MUSIC_PATTERN_LENGTH + stepIndex
+            const isRest = !step || step.noteIndex === MUSIC_NOTE_REST
+            const pitchPercent = isRest ? 6 : 8 + (step.noteIndex / (NOTE_NAMES.length - 1)) * 78
 
-          return (
-            <div
-              className={[
-                'music-editor__note-column',
-                stepIndex === selectedStepIndex ? 'is-selected' : '',
-                absoluteStep === playheadStep ? 'is-playing' : ''
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              key={stepIndex}
-              onClick={(event: MouseEvent<HTMLDivElement>) => {
-                if (!editedPattern || event.target !== event.currentTarget) {
-                  return
-                }
-
-                setSelectedStepIndex(stepIndex)
-                placeNote(editedPattern.id, stepIndex, getPitchFromPointer(event.currentTarget, event.clientY))
-              }}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => handleNoteDrop(event, stepIndex)}
-            >
-              {!isRest && editedPattern && step ? (
-                <button
-                  type="button"
-                  className="music-editor__note-block"
-                  style={{ bottom: `${pitchPercent}%` }}
-                  draggable
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    seekToStep(absoluteStep)
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    removeNote(editedPattern.id, stepIndex)
-                  }}
-                  onDragStart={(event) =>
-                    writeDragPayload(event, {
-                      type: 'note',
-                      patternId: editedPattern.id,
-                      stepIndex,
-                      noteIndex: step.noteIndex,
-                      instrument: step.instrument
-                    })
+            return (
+              <div
+                className={[
+                  'music-editor__note-column',
+                  stepIndex === selectedStepIndex ? 'is-selected' : '',
+                  absoluteStep === playheadStep ? 'is-playing' : ''
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                key={stepIndex}
+                onClick={(event: MouseEvent<HTMLDivElement>) => {
+                  if (!editedPattern || event.target !== event.currentTarget) {
+                    return
                   }
-                >
-                  <span>{getNoteLabel(step.noteIndex)}</span>
-                  <small>I{step.instrument}</small>
-                </button>
-              ) : null}
-            </div>
-          )
-        })}
+
+                  setSelectedStepIndex(stepIndex)
+                  placeNote(editedPattern.id, stepIndex, getPitchFromPointer(event.currentTarget, event.clientY))
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => handleNoteDrop(event, stepIndex)}
+              >
+                {!isRest && editedPattern && step ? (
+                  <button
+                    type="button"
+                    className="music-editor__note-block"
+                    style={{ bottom: `${pitchPercent}%` }}
+                    draggable
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      seekToStep(absoluteStep)
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      removeNote(editedPattern.id, stepIndex)
+                    }}
+                    onDragStart={(event) =>
+                      writeDragPayload(event, {
+                        type: 'note',
+                        patternId: editedPattern.id,
+                        stepIndex,
+                        noteIndex: step.noteIndex,
+                        instrument: step.instrument
+                      })
+                    }
+                  >
+                    <span>{getNoteLabel(step.noteIndex)}</span>
+                    <small>I{step.instrument}</small>
+                  </button>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
       </div>
     </section>
   )
@@ -1355,6 +1364,12 @@ export const MusicEditor = (): ReactElement => {
           </button>
           <button type="button" onClick={() => seekToStep(Math.min(totalSteps - 1, playheadStep + 1))}>
             Next
+          </button>
+          <button type="button" disabled={!canUndo} onClick={undoDocument}>
+            Undo
+          </button>
+          <button type="button" disabled={!canRedo} onClick={redoDocument}>
+            Redo
           </button>
           <label>
             Step
