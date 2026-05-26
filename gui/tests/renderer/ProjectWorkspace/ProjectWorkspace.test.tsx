@@ -38,6 +38,10 @@ const openCodeMenu = () => {
   fireEvent.click(screen.getByRole('menuitem', { name: 'Code' }))
 }
 
+const openCreateMenu = () => {
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Create' }))
+}
+
 const getShortcutLabel = (key: string) => {
   return /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? `\u2318${key}` : `Ctrl+${key}`
 }
@@ -372,6 +376,46 @@ describe('<ProjectWorkspace />', () => {
     expect(await screen.findByText('Sprites')).toBeInTheDocument()
   })
 
+  it('shows a file explorer action in the resource context menu and opens the selected resource', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        {
+          type: 'folder',
+          id: 'folder-1',
+          name: 'Sprites',
+          path: 'Sprites',
+          parentPath: null
+        },
+        {
+          type: 'file',
+          name: 'Hero',
+          fileName: 'Hero.rgbsprite.json',
+          path: 'Sprites/Hero.rgbsprite.json',
+          extension: 'json',
+          resourceType: 'sprite'
+        }
+      ]
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    fireEvent.contextMenu(screen.getByText('Hero'), { clientX: 120, clientY: 160 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Show In File Explorer' }))
+
+    await waitFor(() => {
+      expect(window.api.showProjectResourceInFileExplorer).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Sprites/Hero.rgbsprite.json'
+      )
+    })
+  })
+
   it('resizes the bottom asset manager pane when the separator is dragged', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
@@ -440,6 +484,74 @@ describe('<ProjectWorkspace />', () => {
     expect(screen.getByRole('menuitem', { name: 'Window' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Script' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Actor' })).not.toBeInTheDocument()
+  })
+
+  it('creates a folder from the Create menu in the current resource path', async () => {
+    vi.mocked(window.api.getProjectResources).mockImplementation(async (_projectPath, currentPath = '') => {
+      if (currentPath === 'Sprites') {
+        return {
+          projectName: 'Alpha',
+          projectPath: '/projects/Alpha',
+          currentPath: 'Sprites',
+          parentPath: '',
+          items: []
+        }
+      }
+
+      return {
+        projectName: 'Alpha',
+        projectPath: '/projects/Alpha',
+        currentPath: '',
+        parentPath: null,
+        items: [
+          {
+            type: 'folder',
+            id: 'folder-1',
+            name: 'Sprites',
+            path: 'Sprites',
+            parentPath: null
+          }
+        ]
+      }
+    })
+    vi.mocked(window.api.createProjectResource).mockResolvedValue({
+      resourceType: 'folder',
+      resourcePath: 'Sprites/New Folder',
+      resourceName: 'New Folder',
+      parentPath: 'Sprites',
+      view: {
+        projectName: 'Alpha',
+        projectPath: '/projects/Alpha',
+        currentPath: 'Sprites',
+        parentPath: '',
+        items: [
+          {
+            type: 'folder',
+            id: 'folder-2',
+            name: 'New Folder',
+            path: 'Sprites/New Folder',
+            parentPath: 'Sprites'
+          }
+        ]
+      }
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    await openResourceFromPane('Sprites')
+    await screen.findByText('/Sprites')
+
+    openCreateMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Folder' }))
+
+    expect(window.api.createProjectResource).toHaveBeenCalledWith(
+      '/projects/Alpha',
+      'folder',
+      'Sprites'
+    )
+    expect(await screen.findByLabelText('Folder name for New Folder')).toHaveValue('New Folder')
   })
 
   it('creates a folder and immediately opens inline rename mode', async () => {
@@ -876,6 +988,8 @@ describe('<ProjectWorkspace />', () => {
         'Built project code for 2 save entries, 1 sprite, 0 tilesets, 0 tilemaps, 0 windows, 0 music assets, and 0 scenes.'
       )
     ).toBeInTheDocument()
+    expect(screen.queryByLabelText('Build in progress')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dismiss message' })).toBeInTheDocument()
   })
 
   it('builds and compiles the project from the code menu', async () => {

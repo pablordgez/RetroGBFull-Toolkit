@@ -39,6 +39,10 @@ import {
   updateProjectResourceBank,
   updateProjectStartingScene
 } from './projectResources'
+import {
+  openProjectInFileExplorer,
+  showProjectResourceInFileExplorer
+} from './projectFileExplorer'
 import { ensureProjectAssetFileAvailable, loadProjectAssetFile, saveProjectAssetFile } from './projectAssetFiles'
 import {
   loadProjectSaveDataState,
@@ -556,19 +560,11 @@ ipcMain.handle('project:close-current', async (event) => {
 })
 
 ipcMain.handle('project:open-in-file-explorer', async (_, projectPath: string) => {
-  const validation = await validateProjectDirectory(projectPath)
+  return openProjectInFileExplorer(projectPath)
+})
 
-  if (!validation.isValid) {
-    throw new Error(validation.message ?? 'The selected project could not be loaded.')
-  }
-
-  const openResult = await shell.openPath(validation.path)
-
-  if (openResult) {
-    throw new Error(openResult)
-  }
-
-  return true
+ipcMain.handle('project:resources:show-in-file-explorer', async (_, projectPath: string, resourcePath: string) => {
+  return showProjectResourceInFileExplorer(projectPath, resourcePath)
 })
 
 ipcMain.handle('project:assets:open-editor', async (_, assetType: ProjectAssetKind, projectPath: string, assetPath: string) => {

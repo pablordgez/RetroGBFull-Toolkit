@@ -91,6 +91,12 @@ const api = {
   closeCurrentProject: () => ipcRenderer.invoke('project:close-current') as Promise<boolean>,
   openProjectInFileExplorer: (projectPath: string) =>
     ipcRenderer.invoke('project:open-in-file-explorer', projectPath) as Promise<boolean>,
+  showProjectResourceInFileExplorer: (projectPath: string, resourcePath: string) =>
+    ipcRenderer.invoke(
+      'project:resources:show-in-file-explorer',
+      projectPath,
+      resourcePath
+    ) as Promise<boolean>,
   getRecentProjects: () => ipcRenderer.invoke('project:list-recent') as Promise<RecentProject[]>,
   getRuntimePlatform: () => ipcRenderer.invoke('app:runtime-platform') as Promise<RuntimePlatform>,
   getGbdkToolchainStatus: () => ipcRenderer.invoke('gbdk:status') as Promise<GbdkToolchainStatus>,

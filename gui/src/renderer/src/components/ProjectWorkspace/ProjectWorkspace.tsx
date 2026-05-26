@@ -1,7 +1,11 @@
-import { type ReactElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import '../style/SpriteEditor.css'
-import { ResourceManagementPane } from '../Docking/ResourceManagementPane'
+import {
+  ResourceManagementPane,
+  type ResourceManagementPaneHandle
+} from '../Docking/ResourceManagementPane'
+import { buildResourceCreationMenuItems } from '../Docking/resourceCreationMenu'
 import { ResizablePaneLayout } from '../Layout/ResizablePaneLayout'
 import { AppMenuBar, AppMenuDefinition, AppMenuItem } from '../MenuBar/AppMenuBar'
 import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt'
@@ -101,6 +105,7 @@ export const ProjectWorkspace = (): ReactElement => {
   const [searchParams] = useSearchParams()
   const projectName = searchParams.get('projectName') ?? 'Project Workspace'
   const projectPath = searchParams.get('projectPath') ?? ''
+  const resourcePaneRef = useRef<ResourceManagementPaneHandle | null>(null)
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
   const [refreshVersion, setRefreshVersion] = useState(0)
   const [resourceManagerCurrentPath, setResourceManagerCurrentPath] = useState('')
@@ -315,6 +320,7 @@ export const ProjectWorkspace = (): ReactElement => {
         error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.buildCode
       )
     } finally {
+      setActiveBuildOperation(null)
       setIsBusy(false)
     }
   }, [projectPath])
@@ -394,7 +400,6 @@ export const ProjectWorkspace = (): ReactElement => {
       console.error('[project-workspace] openProjectTagEditor failed', error)
       showStatus('error', error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openTags)
     } finally {
-      setActiveBuildOperation(null)
       setIsBusy(false)
     }
   }, [projectPath])
@@ -455,6 +460,18 @@ export const ProjectWorkspace = (): ReactElement => {
     }))
   }, [handleLoadRecentProject, isBusy, projectPath, recentProjects])
 
+  const createMenuItems = useMemo((): AppMenuItem[] => {
+    return buildResourceCreationMenuItems({
+      disabled: !projectPath,
+      onCreateResource: (resourceType) => {
+        resourcePaneRef.current?.createResource(resourceType)
+      },
+      onCreateScriptResource: (scriptKind) => {
+        resourcePaneRef.current?.createScriptResource(scriptKind)
+      }
+    })
+  }, [projectPath])
+
   const menus = useMemo((): AppMenuDefinition[] => {
     return [
       {
@@ -497,6 +514,12 @@ export const ProjectWorkspace = (): ReactElement => {
         ]
       },
       {
+        id: 'create-menu',
+        label: 'Create',
+        disabled: !projectPath,
+        items: createMenuItems
+      },
+      {
         id: 'code-menu',
         label: 'Code',
         items: [
@@ -528,6 +551,7 @@ export const ProjectWorkspace = (): ReactElement => {
       }
     ]
   }, [
+    createMenuItems,
     handleBuildAndCompileProject,
     handleBuildProject,
     handleCloseProject,
@@ -578,14 +602,15 @@ export const ProjectWorkspace = (): ReactElement => {
             )}
             <span className="project-workspace__status-text">{statusMessage.text}</span>
           </div>
-          {statusMessage.tone === 'error' && (
+          {!activeBuildOperation && (
             <button
               type="button"
               className="project-workspace__status-dismiss"
               onClick={dismissStatus}
               aria-label="Dismiss message"
+              title="Dismiss message"
             >
-              Dismiss
+              x
             </button>
           )}
         </div>
@@ -625,6 +650,7 @@ export const ProjectWorkspace = (): ReactElement => {
           className="project-workspace__resizable-layout"
           pane={
             <ResourceManagementPane
+              ref={resourcePaneRef}
               className="project-workspace__resource-pane"
               onOpenScene={openScene}
               onCurrentPathChange={setResourceManagerCurrentPath}

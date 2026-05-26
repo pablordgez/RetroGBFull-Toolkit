@@ -12,6 +12,10 @@ vi.mock('electron', () => {
       invoke: vi.fn(),
       removeListener: vi.fn(),
     },
+    shell: {
+      openPath: vi.fn().mockResolvedValue(''),
+      showItemInFolder: vi.fn(),
+    },
   };
 });
 
@@ -29,6 +33,7 @@ Object.defineProperty(window, 'api', {
     loadRecentProject: vi.fn(),
     closeCurrentProject: vi.fn().mockResolvedValue(true),
     openProjectInFileExplorer: vi.fn().mockResolvedValue(true),
+    showProjectResourceInFileExplorer: vi.fn().mockResolvedValue(true),
     getRecentProjects: vi.fn().mockResolvedValue([]),
     getRuntimePlatform: vi.fn().mockResolvedValue('win32'),
     getGbdkToolchainStatus: vi.fn().mockResolvedValue({

@@ -87,11 +87,14 @@
 
 .project-workspace__status-dismiss {
   flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
   border: 2px solid currentColor;
-  padding: 4px 8px;
+  padding: 0;
   background: transparent;
   color: inherit;
   font-weight: bold;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -172,13 +175,16 @@
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  border: 4px solid #0f380f;
-  border-bottom: 0;
   background:
     linear-gradient(180deg, rgba(196, 190, 187, 0.88) 0%, rgba(196, 190, 187, 0.98) 100%),
     radial-gradient(circle at top, rgba(48, 98, 48, 0.08), transparent 44%);
   box-shadow: inset 0 0 0 1px rgba(15, 56, 15, 0.08);
   overflow: hidden;
+}
+
+.project-workspace__editor-layout {
+  border: 4px solid #0f380f;
+  border-bottom: 0;
 }
 
 .project-workspace__scene-editor {

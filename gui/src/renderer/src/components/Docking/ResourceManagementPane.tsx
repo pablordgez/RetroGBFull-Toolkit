@@ -1,9 +1,18 @@
-import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  forwardRef,
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import { ContextMenuOption, ContextMenuRegion } from '../ContextMenu/ContextMenuRegion'
 import { useHistory } from '../hooks/history/useHistory'
 import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts'
 import { getCommandShortcutLabelPrefix, isEditableElementTarget } from '../utils/keyboardShortcuts'
-import { PROJECT_SCRIPT_LABELS, type ProjectScriptKind } from '../../../../shared/projectScripts'
+import type { ProjectScriptKind } from '../../../../shared/projectScripts'
 import type {
   ProjectDeletedResourceResult,
   ProjectResourceItem,
@@ -24,6 +33,9 @@ import {
   isSceneResource,
   supportsBankOverride
 } from './resourceManagementShared'
+import {
+  buildResourceCreationMenuItems,
+} from './resourceCreationMenu'
 import './ResourceManagementPane.css'
 
 interface ResourceManagementPaneProps {
@@ -33,6 +45,11 @@ interface ResourceManagementPaneProps {
   onOpenScene?: (scenePath: string) => void | Promise<void>
   onCurrentPathChange?: (currentPath: string) => void
   onResourceMutation?: (event: ResourceMutationEvent) => void
+}
+
+export interface ResourceManagementPaneHandle {
+  createResource: (resourceType: Exclude<ProjectResourceKind, 'script'>) => void
+  createScriptResource: (scriptKind: ProjectScriptKind) => void
 }
 
 interface EditingResourceState {
@@ -69,14 +86,14 @@ interface ResourceClipboardState {
 
 type ResourceStatusTone = 'error' | 'info'
 
-export const ResourceManagementPane = ({
+export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, ResourceManagementPaneProps>(function ResourceManagementPane({
   className,
   projectPath = '',
   refreshVersion = 0,
   onOpenScene,
   onCurrentPathChange,
   onResourceMutation
-}: ResourceManagementPaneProps): ReactElement => {
+}: ResourceManagementPaneProps, ref): ReactElement {
   const paneRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const isCommittingRenameRef = useRef(false)
@@ -707,7 +724,7 @@ export const ResourceManagementPane = ({
 
   const handleCreateResource = useCallback(
     async (resourceType: Exclude<ProjectResourceKind, 'script'>) => {
-      if (!projectPath) {
+      if (!projectPath || isInteractionDisabled) {
         return
       }
 
@@ -794,12 +811,12 @@ export const ResourceManagementPane = ({
         setIsBusy(false)
       }
     },
-    [notifyResourceMutation, projectPath, record, resourceView?.currentPath]
+    [isInteractionDisabled, notifyResourceMutation, projectPath, record, resourceView?.currentPath]
   )
 
   const handleCreateScriptResource = useCallback(
     async (scriptKind: ProjectScriptKind) => {
-      if (!projectPath) {
+      if (!projectPath || isInteractionDisabled) {
         return
       }
 
@@ -881,7 +898,34 @@ export const ResourceManagementPane = ({
         setIsBusy(false)
       }
     },
-    [beginResourceEditing, notifyResourceMutation, projectPath, record]
+    [beginResourceEditing, isInteractionDisabled, notifyResourceMutation, projectPath, record]
+  )
+
+  const createMenuItems = useMemo(
+    () =>
+      buildResourceCreationMenuItems({
+        disabled: !projectPath || isInteractionDisabled,
+        onCreateResource: (resourceType) => {
+          void handleCreateResource(resourceType)
+        },
+        onCreateScriptResource: (scriptKind) => {
+          void handleCreateScriptResource(scriptKind)
+        }
+      }),
+    [handleCreateResource, handleCreateScriptResource, isInteractionDisabled, projectPath]
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      createResource: (resourceType) => {
+        void handleCreateResource(resourceType)
+      },
+      createScriptResource: (scriptKind) => {
+        void handleCreateScriptResource(scriptKind)
+      }
+    }),
+    [handleCreateResource, handleCreateScriptResource]
   )
 
   const handleDeleteResource = useCallback(async () => {
@@ -1006,6 +1050,31 @@ export const ResourceManagementPane = ({
     [currentResourcePath, isInteractionDisabled, loadResources, onOpenScene, projectPath]
   )
 
+  const handleShowResourceInFileExplorer = useCallback(
+    async (resource: ProjectResourceItem): Promise<void> => {
+      if (!projectPath || isInteractionDisabled) {
+        return
+      }
+
+      setIsBusy(true)
+
+      try {
+        await window.api.showProjectResourceInFileExplorer(projectPath, resource.path)
+      } catch (error) {
+        console.error('[resource-management-pane] showProjectResourceInFileExplorer failed', error)
+        showErrorStatus(
+          getFriendlyErrorMessage(
+            error,
+            'Something went wrong while opening the resource in the file explorer. Please try again.'
+          )
+        )
+      } finally {
+        setIsBusy(false)
+      }
+    },
+    [isInteractionDisabled, projectPath]
+  )
+
   const handleSaveResourceBank = useCallback(async (): Promise<void> => {
     if (!pendingBankResource || !projectPath) {
       return
@@ -1086,75 +1155,7 @@ export const ResourceManagementPane = ({
       {
         id: 'new',
         label: 'New...',
-        children: [
-          {
-            id: 'new-folder',
-            label: 'Folder',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('folder')
-          },
-          {
-            id: 'new-sprite',
-            label: 'Sprite',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('sprite')
-          },
-          {
-            id: 'new-tileset',
-            label: 'Tileset',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('tileset')
-          },
-          {
-            id: 'new-tilemap',
-            label: 'Tilemap',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('tilemap')
-          },
-          {
-            id: 'new-window',
-            label: 'Window',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('window')
-          },
-          {
-            id: 'new-music',
-            label: 'Music',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('music')
-          },
-          {
-            id: 'new-scene',
-            label: 'Scene',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('scene')
-          },
-          {
-            id: 'new-script',
-            label: 'Script',
-            disabled: !projectPath || isInteractionDisabled,
-            children: [
-              {
-                id: 'new-script-actor',
-                label: PROJECT_SCRIPT_LABELS.actor,
-                disabled: !projectPath || isInteractionDisabled,
-                onSelect: () => void handleCreateScriptResource('actor')
-              },
-              {
-                id: 'new-script-scene',
-                label: PROJECT_SCRIPT_LABELS.scene,
-                disabled: !projectPath || isInteractionDisabled,
-                onSelect: () => void handleCreateScriptResource('scene')
-              },
-              {
-                id: 'new-script-general',
-                label: PROJECT_SCRIPT_LABELS.general,
-                disabled: !projectPath || isInteractionDisabled,
-                onSelect: () => void handleCreateScriptResource('general')
-              }
-            ]
-          }
-        ]
+        children: createMenuItems
       },
       {
         id: 'paste',
@@ -1166,11 +1167,8 @@ export const ResourceManagementPane = ({
     ]
   }, [
     canPasteClipboardResource,
-    handleCreateResource,
-    handleCreateScriptResource,
     handlePasteClipboardResource,
-    isInteractionDisabled,
-    projectPath,
+    createMenuItems,
     shortcutLabels.paste
   ])
 
@@ -1248,6 +1246,12 @@ export const ResourceManagementPane = ({
                     shortcutLabel: shortcutLabels.paste,
                     disabled: !canPasteClipboardResource,
                     onSelect: () => void handlePasteClipboardResource()
+                  },
+                  {
+                    id: `show-in-file-explorer-${resource.path}`,
+                    label: 'Show In File Explorer',
+                    disabled: isInteractionDisabled,
+                    onSelect: () => void handleShowResourceInFileExplorer(resource)
                   },
                   ...(isSceneResource(resource)
                     ? [
@@ -1467,4 +1471,6 @@ export const ResourceManagementPane = ({
       </div>
     </ContextMenuRegion>
   )
-}
+})
+
+ResourceManagementPane.displayName = 'ResourceManagementPane'

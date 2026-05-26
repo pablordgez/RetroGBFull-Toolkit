@@ -84,6 +84,10 @@ declare global {
       loadRecentProject: (projectPath: string) => Promise<ProjectActionResponse>
       closeCurrentProject: () => Promise<boolean>
       openProjectInFileExplorer: (projectPath: string) => Promise<boolean>
+      showProjectResourceInFileExplorer: (
+        projectPath: string,
+        resourcePath: string
+      ) => Promise<boolean>
       getRecentProjects: () => Promise<RecentProject[]>
       getRuntimePlatform: () => Promise<RuntimePlatform>
       getGbdkToolchainStatus: () => Promise<GbdkToolchainStatus>
