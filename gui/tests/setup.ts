@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import '@testing-library/jest-dom';
 import 'vitest-canvas-mock';
+import type { ProjectBuildProgressPayload } from '../src/shared/projectCodeWorkspace';
 
 // Mock Electron API
 vi.mock('electron', () => {
@@ -108,6 +109,24 @@ Object.defineProperty(window, 'api', {
       actorScriptCount: 0,
       sceneScriptCount: 0,
     }),
+    buildAndCompileProject: vi.fn().mockResolvedValue({
+      buildResult: {
+        writtenFiles: [],
+        saveDataEntryCount: 0,
+        spriteCount: 0,
+        tilesetCount: 0,
+        tilemapCount: 0,
+        windowCount: 0,
+        musicCount: 0,
+        sceneCount: 0,
+        actorScriptCount: 0,
+        sceneScriptCount: 0,
+      },
+      compileResult: {
+        romPath: 'obj/Example.gb',
+        outputSummary: 'Build complete.',
+      },
+    }),
     getProjectCodeSymbolIndex: vi.fn().mockResolvedValue({
       structs: [],
       enums: [],
@@ -127,6 +146,7 @@ Object.defineProperty(window, 'api', {
     onProjectAssetSaved: vi.fn(() => () => undefined),
     onProjectScriptSaved: vi.fn(() => () => undefined),
     onProjectTagsSaved: vi.fn(() => () => undefined),
+    onProjectBuildProgress: vi.fn((_listener: (payload: ProjectBuildProgressPayload) => void) => () => undefined),
     createProjectFolder: vi.fn(),
     renameProjectFolder: vi.fn(),
     deleteProjectFolder: vi.fn(),

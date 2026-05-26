@@ -150,7 +150,7 @@ describe('<ProjectWorkspace />', () => {
     expect(screen.getByText('Create or load a new scene to start working')).toBeInTheDocument()
   })
 
-  it('shows the missing GBDK banner and installs from the Code menu', async () => {
+  it('shows the missing GBDK banner and installs from the banner action', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
       projectPath: '/projects/Alpha',
@@ -173,8 +173,7 @@ describe('<ProjectWorkspace />', () => {
 
     expect(await screen.findByText('GBDK is missing')).toBeInTheDocument()
 
-    openCodeMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Install GBDK' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Install GBDK' }))
 
     await waitFor(() => {
       expect(window.api.installLatestGbdkToolchain).toHaveBeenCalledTimes(1)
@@ -182,7 +181,7 @@ describe('<ProjectWorkspace />', () => {
     expect(await screen.findByText('Installed gbdk-4.5.0 from gbdk-win64.zip.')).toBeInTheDocument()
   })
 
-  it('shows the missing GNU Make banner and installs from the Code menu', async () => {
+  it('shows the missing GNU Make banner and installs from the banner action', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
       projectPath: '/projects/Alpha',
@@ -205,8 +204,7 @@ describe('<ProjectWorkspace />', () => {
 
     expect(await screen.findByText('GNU Make is missing')).toBeInTheDocument()
 
-    openCodeMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Install GNU Make' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Try Install Anyway' }))
 
     await waitFor(() => {
       expect(window.api.installLatestMakeToolchain).toHaveBeenCalledTimes(1)
@@ -867,7 +865,7 @@ describe('<ProjectWorkspace />', () => {
     })
 
     openCodeMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Build Project Code' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Build' }))
 
     await waitFor(() => {
       expect(window.api.buildProjectCode).toHaveBeenCalledWith('/projects/Alpha')
@@ -875,9 +873,152 @@ describe('<ProjectWorkspace />', () => {
 
     expect(
       await screen.findByText(
-        'Built project code for 2 save entries, 1 sprites, 0 tilesets, 0 tilemaps, 0 windows, 0 music assets, and 0 scenes.'
+        'Built project code for 2 save entries, 1 sprite, 0 tilesets, 0 tilemaps, 0 windows, 0 music assets, and 0 scenes.'
       )
     ).toBeInTheDocument()
+  })
+
+  it('builds and compiles the project from the code menu', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: []
+    })
+    vi.mocked(window.api.buildAndCompileProject).mockResolvedValue({
+      buildResult: {
+        writtenFiles: ['src/Saves/SaveData.h'],
+        saveDataEntryCount: 2,
+        spriteCount: 1,
+        tilesetCount: 0,
+        tilemapCount: 0,
+        windowCount: 0,
+        musicCount: 0,
+        sceneCount: 0,
+        actorScriptCount: 0,
+        sceneScriptCount: 0
+      },
+      compileResult: {
+        romPath: 'obj/Example.gb',
+        outputSummary: 'Build complete.'
+      }
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    openCodeMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Build + Compile' }))
+
+    await waitFor(() => {
+      expect(window.api.buildAndCompileProject).toHaveBeenCalledWith('/projects/Alpha')
+    })
+
+    expect(
+      await screen.findByText('Built project code and compiled obj/Example.gb.')
+    ).toBeInTheDocument()
+  })
+
+  it('shows live compile progress with a spinner while build and compile is running', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: []
+    })
+
+    let progressListener:
+      | ((payload: { projectPath: string; stage: 'build' | 'clean' | 'compile'; message: string }) => void)
+      | undefined
+    vi.mocked(window.api.onProjectBuildProgress).mockImplementation((listener) => {
+      progressListener = listener
+      return () => undefined
+    })
+
+    let resolveBuildAndCompile: ((value: Awaited<ReturnType<typeof window.api.buildAndCompileProject>>) => void) | null =
+      null
+    vi.mocked(window.api.buildAndCompileProject).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveBuildAndCompile = resolve
+        })
+    )
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    openCodeMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Build + Compile' }))
+
+    await waitFor(() => {
+      expect(window.api.buildAndCompileProject).toHaveBeenCalledWith('/projects/Alpha')
+    })
+
+    expect(await screen.findByText('Building project code...')).toBeInTheDocument()
+    expect(screen.getByLabelText('Build in progress')).toBeInTheDocument()
+
+    progressListener?.({
+      projectPath: '/projects/Alpha',
+      stage: 'compile',
+      message: 'lcc -o obj/Example.gb obj/main.o'
+    })
+
+    expect(
+      await screen.findByText('Compiling... lcc -o obj/Example.gb obj/main.o')
+    ).toBeInTheDocument()
+
+    resolveBuildAndCompile?.({
+      buildResult: {
+        writtenFiles: ['src/Saves/SaveData.h'],
+        saveDataEntryCount: 2,
+        spriteCount: 1,
+        tilesetCount: 0,
+        tilemapCount: 0,
+        windowCount: 0,
+        musicCount: 0,
+        sceneCount: 0,
+        actorScriptCount: 0,
+        sceneScriptCount: 0
+      },
+      compileResult: {
+        romPath: 'obj/Example.gb',
+        outputSummary: 'Build complete.'
+      }
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Build in progress')).not.toBeInTheDocument()
+    })
+  })
+
+  it('lets the user dismiss build errors', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: []
+    })
+    vi.mocked(window.api.buildProjectCode).mockRejectedValue(new Error('Build failed on purpose.'))
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    openCodeMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Build' }))
+
+    expect(await screen.findByText('Build failed on purpose.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss message' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('Build failed on purpose.')).not.toBeInTheDocument()
+    })
   })
 
   it('opens the bank dialog for bankable resources and saves a new bank', async () => {

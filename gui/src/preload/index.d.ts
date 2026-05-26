@@ -6,8 +6,10 @@ import type { ProjectSaveDataState } from '../shared/projectSaveData'
 import type { ProjectTagState } from '../shared/projectTags'
 import type { RuntimePlatform } from '../shared/runtimePlatform'
 import type {
+  BuildAndCompileProjectResult,
   BuildProjectCodeResult,
   CopyEngineCoreResult,
+  ProjectBuildProgressPayload,
   ProjectCodeSymbolIndex,
   ProjectCodeWorkspaceSnapshot,
   ProjectScriptCallbackCandidate,
@@ -170,6 +172,7 @@ declare global {
       readMaxCollisionCallbacks: (projectPath: string) => Promise<number>
       readMaxTagSlots: (projectPath: string) => Promise<number>
       buildProjectCode: (projectPath: string) => Promise<BuildProjectCodeResult>
+      buildAndCompileProject: (projectPath: string) => Promise<BuildAndCompileProjectResult>
       getProjectCodeSymbolIndex: (projectPath: string) => Promise<ProjectCodeSymbolIndex>
       getProjectCodeWorkspaceSnapshot: (projectPath: string) => Promise<ProjectCodeWorkspaceSnapshot>
       restoreDeletedProjectResource: (
@@ -193,6 +196,9 @@ declare global {
       ) => () => void
       onProjectTagsSaved: (
         listener: (payload: ProjectTagsSavedEventPayload) => void
+      ) => () => void
+      onProjectBuildProgress: (
+        listener: (payload: ProjectBuildProgressPayload) => void
       ) => () => void
       confirmEditorClose: () => Promise<boolean>
     }

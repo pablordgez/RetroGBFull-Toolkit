@@ -131,6 +131,22 @@ export interface BuildProjectCodeResult {
   sceneScriptCount: number
 }
 
+export interface ProjectBuildProgressPayload {
+  projectPath: string
+  stage: 'build' | 'clean' | 'compile'
+  message: string
+}
+
+export interface CompileProjectResult {
+  romPath: string | null
+  outputSummary: string
+}
+
+export interface BuildAndCompileProjectResult {
+  buildResult: BuildProjectCodeResult
+  compileResult: CompileProjectResult
+}
+
 export type ParsedScriptPropertyKind = 'integer' | 'boolean' | 'animation' | 'enum'
 
 export interface ParsedScriptPropertyDefinition {

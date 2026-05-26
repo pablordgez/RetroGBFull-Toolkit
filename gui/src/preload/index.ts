@@ -7,8 +7,10 @@ import type { ProjectSaveDataState } from '../shared/projectSaveData'
 import type { ProjectTagState } from '../shared/projectTags'
 import type { RuntimePlatform } from '../shared/runtimePlatform'
 import type {
+  BuildAndCompileProjectResult,
   BuildProjectCodeResult,
   CopyEngineCoreResult,
+  ProjectBuildProgressPayload,
   ProjectCodeSymbolIndex,
   ProjectCodeWorkspaceSnapshot,
   ProjectScriptCallbackCandidate,
@@ -247,6 +249,8 @@ const api = {
     ipcRenderer.invoke('project:code:read-max-tag-slots', projectPath) as Promise<number>,
   buildProjectCode: (projectPath: string) =>
     ipcRenderer.invoke('project:code:build', projectPath) as Promise<BuildProjectCodeResult>,
+  buildAndCompileProject: (projectPath: string) =>
+    ipcRenderer.invoke('project:code:build-and-compile', projectPath) as Promise<BuildAndCompileProjectResult>,
   getProjectCodeSymbolIndex: (projectPath: string) =>
     ipcRenderer.invoke('project:code:symbol-index', projectPath) as Promise<ProjectCodeSymbolIndex>,
   getProjectCodeWorkspaceSnapshot: (projectPath: string) =>
@@ -311,6 +315,16 @@ const api = {
     ): void => listener(payload)
     ipcRenderer.on('project:tags-saved', wrappedListener)
     return () => ipcRenderer.removeListener('project:tags-saved', wrappedListener)
+  },
+  onProjectBuildProgress: (
+    listener: (payload: ProjectBuildProgressPayload) => void
+  ): (() => void) => {
+    const wrappedListener = (
+      _event: Electron.IpcRendererEvent,
+      payload: ProjectBuildProgressPayload
+    ): void => listener(payload)
+    ipcRenderer.on('project:build-progress', wrappedListener)
+    return () => ipcRenderer.removeListener('project:build-progress', wrappedListener)
   },
   confirmEditorClose: () => ipcRenderer.invoke('editor:confirm-close') as Promise<boolean>
 }

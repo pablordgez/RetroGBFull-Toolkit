@@ -48,6 +48,7 @@ import {
 } from './projectMetadata'
 import { PROJECT_ASSET_LABELS, ProjectAssetKind } from '../shared/projectAssets'
 import {
+  buildAndCompileProject,
   buildProjectCode,
   copyBundledEngineCore,
   listProjectScriptCallbackCandidates,
@@ -775,6 +776,14 @@ ipcMain.handle('project:code:read-max-tag-slots', async (_, projectPath: string)
 
 ipcMain.handle('project:code:build', async (_, projectPath: string) => {
   return buildProjectCode(projectPath)
+})
+
+ipcMain.handle('project:code:build-and-compile', async (event, projectPath: string) => {
+  return buildAndCompileProject(projectPath, (payload) => {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('project:build-progress', payload)
+    }
+  })
 })
 
 ipcMain.handle('project:code:symbol-index', async (_, projectPath: string) => {

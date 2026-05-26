@@ -11,6 +11,7 @@ import { useSceneWorkspaceSession } from './useSceneWorkspaceSession'
 import './ProjectWorkspace.css'
 import type { GbdkToolchainStatus } from '../../../../shared/projectGbdk'
 import type { MakeToolchainStatus } from '../../../../shared/projectMake'
+import type { ProjectBuildProgressPayload } from '../../../../shared/projectCodeWorkspace'
 import type { RuntimePlatform } from '../../../../shared/runtimePlatform'
 
 interface RecentProject {
@@ -37,11 +38,15 @@ const GENERIC_WORKSPACE_ERRORS = {
   close: 'Something went wrong while closing the project. Please try again.',
   fileExplorer: 'Something went wrong while opening the project folder.',
   scan: 'Something went wrong while scanning the project directory.',
-  copyCore: 'Something went wrong while copying the engine core.',
-  buildCode: 'Something went wrong while building project code.',
+  buildCode: 'Something went wrong while building the project.',
+  buildAndCompile: 'Something went wrong while building and compiling the project.',
   openSaveData: 'Something went wrong while opening the save-data editor.',
   openTags: 'Something went wrong while opening the tag editor.'
 } as const
+
+const formatCount = (count: number, singular: string, plural = `${singular}s`): string => {
+  return `${count} ${count === 1 ? singular : plural}`
+}
 
 const formatScanStatusMessage = (result: ProjectDirectoryScanResult): string => {
   const messageParts: string[] = []
@@ -65,6 +70,33 @@ const formatScanStatusMessage = (result: ProjectDirectoryScanResult): string => 
   return messageParts.join(' ')
 }
 
+const formatBuildStatusMessage = (result: {
+  saveDataEntryCount: number
+  spriteCount: number
+  tilesetCount: number
+  tilemapCount: number
+  windowCount: number
+  musicCount: number
+  sceneCount: number
+}): string => {
+  return `Built project code for ${formatCount(result.saveDataEntryCount, 'save entry', 'save entries')}, ${formatCount(result.spriteCount, 'sprite')}, ${formatCount(result.tilesetCount, 'tileset')}, ${formatCount(result.tilemapCount, 'tilemap')}, ${formatCount(result.windowCount, 'window')}, ${formatCount(result.musicCount, 'music asset', 'music assets')}, and ${formatCount(result.sceneCount, 'scene')}.`
+}
+
+const formatBuildProgressMessage = (progress: ProjectBuildProgressPayload): string => {
+  switch (progress.stage) {
+    case 'build':
+      return progress.message || 'Building project code...'
+    case 'clean':
+      return progress.message
+        ? `Cleaning previous build... ${progress.message}`
+        : 'Cleaning previous build...'
+    case 'compile':
+      return progress.message ? `Compiling... ${progress.message}` : 'Compiling...'
+    default:
+      return progress.message
+  }
+}
+
 export const ProjectWorkspace = (): ReactElement => {
   const [searchParams] = useSearchParams()
   const projectName = searchParams.get('projectName') ?? 'Project Workspace'
@@ -73,6 +105,7 @@ export const ProjectWorkspace = (): ReactElement => {
   const [refreshVersion, setRefreshVersion] = useState(0)
   const [resourceManagerCurrentPath, setResourceManagerCurrentPath] = useState('')
   const [statusMessage, setStatusMessage] = useState<WorkspaceStatus | null>(null)
+  const [activeBuildOperation, setActiveBuildOperation] = useState<'build' | 'build-and-compile' | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [gbdkStatus, setGbdkStatus] = useState<GbdkToolchainStatus | null>(null)
   const [isInstallingGbdk, setIsInstallingGbdk] = useState(false)
@@ -85,6 +118,10 @@ export const ProjectWorkspace = (): ReactElement => {
   const showStatus = (tone: WorkspaceStatusTone, text: string): void => {
     setStatusMessage({ tone, text })
   }
+
+  const dismissStatus = useCallback((): void => {
+    setStatusMessage(null)
+  }, [])
 
   const {
     activeScenePath,
@@ -161,6 +198,16 @@ export const ProjectWorkspace = (): ReactElement => {
 
     void loadToolchainStatuses()
   }, [projectPath, refreshMakeStatus])
+
+  useEffect(() => {
+    return window.api.onProjectBuildProgress((payload) => {
+      if (payload.projectPath !== projectPath) {
+        return
+      }
+
+      showStatus('info', formatBuildProgressMessage(payload))
+    })
+  }, [projectPath])
 
   const handleOpenProject = useCallback(async () => {
     setIsBusy(true)
@@ -248,41 +295,18 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [projectPath])
 
-  const handleCopyEngineCore = useCallback(async () => {
+  const handleBuildProject = useCallback(async () => {
     if (!projectPath) {
       return
     }
 
+    setActiveBuildOperation('build')
     setIsBusy(true)
-
-    try {
-      const result = await window.api.copyProjectEngineCore(projectPath)
-      showStatus(
-        'info',
-        `Copied ${result.copiedPaths.length} core item${result.copiedPaths.length === 1 ? '' : 's'} and skipped ${result.skippedPaths.length}.`
-      )
-      setRefreshVersion((currentVersion) => currentVersion + 1)
-    } catch (error) {
-      console.error('[project-workspace] copyProjectEngineCore failed', error)
-      showStatus('error', error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.copyCore)
-    } finally {
-      setIsBusy(false)
-    }
-  }, [projectPath])
-
-  const handleBuildProjectCode = useCallback(async () => {
-    if (!projectPath) {
-      return
-    }
-
-    setIsBusy(true)
+    showStatus('info', 'Building project code...')
 
     try {
       const result = await window.api.buildProjectCode(projectPath)
-      showStatus(
-        'info',
-        `Built project code for ${result.saveDataEntryCount} save entr${result.saveDataEntryCount === 1 ? 'y' : 'ies'}, ${result.spriteCount} sprites, ${result.tilesetCount} tilesets, ${result.tilemapCount} tilemaps, ${result.windowCount} windows, ${result.musicCount} music assets, and ${result.sceneCount} scenes.`
-      )
+      showStatus('info', formatBuildStatusMessage(result))
       setRefreshVersion((currentVersion) => currentVersion + 1)
     } catch (error) {
       console.error('[project-workspace] buildProjectCode failed', error)
@@ -353,6 +377,9 @@ export const ProjectWorkspace = (): ReactElement => {
   }, [])
 
   const isInstallingToolchain = isInstallingGbdk || isInstallingMake
+  const isBuildDisabled =
+    isBusy || isInstallingToolchain || !projectPath || !Boolean(gbdkStatus?.installed)
+  const isBuildAndCompileDisabled = isBuildDisabled || !Boolean(makeStatus?.installed)
 
   const handleOpenTagEditor = useCallback(async () => {
     if (!projectPath) {
@@ -367,6 +394,32 @@ export const ProjectWorkspace = (): ReactElement => {
       console.error('[project-workspace] openProjectTagEditor failed', error)
       showStatus('error', error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openTags)
     } finally {
+      setActiveBuildOperation(null)
+      setIsBusy(false)
+    }
+  }, [projectPath])
+
+  const handleBuildAndCompileProject = useCallback(async () => {
+    if (!projectPath) {
+      return
+    }
+
+    setActiveBuildOperation('build-and-compile')
+    setIsBusy(true)
+    showStatus('info', 'Building project code...')
+
+    try {
+      const result = await window.api.buildAndCompileProject(projectPath)
+      showStatus('info', `Built project code and compiled ${result.compileResult.romPath ?? 'the ROM output'}.`)
+      setRefreshVersion((currentVersion) => currentVersion + 1)
+    } catch (error) {
+      console.error('[project-workspace] buildAndCompileProject failed', error)
+      showStatus(
+        'error',
+        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.buildAndCompile
+      )
+    } finally {
+      setActiveBuildOperation(null)
       setIsBusy(false)
     }
   }, [projectPath])
@@ -460,48 +513,24 @@ export const ProjectWorkspace = (): ReactElement => {
             onSelect: () => void handleOpenTagEditor()
           },
           {
-            id: 'copy-engine-core',
-            label: 'Copy Engine Core',
-            disabled: isBusy || isInstallingToolchain || !projectPath,
-            onSelect: () => void handleCopyEngineCore()
+            id: 'build-project',
+            label: 'Build',
+            disabled: isBuildDisabled,
+            onSelect: () => void handleBuildProject()
           },
           {
-            id: 'install-gbdk',
-            label:
-              isInstallingGbdk || !gbdkStatus?.installed
-                ? 'Install GBDK'
-                : 'Reinstall GBDK',
-            disabled: isBusy || isInstallingToolchain,
-            onSelect: () => void handleInstallGbdk()
-          },
-          {
-            id: 'install-make',
-            label:
-              isInstallingMake || !makeStatus?.installed
-                ? 'Install GNU Make'
-                : 'Reinstall GNU Make',
-            disabled: isBusy || isInstallingToolchain,
-            onSelect: () => void handleInstallMake()
-          },
-          {
-            id: 'open-make-guide',
-            label: 'GNU Make Setup Guide...',
-            disabled: isBusy || isInstallingToolchain,
-            onSelect: () => setIsMakeGuideOpen(true)
-          },
-          {
-            id: 'build-project-code',
-            label: 'Build Project Code',
-            disabled: isBusy || isInstallingToolchain || !projectPath,
-            onSelect: () => void handleBuildProjectCode()
+            id: 'build-and-compile-project',
+            label: 'Build + Compile',
+            disabled: isBuildAndCompileDisabled,
+            onSelect: () => void handleBuildAndCompileProject()
           }
         ]
       }
     ]
   }, [
-    handleBuildProjectCode,
+    handleBuildAndCompileProject,
+    handleBuildProject,
     handleCloseProject,
-    handleCopyEngineCore,
     handleInstallGbdk,
     handleInstallMake,
     handleOpenSaveDataEditor,
@@ -515,6 +544,8 @@ export const ProjectWorkspace = (): ReactElement => {
     isInstallingGbdk,
     isInstallingMake,
     isInstallingToolchain,
+    isBuildAndCompileDisabled,
+    isBuildDisabled,
     loadRecentProjects,
     projectPath,
     recentProjectItems
@@ -538,7 +569,25 @@ export const ProjectWorkspace = (): ReactElement => {
           className={`project-workspace__status project-workspace__status--${statusMessage.tone}`}
           role="status"
         >
-          {statusMessage.text}
+          <div className="project-workspace__status-main">
+            {activeBuildOperation && statusMessage.tone === 'info' && (
+              <span
+                className="project-workspace__status-spinner"
+                aria-label="Build in progress"
+              />
+            )}
+            <span className="project-workspace__status-text">{statusMessage.text}</span>
+          </div>
+          {statusMessage.tone === 'error' && (
+            <button
+              type="button"
+              className="project-workspace__status-dismiss"
+              onClick={dismissStatus}
+              aria-label="Dismiss message"
+            >
+              Dismiss
+            </button>
+          )}
         </div>
       )}
 
