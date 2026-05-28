@@ -55,7 +55,7 @@ export interface ProjectResourceState {
 }
 
 const INTERNAL_HISTORY_DIRECTORY = '.retrogbfull-history'
-const MANAGED_ENGINE_ROOT_ENTRIES = new Set(['src', 'res', 'Makefile'])
+const MANAGED_ENGINE_ROOT_ENTRIES = new Set(['src', 'res', 'obj', 'Makefile'])
 
 export const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null

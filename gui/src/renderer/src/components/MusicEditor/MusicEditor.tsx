@@ -2,224 +2,38 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import {
   MUSIC_NOTE_REST,
   MUSIC_PATTERN_LENGTH,
-  createDefaultProjectAssetDocument,
   getProjectAssetDisplayName,
   type MusicAssetDocument,
   type MusicChannelKey,
   type MusicInstrument,
-  type MusicInstrumentKind,
-  type MusicPattern,
   type MusicStep
 } from '../../../../shared/projectAssets'
 import { useProjectAssetEditor } from '../hooks/useProjectAssetEditor'
 import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt'
+import { MusicPreviewPlayer, NOTE_NAMES } from './musicPreview'
+import { MusicInstrumentEditorPanel } from './MusicInstrumentEditorPanel'
 import {
-  MusicPreviewPlayer,
-  NOTE_NAMES,
-  decodeNoiseInstrument,
-  decodePulseInstrument
-} from './musicPreview'
+  CHANNELS,
+  CHANNEL_KIND_LABELS,
+  CHANNEL_LABELS,
+  asMusicDocument,
+  clamp,
+  clampByte,
+  createDefaultInstrument,
+  createEmptySteps,
+  createPatternId,
+  getInstrumentKindForChannel,
+  getNoteLabel,
+  getPatternById,
+  getPatternChannel,
+  getPitchFromPointer,
+  getSequenceLength,
+  isInstrumentValidForChannel,
+  readDragPayload,
+  writeDragPayload,
+  type EditorMode
+} from './musicEditorModel'
 import './MusicEditor.css'
-
-const CHANNELS: MusicChannelKey[] = ['ch1', 'ch2', 'ch4']
-const CHANNEL_LABELS: Record<MusicChannelKey, string> = {
-  ch1: 'CH1 Pulse',
-  ch2: 'CH2 Pulse',
-  ch4: 'CH4 Noise'
-}
-const CHANNEL_KIND_LABELS: Record<MusicInstrumentKind, string> = {
-  pulse: 'Pulse (CH1/CH2)',
-  noise: 'Noise (CH4)'
-}
-const DUTY_LABELS = ['12.5%', '25%', '50%', '75%']
-const DRAG_MIME = 'application/x-retrogb-music'
-
-type EditorMode = 'sequence' | 'pattern' | 'instrument'
-
-type MusicDragPayload =
-  | { type: 'pattern'; patternId: string }
-  | { type: 'clip'; patternId: string; channel: MusicChannelKey; sequenceIndex: number }
-  | { type: 'note'; patternId: string; stepIndex: number; noteIndex: number; instrument: number }
-
-const createEmptySteps = (): MusicStep[] => {
-  return Array.from({ length: MUSIC_PATTERN_LENGTH }, () => ({
-    noteIndex: MUSIC_NOTE_REST,
-    instrument: 0
-  }))
-}
-
-const createDefaultInstrument = (
-  index: number,
-  channelType: MusicInstrumentKind = 'pulse'
-): MusicInstrument => ({
-  name: `${channelType === 'noise' ? 'Noise' : 'Pulse'} ${index}`,
-  channelType,
-  reg1: channelType === 'noise' ? 0x3f : 0x80,
-  reg2: 0xf2,
-  reg3: channelType === 'noise' ? 0x20 : 0x00
-})
-
-const getInstrumentKindForChannel = (channel: MusicChannelKey): MusicInstrumentKind => {
-  return channel === 'ch4' ? 'noise' : 'pulse'
-}
-
-const getInstrumentKind = (instrument: MusicInstrument): MusicInstrumentKind => {
-  return instrument.channelType ?? 'pulse'
-}
-
-const getPatternChannel = (pattern: MusicPattern | null | undefined): MusicChannelKey => {
-  return pattern?.channel ?? 'ch1'
-}
-
-const isInstrumentValidForChannel = (
-  instrument: MusicInstrument | null | undefined,
-  channel: MusicChannelKey
-): boolean => {
-  return instrument ? getInstrumentKind(instrument) === getInstrumentKindForChannel(channel) : false
-}
-
-const asMusicDocument = (): MusicAssetDocument => {
-  return createDefaultProjectAssetDocument('music') as MusicAssetDocument
-}
-
-const clamp = (value: number, min: number, max: number): number => {
-  if (!Number.isFinite(value)) {
-    return min
-  }
-
-  return Math.max(min, Math.min(max, Math.trunc(value)))
-}
-
-const clampByte = (value: number): number => clamp(value, 0, 255)
-
-const formatHexByte = (value: number): string => {
-  return `0x${clampByte(value).toString(16).toUpperCase().padStart(2, '0')}`
-}
-
-const parseByteInput = (value: string): number | null => {
-  const trimmed = value.trim()
-
-  if (/^0x[0-9a-f]{1,2}$/i.test(trimmed)) {
-    return clampByte(Number.parseInt(trimmed.slice(2), 16))
-  }
-
-  if (/^\d{1,3}$/.test(trimmed)) {
-    return clampByte(Number.parseInt(trimmed, 10))
-  }
-
-  return null
-}
-
-const getSequenceLength = (document: MusicAssetDocument): number => {
-  return Math.max(1, ...CHANNELS.map((channel) => document.sequence[channel].length))
-}
-
-const getPatternById = (
-  document: MusicAssetDocument,
-  patternId: string | null | undefined
-): MusicPattern | null => {
-  return patternId ? (document.patterns.find((pattern) => pattern.id === patternId) ?? null) : null
-}
-
-const createPatternId = (patterns: MusicPattern[]): string => {
-  let nextIndex = patterns.length
-  let nextId = `pattern-${nextIndex}`
-
-  while (patterns.some((pattern) => pattern.id === nextId)) {
-    nextIndex += 1
-    nextId = `pattern-${nextIndex}`
-  }
-
-  return nextId
-}
-
-const getNoteLabel = (noteIndex: number): string => {
-  return noteIndex === MUSIC_NOTE_REST ? 'Rest' : (NOTE_NAMES[noteIndex] ?? 'Rest')
-}
-
-const getPitchFromPointer = (element: HTMLElement, clientY: number): number => {
-  const rect = element.getBoundingClientRect()
-  const ratioFromTop = rect.height > 0 ? (clientY - rect.top) / rect.height : 0.5
-  return clamp(Math.round((1 - ratioFromTop) * (NOTE_NAMES.length - 1)), 0, NOTE_NAMES.length - 1)
-}
-
-const writeDragPayload = (event: DragEvent<HTMLElement>, payload: MusicDragPayload): void => {
-  event.dataTransfer.setData(DRAG_MIME, JSON.stringify(payload))
-  event.dataTransfer.effectAllowed = 'move'
-}
-
-const readDragPayload = (event: DragEvent<HTMLElement>): MusicDragPayload | null => {
-  try {
-    const rawPayload = event.dataTransfer.getData(DRAG_MIME)
-    return rawPayload ? (JSON.parse(rawPayload) as MusicDragPayload) : null
-  } catch {
-    return null
-  }
-}
-
-const updatePulseInstrument = (
-  instrument: MusicInstrument,
-  patch: Partial<{
-    duty: number
-    length: number
-    initialVolume: number
-    envelopeDirection: 'decrease' | 'increase'
-    envelopePace: number
-  }>
-): MusicInstrument => {
-  const state = decodePulseInstrument(instrument)
-  const duty = patch.duty ?? state.duty
-  const length = patch.length ?? state.length
-  const initialVolume = patch.initialVolume ?? state.initialVolume
-  const envelopeDirection = patch.envelopeDirection ?? state.envelopeDirection
-  const envelopePace = patch.envelopePace ?? state.envelopePace
-
-  return {
-    ...instrument,
-    channelType: 'pulse',
-    reg1: ((clamp(duty, 0, 3) & 0x03) << 6) | (clamp(length, 0, 63) & 0x3f),
-    reg2:
-      ((clamp(initialVolume, 0, 15) & 0x0f) << 4) |
-      (envelopeDirection === 'increase' ? 0x08 : 0x00) |
-      (clamp(envelopePace, 0, 7) & 0x07)
-  }
-}
-
-const updateNoiseInstrument = (
-  instrument: MusicInstrument,
-  patch: Partial<{
-    length: number
-    initialVolume: number
-    envelopeDirection: 'decrease' | 'increase'
-    envelopePace: number
-    clockShift: number
-    widthMode: 15 | 7
-    divisorCode: number
-  }>
-): MusicInstrument => {
-  const state = decodeNoiseInstrument(instrument)
-  const length = patch.length ?? state.length
-  const initialVolume = patch.initialVolume ?? state.initialVolume
-  const envelopeDirection = patch.envelopeDirection ?? state.envelopeDirection
-  const envelopePace = patch.envelopePace ?? state.envelopePace
-  const clockShift = patch.clockShift ?? state.clockShift
-  const widthMode = patch.widthMode ?? state.widthMode
-  const divisorCode = patch.divisorCode ?? state.divisorCode
-
-  return {
-    ...instrument,
-    channelType: 'noise',
-    reg1: clamp(length, 0, 63) & 0x3f,
-    reg2:
-      ((clamp(initialVolume, 0, 15) & 0x0f) << 4) |
-      (envelopeDirection === 'increase' ? 0x08 : 0x00) |
-      (clamp(envelopePace, 0, 7) & 0x07),
-    reg3:
-      ((clamp(clockShift, 0, 15) & 0x0f) << 4) |
-      (widthMode === 7 ? 0x08 : 0x00) |
-      (clamp(divisorCode, 0, 7) & 0x07)
-  }
-}
 
 export const MusicEditor = (): ReactElement => {
   const [document, setDocument] = useState<MusicAssetDocument>(() => asMusicDocument())
@@ -293,12 +107,6 @@ export const MusicEditor = (): ReactElement => {
   )
   const editedPattern = focusedPattern ?? selectedArrangementPattern
   const editedPatternChannel = getPatternChannel(editedPattern)
-  const selectedInstrument =
-    selectedInstrumentIndex !== null ? document.instruments[selectedInstrumentIndex] : null
-  const editedInstrument = draftInstrument ?? selectedInstrument
-  const editedInstrumentKind = editedInstrument ? getInstrumentKind(editedInstrument) : 'pulse'
-  const pulseState = editedInstrument ? decodePulseInstrument(editedInstrument) : null
-  const noiseState = editedInstrument ? decodeNoiseInstrument(editedInstrument) : null
 
   useEffect(() => {
     return () => {
@@ -814,303 +622,13 @@ export const MusicEditor = (): ReactElement => {
   )
 
   const renderInstrumentEditor = (): ReactElement => (
-    <aside className="music-editor__side-panel music-editor__instrument-edit-panel">
-      <div className="music-editor__section-header">
-        <h2>Instrument</h2>
-      </div>
-      {draftInstrument ? (
-        <>
-          <label>
-            Name
-            <input
-              value={draftInstrument.name ?? ''}
-              onChange={(event) =>
-                setDraftInstrument((current) =>
-                  current ? { ...current, name: event.target.value } : current
-                )
-              }
-            />
-          </label>
-          <label>
-            Type
-            <select
-              value={getInstrumentKind(draftInstrument)}
-              onChange={(event) => {
-                const channelType = event.target.value as MusicInstrumentKind
-                setDraftInstrument((current) =>
-                  current
-                    ? {
-                        ...createDefaultInstrument(draftInstrumentIndex ?? 0, channelType),
-                        name: current.name,
-                        reg1: current.reg1,
-                        reg2: current.reg2,
-                        reg3: current.reg3
-                      }
-                    : current
-                )
-              }}
-            >
-              <option value="pulse">Pulse (CH1/CH2)</option>
-              <option value="noise">Noise (CH4)</option>
-            </select>
-          </label>
-          <div className="music-editor__hex-row">
-            {(['reg1', 'reg2', 'reg3'] as const).map((registerKey) => (
-              <label key={registerKey}>
-                {registerKey.toUpperCase()}
-                <input
-                  value={formatHexByte(draftInstrument[registerKey])}
-                  onChange={(event) => {
-                    const parsedByte = parseByteInput(event.target.value)
-
-                    if (parsedByte === null) {
-                      return
-                    }
-
-                    setDraftInstrument((current) =>
-                      current ? { ...current, [registerKey]: parsedByte } : current
-                    )
-                  }}
-                />
-              </label>
-            ))}
-          </div>
-          {pulseState && editedInstrumentKind === 'pulse' ? (
-            <div className="music-editor__decoded">
-              <h3>Pulse</h3>
-              <label>
-                Duty
-                <select
-                  value={pulseState.duty}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current ? updatePulseInstrument(current, { duty: Number(event.target.value) }) : current
-                    )
-                  }
-                >
-                  {DUTY_LABELS.map((label, index) => (
-                    <option key={label} value={index}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Length
-                <input
-                  type="number"
-                  min={0}
-                  max={63}
-                  value={pulseState.length}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updatePulseInstrument(current, {
-                            length: Number(event.target.value)
-                          })
-                        : current
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Volume
-                <input
-                  type="number"
-                  min={0}
-                  max={15}
-                  value={pulseState.initialVolume}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updatePulseInstrument(current, {
-                            initialVolume: Number(event.target.value)
-                          })
-                        : current
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Envelope
-                <select
-                  value={pulseState.envelopeDirection}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updatePulseInstrument(current, {
-                            envelopeDirection: event.target.value as 'decrease' | 'increase'
-                          })
-                        : current
-                    )
-                  }
-                >
-                  <option value="decrease">Decrease</option>
-                  <option value="increase">Increase</option>
-                </select>
-              </label>
-              <label>
-                Pace
-                <input
-                  type="number"
-                  min={0}
-                  max={7}
-                  value={pulseState.envelopePace}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updatePulseInstrument(current, {
-                            envelopePace: Number(event.target.value)
-                          })
-                        : current
-                    )
-                  }
-                />
-              </label>
-            </div>
-          ) : null}
-          {noiseState && editedInstrumentKind === 'noise' ? (
-            <div className="music-editor__decoded">
-              <h3>Noise</h3>
-              <label>
-                Length
-                <input
-                  type="number"
-                  min={0}
-                  max={63}
-                  value={noiseState.length}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updateNoiseInstrument(current, {
-                            length: Number(event.target.value)
-                          })
-                        : current
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Volume
-                <input
-                  type="number"
-                  min={0}
-                  max={15}
-                  value={noiseState.initialVolume}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updateNoiseInstrument(current, {
-                            initialVolume: Number(event.target.value)
-                          })
-                        : current
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Envelope
-                <select
-                  value={noiseState.envelopeDirection}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updateNoiseInstrument(current, {
-                            envelopeDirection: event.target.value as 'decrease' | 'increase'
-                          })
-                        : current
-                    )
-                  }
-                >
-                  <option value="decrease">Decrease</option>
-                  <option value="increase">Increase</option>
-                </select>
-              </label>
-              <label>
-                Pace
-                <input
-                  type="number"
-                  min={0}
-                  max={7}
-                  value={noiseState.envelopePace}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updateNoiseInstrument(current, {
-                            envelopePace: Number(event.target.value)
-                          })
-                        : current
-                    )
-                  }
-                />
-              </label>
-              <label>
-                LFSR
-                <select
-                  value={noiseState.widthMode}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updateNoiseInstrument(current, {
-                            widthMode: Number(event.target.value) as 15 | 7
-                          })
-                        : current
-                    )
-                  }
-                >
-                  <option value={15}>15-bit</option>
-                  <option value={7}>7-bit</option>
-                </select>
-              </label>
-              <label>
-                Shift
-                <input
-                  type="number"
-                  min={0}
-                  max={15}
-                  value={noiseState.clockShift}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updateNoiseInstrument(current, {
-                            clockShift: Number(event.target.value)
-                          })
-                        : current
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Divider
-                <input
-                  type="number"
-                  min={0}
-                  max={7}
-                  value={noiseState.divisorCode}
-                  onChange={(event) =>
-                    setDraftInstrument((current) =>
-                      current
-                        ? updateNoiseInstrument(current, {
-                            divisorCode: Number(event.target.value)
-                          })
-                        : current
-                    )
-                  }
-                />
-              </label>
-            </div>
-          ) : null}
-          <div className="music-editor__button-row">
-            <button type="button" onClick={saveInstrumentDraft}>
-              Save
-            </button>
-            <button type="button" onClick={discardInstrumentDraft}>
-              Discard
-            </button>
-          </div>
-        </>
-      ) : null}
-    </aside>
+    <MusicInstrumentEditorPanel
+      draftInstrument={draftInstrument}
+      draftInstrumentIndex={draftInstrumentIndex}
+      setDraftInstrument={setDraftInstrument}
+      onSave={saveInstrumentDraft}
+      onDiscard={discardInstrumentDraft}
+    />
   )
 
   const renderSequenceEditor = (): ReactElement => (

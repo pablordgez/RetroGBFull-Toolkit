@@ -1,34 +1,25 @@
 import { randomUUID } from 'crypto'
-import { mkdir, readdir, readFile, rm, stat } from 'fs/promises'
-import { basename } from 'path'
+import { mkdir, rm, stat } from 'fs/promises'
 import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
-import { createProjectScriptFiles, scriptFilesExist } from './projectCode'
-import { getProjectAssetKindFromFileName, parseProjectAssetDocument } from '../shared/projectAssets'
+import { createProjectScriptFiles } from './projectCode'
 import { normalizeCodeIdentifier } from '../shared/codeIdentifiers'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 import {
   ProjectScriptKind,
   PROJECT_SCRIPT_DIRECTORY_BY_KIND,
   PROJECT_SCRIPT_LABELS,
-  buildProjectScriptFileName,
-  buildProjectScriptHeaderFileName,
-  getProjectScriptDisplayName,
-  getProjectScriptKindFromPath,
-  isProjectScriptSourcePath
+  buildProjectScriptFileName
 } from '../shared/projectScripts'
 import {
   normalizeParentPath,
   normalizeProjectResourceBank,
-  normalizeResourcePath,
-  resolvePathWithinProject
+  normalizeResourcePath
 } from './projectResourcePaths'
 import {
   type CreatableProjectResourceKind,
   buildResourceFileName,
-  buildStoredAssetRecord,
   buildStoredFolderRecord,
   buildStoredResourceRecord,
-  buildStoredScriptRecord,
   isBankableAssetKind
 } from './projectResourceRecords'
 import {
@@ -50,10 +41,10 @@ import {
   readDeletedResourceMetadata,
   writeDeletedResourceMetadata
 } from './projectResourceDeletedStore'
+import { resolveResourceDirectory } from './projectResourceFilesystem'
 import { getProjectResourceTypeStrategy } from './projectResourceTypeStrategies'
 import {
   buildProjectResourceView,
-  getResourceParentPath,
   getStateStartingScenePath,
   isSameOrDescendantPath,
   normalizeStartingScenePath,
@@ -62,7 +53,6 @@ import {
 } from './projectResourceView'
 import type {
   ProjectDeletedResourceResult,
-  ProjectDirectoryScanResult,
   ProjectFolderMutationResult,
   ProjectResourceKind,
   ProjectResourceMutationResult,
@@ -74,6 +64,7 @@ import type {
 } from './projectResourceTypes'
 
 export { getProjectResourceErrorMessage } from './projectResourceErrors'
+export { scanProjectDirectory } from './projectResourceDiscovery'
 export type {
   ProjectAssetRecord,
   ProjectDeletedResourceResult,
@@ -90,115 +81,9 @@ export type {
   ProjectTrackedResource
 } from './projectResourceTypes'
 
-const INTERNAL_HISTORY_DIRECTORY = '.retrogbfull-history'
-const MANAGED_ENGINE_ROOT_ENTRIES = new Set(['src', 'res', 'Makefile'])
-
-const isInternalProjectEntry = (entryName: string): boolean => {
-  return entryName === INTERNAL_HISTORY_DIRECTORY
-}
-
-const isManagedEngineRootEntry = (currentPath: string, entryName: string): boolean => {
-  return currentPath.length === 0 && MANAGED_ENGINE_ROOT_ENTRIES.has(entryName)
-}
-
 const joinResourcePath = (parentPath: string | null, childName: string): string => {
   const normalizedParentPath = normalizeParentPath(parentPath)
   return normalizedParentPath ? `${normalizedParentPath}/${childName}` : childName
-}
-
-const resolveResourceDirectory = (projectPath: string, resourcePath: string): string => {
-  return resolvePathWithinProject(
-    projectPath,
-    resourcePath,
-    'The selected folder is outside the project directory.'
-  )
-}
-
-// scans the project directory for untracked resources and tracks them
-const discoverUntrackedProjectResources = async (
-  projectPath: string,
-  trackedPaths: Set<string>,
-  currentPath = ''
-): Promise<ProjectStoredResourceRecord[]> => {
-  const absolutePath = resolveResourceDirectory(projectPath, currentPath)
-  const entries = await readdir(absolutePath, { withFileTypes: true })
-  const discoveredResources: ProjectStoredResourceRecord[] = []
-
-  for (const entry of entries) {
-    if (currentPath.length === 0) {
-      if (
-        entry.name === `${basename(projectPath)}.json` ||
-        isInternalProjectEntry(entry.name) ||
-        isManagedEngineRootEntry(currentPath, entry.name)
-      ) {
-        continue
-      }
-    }
-
-    const resourcePath = joinResourcePath(currentPath, entry.name)
-
-    if (entry.isDirectory()) {
-      if (!trackedPaths.has(resourcePath)) {
-        trackedPaths.add(resourcePath)
-        discoveredResources.push(buildStoredFolderRecord(resourcePath))
-      }
-
-      discoveredResources.push(
-        ...(await discoverUntrackedProjectResources(projectPath, trackedPaths, resourcePath))
-      )
-      continue
-    }
-
-    const resourceType = getProjectAssetKindFromFileName(entry.name)
-
-    if (resourceType && !trackedPaths.has(resourcePath)) {
-      try {
-        const rawContent = await readFile(
-          resolveResourceDirectory(projectPath, resourcePath),
-          'utf-8'
-        )
-        const document = parseProjectAssetDocument(JSON.parse(rawContent))
-
-        if (document.kind !== resourceType) {
-          continue
-        }
-
-        trackedPaths.add(resourcePath)
-        discoveredResources.push(buildStoredAssetRecord(resourcePath, resourceType))
-      } catch {
-        continue
-      }
-    }
-
-    if (!isProjectScriptSourcePath(resourcePath) || trackedPaths.has(resourcePath)) {
-      continue
-    }
-
-    const scriptKind = getProjectScriptKindFromPath(resourcePath)
-
-    if (!scriptKind) {
-      continue
-    }
-
-    try {
-      await stat(resolveResourceDirectory(projectPath, resourcePath))
-      await stat(
-        resolveResourceDirectory(
-          projectPath,
-          joinResourcePath(
-            getResourceParentPath(resourcePath),
-            buildProjectScriptHeaderFileName(getProjectScriptDisplayName(entry.name))
-          )
-        )
-      )
-      trackedPaths.add(resourcePath)
-      discoveredResources.push(buildStoredScriptRecord(resourcePath, scriptKind))
-    } catch {
-      continue
-    }
-  }
-
-  return discoveredResources
 }
 
 // finds a tracked resource record by its path
@@ -208,16 +93,6 @@ const findTrackedResourceRecord = (
 ): ProjectStoredResourceRecord | undefined => {
   const normalizedPath = normalizeResourcePath(resourcePath)
   return resources.find((resource) => resource.path === normalizedPath)
-}
-
-const hasMissingAncestorPath = (resourcePath: string, missingRootPaths: Set<string>): boolean => {
-  for (const missingRootPath of missingRootPaths) {
-    if (isSameOrDescendantPath(resourcePath, missingRootPath)) {
-      return true
-    }
-  }
-
-  return false
 }
 
 // untracks a resource and all its descendants, changes the starting scene if it was untracked
@@ -248,83 +123,6 @@ const removeTrackedResourceSubtree = async (
   }
 
   const persistedResources = await writeProjectResources(state, nextResources)
-  return {
-    resources: persistedResources,
-    removedCount
-  }
-}
-
-// checks for tracked resources that no longer exist on disk and untracks them, changes the starting scene if it's untracked
-const reconcileTrackedProjectResources = async (
-  state: ProjectResourceState
-): Promise<{ resources: ProjectStoredResourceRecord[]; removedCount: number }> => {
-  const existingResources: ProjectStoredResourceRecord[] = []
-  const missingRootPaths = new Set<string>()
-  let removedCount = 0
-
-  for (const resource of state.resources) {
-    if (hasMissingAncestorPath(resource.path, missingRootPaths)) {
-      removedCount += 1
-      continue
-    }
-
-    if (resource.type === 'file' && resource.resourceType === 'script') {
-      if (await scriptFilesExist(state.projectPath, resource.path)) {
-        existingResources.push(resource)
-      } else {
-        missingRootPaths.add(resource.path)
-        removedCount += 1
-      }
-
-      continue
-    }
-
-    try {
-      const resourceStats = await stat(resolveResourceDirectory(state.projectPath, resource.path))
-      const existsWithExpectedType =
-        resource.type === 'folder' ? resourceStats.isDirectory() : resourceStats.isFile()
-
-      if (existsWithExpectedType) {
-        existingResources.push(resource)
-        continue
-      }
-    } catch (error) {
-      const errorCode =
-        typeof error === 'object' && error !== null && 'code' in error
-          ? String(error.code)
-          : undefined
-
-      if (errorCode !== 'ENOENT') {
-        throw error
-      }
-    }
-
-    missingRootPaths.add(resource.path)
-    removedCount += 1
-  }
-
-  if (removedCount === 0) {
-    return {
-      resources: state.resources,
-      removedCount: 0
-    }
-  }
-
-  const currentStartingScenePath = getStateStartingScenePath(state)
-
-  if (
-    currentStartingScenePath &&
-    !existingResources.some(
-      (resource) =>
-        resource.type === 'file' &&
-        resource.resourceType === 'scene' &&
-        resource.path === currentStartingScenePath
-    )
-  ) {
-    setStateStartingScenePath(state, null)
-  }
-
-  const persistedResources = await writeProjectResources(state, existingResources)
   return {
     resources: persistedResources,
     removedCount
@@ -1079,34 +877,6 @@ export const transferProjectResource = async (
     ...(trackedResource.type === 'file' && trackedResource.resourceType === 'script'
       ? { scriptKind: trackedResource.scriptKind }
       : {})
-  }
-}
-
-export const scanProjectDirectory = async (
-  projectPath: string
-): Promise<ProjectDirectoryScanResult> => {
-  const state = await readProjectResourceState(projectPath)
-  const reconciledResources = await reconcileTrackedProjectResources(state)
-  const trackedPaths = new Set(reconciledResources.resources.map((resource) => resource.path))
-  const discoveredResources = await discoverUntrackedProjectResources(
-    state.projectPath,
-    trackedPaths
-  )
-
-  if (reconciledResources.removedCount === 0 && discoveredResources.length === 0) {
-    return {
-      trackedCount: 0,
-      removedCount: 0
-    }
-  }
-
-  if (discoveredResources.length > 0) {
-    await writeProjectResources(state, [...reconciledResources.resources, ...discoveredResources])
-  }
-
-  return {
-    trackedCount: discoveredResources.length,
-    removedCount: reconciledResources.removedCount
   }
 }
 

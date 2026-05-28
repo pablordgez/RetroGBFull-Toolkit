@@ -198,25 +198,34 @@ export const createDefaultSceneActorNode = (name = 'Actor'): SceneAssetActorNode
   }
 }
 
-export const PROJECT_ASSET_EXTENSIONS: Record<ProjectAssetKind, string> = {
-  sprite: '.rgbsprite.json',
-  tileset: '.rgbtileset.json',
-  tilemap: '.rgbtilemap.json',
-  window: '.rgbwindow.json',
-  scene: '.rgbscene.json',
-  actor: '.rgbactor.json',
-  music: '.rgbmusic.json'
+interface ProjectAssetDefinition {
+  extension: string
+  label: string
 }
 
-export const PROJECT_ASSET_LABELS: Record<ProjectAssetKind, string> = {
-  sprite: 'Sprite',
-  tileset: 'Tileset',
-  tilemap: 'Tilemap',
-  window: 'Window',
-  scene: 'Scene',
-  actor: 'Actor',
-  music: 'Music'
+export const PROJECT_ASSET_DEFINITIONS: Record<ProjectAssetKind, ProjectAssetDefinition> = {
+  sprite: { extension: '.rgbsprite.json', label: 'Sprite' },
+  tileset: { extension: '.rgbtileset.json', label: 'Tileset' },
+  tilemap: { extension: '.rgbtilemap.json', label: 'Tilemap' },
+  window: { extension: '.rgbwindow.json', label: 'Window' },
+  scene: { extension: '.rgbscene.json', label: 'Scene' },
+  actor: { extension: '.rgbactor.json', label: 'Actor' },
+  music: { extension: '.rgbmusic.json', label: 'Music' }
 }
+
+export const PROJECT_ASSET_EXTENSIONS: Record<ProjectAssetKind, string> = Object.fromEntries(
+  Object.entries(PROJECT_ASSET_DEFINITIONS).map(([assetKind, definition]) => [
+    assetKind,
+    definition.extension
+  ])
+) as Record<ProjectAssetKind, string>
+
+export const PROJECT_ASSET_LABELS: Record<ProjectAssetKind, string> = Object.fromEntries(
+  Object.entries(PROJECT_ASSET_DEFINITIONS).map(([assetKind, definition]) => [
+    assetKind,
+    definition.label
+  ])
+) as Record<ProjectAssetKind, string>
 
 export interface WindowSplitSettings {
   windowTopEnd: number

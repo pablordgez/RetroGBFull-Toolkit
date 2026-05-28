@@ -4,7 +4,7 @@ export const isEditableElementTarget = (target: EventTarget | null): boolean => 
   }
 
   const tagName = target.tagName.toLowerCase()
-  return tagName === 'input' || tagName === 'textarea' || target.isContentEditable
+  return tagName === 'input' || tagName === 'textarea' || Boolean(target.isContentEditable)
 }
 
 export const isMacLikePlatform = (): boolean => {

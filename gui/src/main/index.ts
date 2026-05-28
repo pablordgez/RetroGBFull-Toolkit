@@ -3,70 +3,25 @@ import {
   shell,
   BrowserWindow,
   dialog,
-  ipcMain,
   IpcMainInvokeEvent,
   net,
   protocol,
   session
 } from 'electron'
-import { basename, join, normalize, resolve } from 'path'
+import { join, normalize, resolve } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import {
-  createProjectStructure,
   getProjectLauncherErrorMessage,
-  listRecentProjects,
-  rememberRecentProject,
-  validateProjectDirectory
+  rememberRecentProject
 } from './projectLauncher'
-import {
-  clearDeletedProjectResources,
-  createProjectFolder,
-  createProjectResource,
-  deleteProjectFolder,
-  deleteProjectResource,
-  finalizeDeletedProjectResource,
-  getProjectResourceErrorMessage,
-  listProjectScriptResources,
-  listProjectResources,
-  createProjectScriptResource,
-  renameProjectFolder,
-  renameProjectResource,
-  scanProjectDirectory,
-  restoreDeletedProjectResource,
-  transferProjectResource,
-  updateProjectResourceBank,
-  updateProjectStartingScene
-} from './projectResources'
-import {
-  openProjectInFileExplorer,
-  showProjectResourceInFileExplorer
-} from './projectFileExplorer'
-import { ensureProjectAssetFileAvailable, loadProjectAssetFile, saveProjectAssetFile } from './projectAssetFiles'
-import {
-  loadProjectSaveDataState,
-  loadProjectTagState,
-  saveProjectSaveDataState,
-  saveProjectTagState
-} from './projectMetadata'
-import { PROJECT_ASSET_LABELS, ProjectAssetKind } from '../shared/projectAssets'
-import {
-  buildAndCompileProject,
-  buildProjectCode,
-  copyBundledEngineCore,
-  listProjectScriptCallbackCandidates,
-  loadProjectScriptResource,
-  readMaxCollisionCallbacks,
-  readMaxTagSlots,
-  saveProjectScriptResource
-} from './projectCode'
-import { getGbdkToolchainStatus, installLatestGbdkToolchain } from './projectGbdk'
-import { getMakeToolchainStatus, installLatestMakeToolchain } from './projectMake'
-import { getProjectCodeWorkspaceSnapshot } from './projectCodeLanguageService'
-import { getProjectCodeSymbolIndex } from './projectCodeIntelligence'
-import { PROJECT_SCRIPT_LABELS, ProjectScriptKind, getProjectScriptDisplayName } from '../shared/projectScripts'
-import { getCurrentRuntimePlatform } from '../shared/runtimePlatform'
+import { clearDeletedProjectResources } from './projectResources'
+import { registerCodeIpcHandlers } from './ipcCodeHandlers'
+import { registerEditorIpcHandlers } from './ipcEditorHandlers'
+import { registerProjectIpcHandlers } from './ipcProjectHandlers'
+import { registerResourceIpcHandlers } from './ipcResourceHandlers'
+import { registerToolchainIpcHandlers } from './ipcToolchainHandlers'
 
 interface ProjectActionResponse {
   ok: boolean
@@ -86,22 +41,6 @@ interface AppWindowOptions {
   height?: number
   showWhenReady?: boolean
   title?: string
-}
-
-interface ProjectAssetSavedEventPayload {
-  projectPath: string
-  assetPath: string
-  assetKind: ProjectAssetKind
-}
-
-interface ProjectScriptSavedEventPayload {
-  projectPath: string
-  resourcePath: string
-  scriptKind: ProjectScriptKind
-}
-
-interface ProjectTagsSavedEventPayload {
-  projectPath: string
 }
 
 const ELECTRON_APP_SCHEME = 'app'
@@ -420,6 +359,40 @@ function createWindow(): void {
   }
 }
 
+const confirmEditorClose = async (event: IpcMainInvokeEvent): Promise<boolean> => {
+  const editorWindow = getSenderWindow(event)
+
+  if (!editorWindow) {
+    return false
+  }
+
+  editorWindowsWaitingForCloseConfirmation.add(editorWindow.webContents.id)
+  editorWindow.close()
+  return true
+}
+
+const registerIpcHandlers = (): void => {
+  registerProjectIpcHandlers({
+    getRecentProjectsStorePath,
+    showProjectDialog,
+    openProject,
+    closeCurrentProject,
+    getSenderWindow,
+    buildProjectActionErrorResponse
+  })
+
+  registerEditorIpcHandlers({
+    createChildWindow,
+    confirmEditorClose
+  })
+
+  registerCodeIpcHandlers()
+  registerResourceIpcHandlers()
+  registerToolchainIpcHandlers()
+}
+
+registerIpcHandlers()
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -482,508 +455,4 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
-ipcMain.handle('project:list-recent', async () => {
-  return listRecentProjects(getRecentProjectsStorePath())
-})
-
-ipcMain.handle('project:pick-create-location', async () => {
-  const dialogOptions = {
-    title: 'Choose Where To Create A Project',
-    buttonLabel: 'Use Folder',
-    properties: ['openDirectory' as const]
-  }
-  const result = await showProjectDialog(dialogOptions)
-
-  if (result.canceled || result.filePaths.length === 0) {
-    return null
-  }
-
-  return result.filePaths[0]
-})
-
-ipcMain.handle('project:create', async (event, parentDirectory: string, projectName: string) => {
-  try {
-    const project = await createProjectStructure(parentDirectory, projectName)
-    return openProject(project.path, getSenderWindow(event))
-  } catch (error) {
-    return buildProjectActionErrorResponse('create', error)
-  }
-})
-
-ipcMain.handle('project:open-dialog', async (event) => {
-  try {
-    const dialogOptions = {
-      title: 'Open Project Folder',
-      buttonLabel: 'Open Project',
-      properties: ['openDirectory' as const]
-    }
-    const result = await showProjectDialog(dialogOptions)
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return {
-        ok: false,
-        canceled: true,
-        message: 'Project selection was canceled.'
-      } satisfies ProjectActionResponse
-    }
-
-    const selectedPath = result.filePaths[0]
-    const validation = await validateProjectDirectory(selectedPath)
-
-    if (!validation.isValid) {
-      return {
-        ok: false,
-        canceled: false,
-        message: validation.message ?? 'The selected folder is not a valid project.'
-      } satisfies ProjectActionResponse
-    }
-
-    return openProject(validation.path, getSenderWindow(event))
-  } catch (error) {
-    return buildProjectActionErrorResponse('open', error)
-  }
-})
-
-ipcMain.handle('project:open-recent', async (event, projectPath: string) => {
-  try {
-    return await openProject(projectPath, getSenderWindow(event))
-  } catch (error) {
-    return buildProjectActionErrorResponse('open', error)
-  }
-})
-
-ipcMain.handle('project:close-current', async (event) => {
-  return closeCurrentProject(event)
-})
-
-ipcMain.handle('project:open-in-file-explorer', async (_, projectPath: string) => {
-  return openProjectInFileExplorer(projectPath)
-})
-
-ipcMain.handle('project:resources:show-in-file-explorer', async (_, projectPath: string, resourcePath: string) => {
-  return showProjectResourceInFileExplorer(projectPath, resourcePath)
-})
-
-ipcMain.handle('project:assets:open-editor', async (_, assetType: ProjectAssetKind, projectPath: string, assetPath: string) => {
-  await ensureProjectAssetFileAvailable(projectPath, assetPath)
-
-  const searchParams = new URLSearchParams({
-    projectPath,
-    assetPath
-  })
-
-  createChildWindow(`/${assetType}-editor?${searchParams.toString()}`, {
-    width: 1440,
-    height: 900,
-    title: `${PROJECT_ASSET_LABELS[assetType]} Editor`,
-    interceptClose: true
-  })
-
-  return true
-})
-
-ipcMain.handle(
-  'project:scripts:open-editor',
-  async (_, projectPath: string, resourcePath: string, scriptKind: ProjectScriptKind) => {
-    const scriptName = getProjectScriptDisplayName(basename(resourcePath))
-    const searchParams = new URLSearchParams({
-      projectPath,
-      resourcePath,
-      scriptKind
-    })
-
-    createChildWindow(`/script-editor?${searchParams.toString()}`, {
-      width: 1440,
-      height: 900,
-      title: `${PROJECT_SCRIPT_LABELS[scriptKind]} - ${scriptName}`,
-      interceptClose: true
-    })
-
-    return true
-  }
-)
-
-ipcMain.handle('project:save-data:open-editor', async (_, projectPath: string) => {
-  const searchParams = new URLSearchParams({
-    projectPath
-  })
-
-  createChildWindow(`/save-data-editor?${searchParams.toString()}`, {
-    width: 1200,
-    height: 860,
-    title: 'Save Data Editor',
-    interceptClose: true
-  })
-
-  return true
-})
-
-ipcMain.handle('project:tags:open-editor', async (_, projectPath: string) => {
-  const searchParams = new URLSearchParams({
-    projectPath
-  })
-
-  createChildWindow(`/tag-editor?${searchParams.toString()}`, {
-    width: 1200,
-    height: 860,
-    title: 'Tag Editor',
-    interceptClose: true
-  })
-
-  return true
-})
-
-ipcMain.handle('project:assets:load', async (_, projectPath: string, assetPath: string) => {
-  return loadProjectAssetFile(projectPath, assetPath)
-})
-
-ipcMain.handle('project:assets:save', async (_, projectPath: string, assetPath: string, document) => {
-  const payload = await saveProjectAssetFile(projectPath, assetPath, document)
-
-  BrowserWindow.getAllWindows().forEach((window) => {
-    if (!window.isDestroyed()) {
-      window.webContents.send('project:asset-saved', {
-        projectPath,
-        assetPath,
-        assetKind: payload.assetKind
-      } satisfies ProjectAssetSavedEventPayload)
-    }
-  })
-
-  return payload
-})
-
-ipcMain.handle(
-  'project:save-data:load',
-  async (_, projectPath: string) => {
-    return loadProjectSaveDataState(projectPath)
-  }
-)
-
-ipcMain.handle(
-  'project:save-data:save',
-  async (_, projectPath: string, saveDataState) => {
-    return saveProjectSaveDataState(projectPath, saveDataState)
-  }
-)
-
-ipcMain.handle('project:tags:load', async (_, projectPath: string) => {
-  return loadProjectTagState(projectPath)
-})
-
-ipcMain.handle('project:tags:save', async (_, projectPath: string, tagState) => {
-  const payload = await saveProjectTagState(projectPath, tagState)
-
-  BrowserWindow.getAllWindows().forEach((window) => {
-    if (!window.isDestroyed()) {
-      window.webContents.send('project:tags-saved', {
-        projectPath
-      } satisfies ProjectTagsSavedEventPayload)
-    }
-  })
-
-  return payload
-})
-
-ipcMain.handle(
-  'project:scripts:create',
-  async (_, projectPath: string, scriptKind: ProjectScriptKind, resourceName?: string) => {
-    try {
-      return await createProjectScriptResource(projectPath, scriptKind, resourceName)
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'create'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:scripts:load',
-  async (_, projectPath: string, resourcePath: string, scriptKind: ProjectScriptKind) => {
-    return loadProjectScriptResource(projectPath, resourcePath, scriptKind)
-  }
-)
-
-ipcMain.handle(
-  'project:scripts:save',
-  async (
-    _,
-    projectPath: string,
-    resourcePath: string,
-    scriptKind: ProjectScriptKind,
-    editableSourceContent: string,
-    headerContent: string
-  ) => {
-    const payload = await saveProjectScriptResource(
-      projectPath,
-      resourcePath,
-      scriptKind,
-      editableSourceContent,
-      headerContent
-    )
-
-    BrowserWindow.getAllWindows().forEach((window) => {
-      if (!window.isDestroyed()) {
-        window.webContents.send('project:script-saved', {
-          projectPath,
-          resourcePath,
-          scriptKind
-        } satisfies ProjectScriptSavedEventPayload)
-      }
-    })
-
-    return payload
-  }
-)
-
-ipcMain.handle(
-  'project:scripts:list',
-  async (_, projectPath: string, scriptKind?: ProjectScriptKind) => {
-    const scripts = await listProjectScriptResources(projectPath, scriptKind)
-    return scripts.map((script) => ({
-      path: script.path,
-      name: script.name,
-      scriptKind: script.scriptKind
-    }))
-  }
-)
-
-ipcMain.handle(
-  'project:scripts:list-callback-candidates',
-  async (_, projectPath: string, scriptKind?: ProjectScriptKind) => {
-    const scripts = await listProjectScriptResources(projectPath, scriptKind)
-    return listProjectScriptCallbackCandidates(projectPath, scripts)
-  }
-)
-
-ipcMain.handle('project:code:copy-engine-core', async (_, projectPath: string) => {
-  return copyBundledEngineCore(projectPath)
-})
-
-ipcMain.handle('project:code:read-max-collision-callbacks', async (_, projectPath: string) => {
-  return readMaxCollisionCallbacks(projectPath)
-})
-
-ipcMain.handle('project:code:read-max-tag-slots', async (_, projectPath: string) => {
-  return readMaxTagSlots(projectPath)
-})
-
-ipcMain.handle('project:code:build', async (_, projectPath: string) => {
-  return buildProjectCode(projectPath)
-})
-
-ipcMain.handle('project:code:build-and-compile', async (event, projectPath: string) => {
-  return buildAndCompileProject(projectPath, (payload) => {
-    if (!event.sender.isDestroyed()) {
-      event.sender.send('project:build-progress', payload)
-    }
-  })
-})
-
-ipcMain.handle('project:code:symbol-index', async (_, projectPath: string) => {
-  return getProjectCodeSymbolIndex(projectPath)
-})
-
-ipcMain.handle('project:code:workspace-snapshot', async (_, projectPath: string) => {
-  return getProjectCodeWorkspaceSnapshot(projectPath)
-})
-
-ipcMain.handle('gbdk:status', async () => {
-  return getGbdkToolchainStatus()
-})
-
-ipcMain.handle('gbdk:install-latest', async () => {
-  return installLatestGbdkToolchain()
-})
-
-ipcMain.handle('make:status', async () => {
-  return getMakeToolchainStatus()
-})
-
-ipcMain.handle('make:install-latest', async () => {
-  return installLatestMakeToolchain()
-})
-
-ipcMain.handle('app:runtime-platform', async () => {
-  return getCurrentRuntimePlatform(process.platform)
-})
-
-ipcMain.handle('editor:confirm-close', async (event) => {
-  const editorWindow = getSenderWindow(event)
-
-  if (!editorWindow) {
-    return false
-  }
-
-  editorWindowsWaitingForCloseConfirmation.add(editorWindow.webContents.id)
-  editorWindow.close()
-  return true
-})
-
-ipcMain.handle('project:resources:list', async (_, projectPath: string, currentPath?: string) => {
-  try {
-    return await listProjectResources(projectPath, currentPath)
-  } catch (error) {
-    throw new Error(getProjectResourceErrorMessage(error, 'load'))
-  }
-})
-
-ipcMain.handle('project:resources:create-folder', async (_, projectPath: string, parentPath?: string) => {
-  try {
-    return await createProjectFolder(projectPath, parentPath)
-  } catch (error) {
-    throw new Error(getProjectResourceErrorMessage(error, 'create'))
-  }
-})
-
-ipcMain.handle(
-  'project:resources:create',
-  async (_, projectPath: string, resourceType: string, parentPath?: string, resourceName?: string) => {
-    try {
-      return await createProjectResource(
-        projectPath,
-        resourceType as Parameters<typeof createProjectResource>[1],
-        parentPath,
-        resourceName
-      )
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'create'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:rename-folder',
-  async (_, projectPath: string, folderPath: string, nextName: string) => {
-    try {
-      return await renameProjectFolder(projectPath, folderPath, nextName)
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'rename'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:rename',
-  async (_, projectPath: string, resourceType: string, resourcePath: string, nextName: string) => {
-    try {
-      return await renameProjectResource(
-        projectPath,
-        resourceType as Parameters<typeof renameProjectResource>[1],
-        resourcePath,
-        nextName
-      )
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'rename'))
-    }
-  }
-)
-
-ipcMain.handle('project:resources:delete-folder', async (_, projectPath: string, folderPath: string) => {
-  try {
-    return await deleteProjectFolder(projectPath, folderPath)
-  } catch (error) {
-    throw new Error(getProjectResourceErrorMessage(error, 'delete'))
-  }
-})
-
-ipcMain.handle(
-  'project:resources:delete',
-  async (_, projectPath: string, resourceType: string, resourcePath: string, deletionId?: string) => {
-    try {
-      return await deleteProjectResource(
-        projectPath,
-        resourceType as Parameters<typeof deleteProjectResource>[1],
-        resourcePath,
-        deletionId
-      )
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'delete'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:transfer',
-  async (
-    _,
-    projectPath: string,
-    resourceType: string,
-    resourcePath: string,
-    destinationParentPath?: string,
-    mode?: string
-  ) => {
-    try {
-      return await transferProjectResource(
-        projectPath,
-        resourceType as Parameters<typeof transferProjectResource>[1],
-        resourcePath,
-        destinationParentPath,
-        mode as Parameters<typeof transferProjectResource>[4]
-      )
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'paste'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:update-bank',
-  async (_, projectPath: string, resourceType: string, resourcePath: string, bank: number) => {
-    try {
-      return await updateProjectResourceBank(
-        projectPath,
-        resourceType as Parameters<typeof updateProjectResourceBank>[1],
-        resourcePath,
-        bank
-      )
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'bank'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:update-starting-scene',
-  async (_, projectPath: string, scenePath: string | null) => {
-    try {
-      return await updateProjectStartingScene(projectPath, scenePath)
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'create'))
-    }
-  }
-)
-
-ipcMain.handle('project:resources:scan', async (_, projectPath: string) => {
-  try {
-    return await scanProjectDirectory(projectPath)
-  } catch (error) {
-    throw new Error(getProjectResourceErrorMessage(error, 'load'))
-  }
-})
-
-ipcMain.handle(
-  'project:resources:restore-deleted',
-  async (_, projectPath: string, deletionId: string) => {
-    try {
-      return await restoreDeletedProjectResource(projectPath, deletionId)
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'create'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:finalize-deleted',
-  async (_, projectPath: string, deletionId: string) => {
-    try {
-      await finalizeDeletedProjectResource(projectPath, deletionId)
-      return true
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'delete'))
-    }
-  }
-)
 

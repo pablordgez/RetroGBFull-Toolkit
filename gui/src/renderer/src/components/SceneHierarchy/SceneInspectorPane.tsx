@@ -27,6 +27,7 @@ import {
   normalizeProjectPalette
 } from '../../../../shared/projectPalettes'
 import { ProjectScriptCallbackPickerModal } from '../ProjectAssets/ProjectScriptCallbackPickerModal'
+import { SceneCollisionCallbackControls } from './SceneCollisionCallbackControls'
 import {
   clampSceneActorPosition,
   clampSceneCollisionRect,
@@ -1100,113 +1101,15 @@ export const SceneInspectorPane = ({
                 </label>
               </div>
 
-              <div className="scene-inspector-pane__field">
-                <span>Collision Callbacks</span>
-                <strong>
-                  {(selectedCollision.callbacks ?? []).length} / {maxCollisionCallbacks || 0}
-                </strong>
-              </div>
-
-              <div className="scene-inspector-pane__callback-list">
-                {(selectedCollision.callbacks ?? []).length === 0 && (
-                  <div className="scene-inspector-pane__hint">No collision callbacks assigned.</div>
-                )}
-
-                {(selectedCollision.callbacks ?? []).map((callback, index) => (
-                  <div
-                    key={`${callback.scriptPath}:${callback.functionName}`}
-                    className="scene-inspector-pane__callback-item"
-                  >
-                    <div>
-                      <strong>{callback.functionName}</strong>
-                      <span>{getPathLabel(callback.scriptPath, 'Script')}</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSetCollisionCallbacks(
-                          selectedCollision.id,
-                          (selectedCollision.callbacks ?? []).filter(
-                            (_, callbackIndex) => callbackIndex !== index
-                          )
-                        )
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="scene-inspector-pane__callback-adder">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCollisionCallbackPicker({ nodeId: selectedCollision.id, mode: 'collision' })
-                  }}
-                  disabled={
-                    maxCollisionCallbacks > 0 &&
-                    (selectedCollision.callbacks ?? []).length >= maxCollisionCallbacks
-                  }
-                >
-                  Add Callback
-                </button>
-              </div>
-
-              <div className="scene-inspector-pane__field">
-                <span>Collision Exit Callbacks</span>
-                <strong>
-                  {(selectedCollision.exitCallbacks ?? []).length} / {maxCollisionCallbacks || 0}
-                </strong>
-              </div>
-
-              <div className="scene-inspector-pane__callback-list">
-                {(selectedCollision.exitCallbacks ?? []).length === 0 && (
-                  <div className="scene-inspector-pane__hint">No collision exit callbacks assigned.</div>
-                )}
-
-                {(selectedCollision.exitCallbacks ?? []).map((callback, index) => (
-                  <div
-                    key={`${callback.scriptPath}:${callback.functionName}`}
-                    className="scene-inspector-pane__callback-item"
-                  >
-                    <div>
-                      <strong>{callback.functionName}</strong>
-                      <span>{getPathLabel(callback.scriptPath, 'Script')}</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSetCollisionExitCallbacks(
-                          selectedCollision.id,
-                          (selectedCollision.exitCallbacks ?? []).filter(
-                            (_, callbackIndex) => callbackIndex !== index
-                          )
-                        )
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="scene-inspector-pane__callback-adder">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCollisionCallbackPicker({ nodeId: selectedCollision.id, mode: 'exit' })
-                  }}
-                  disabled={
-                    maxCollisionCallbacks > 0 &&
-                    (selectedCollision.exitCallbacks ?? []).length >= maxCollisionCallbacks
-                  }
-                >
-                  Add Exit Callback
-                </button>
-              </div>
+              <SceneCollisionCallbackControls
+                collision={selectedCollision}
+                maxCollisionCallbacks={maxCollisionCallbacks}
+                onSetCollisionCallbacks={onSetCollisionCallbacks}
+                onSetCollisionExitCallbacks={onSetCollisionExitCallbacks}
+                onOpenPicker={(mode) => {
+                  setCollisionCallbackPicker({ nodeId: selectedCollision.id, mode })
+                }}
+              />
 
               {renderTagControls()}
 
