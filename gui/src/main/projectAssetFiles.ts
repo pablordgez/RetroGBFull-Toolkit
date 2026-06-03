@@ -112,6 +112,31 @@ export interface ProjectAssetFilePayload {
   document: ProjectAssetDocument
 }
 
+const parseAssetDocumentForLoad = (
+  rawContent: string,
+  trackedName: string
+): ProjectAssetDocument => {
+  try {
+    const parsedContent = JSON.parse(rawContent)
+
+    try {
+      return parseProjectAssetDocument(parsedContent)
+    } catch {
+      throw new ProjectLauncherError(
+        `The asset "${trackedName}" has invalid data and could not be loaded.`
+      )
+    }
+  } catch (error) {
+    if (error instanceof ProjectLauncherError) {
+      throw error
+    }
+
+    throw new ProjectLauncherError(
+      `The asset "${trackedName}" has invalid JSON and could not be loaded.`
+    )
+  }
+}
+
 // reads the content of the asset file, casts it to a document type and if its type matches the expected type, returns it
 export const loadProjectAssetFile = async (
   projectPath: string,
@@ -119,7 +144,7 @@ export const loadProjectAssetFile = async (
 ): Promise<ProjectAssetFilePayload> => {
   const resolvedAsset = await ensureProjectAssetFileAvailable(projectPath, resourcePath)
   const rawContent = await readFile(resolvedAsset.absolutePath, 'utf-8')
-  const document = parseProjectAssetDocument(JSON.parse(rawContent))
+  const document = parseAssetDocumentForLoad(rawContent, resolvedAsset.trackedName)
 
   if (document.kind !== resolvedAsset.assetKind) {
     throw new ProjectLauncherError('The asset file type does not match its extension.')

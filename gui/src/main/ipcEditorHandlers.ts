@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain, IpcMainInvokeEvent } from 'electron'
 import { basename } from 'path'
-import { ensureProjectAssetFileAvailable, loadProjectAssetFile, saveProjectAssetFile } from './projectAssetFiles'
+import { loadProjectAssetFile, saveProjectAssetFile } from './projectAssetFiles'
 import {
   loadProjectSaveDataState,
   loadProjectTagState,
@@ -47,7 +47,8 @@ export const registerEditorIpcHandlers = ({
   ipcMain.handle(
     'project:assets:open-editor',
     async (_, assetType: ProjectAssetKind, projectPath: string, assetPath: string) => {
-      await ensureProjectAssetFileAvailable(projectPath, assetPath)
+      // Validate and parse asset before opening the editor so errors surface in the main workspace.
+      await loadProjectAssetFile(projectPath, assetPath)
 
       const searchParams = new URLSearchParams({
         projectPath,

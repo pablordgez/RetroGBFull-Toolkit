@@ -1,15 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  clearProjectAssetDocumentReferences,
   type SceneAssetDocument,
   getProjectAssetDisplayName,
+  remapProjectAssetDocumentReferences,
   serializeProjectAssetDocument
 } from '../../../../shared/projectAssets'
 import type { ResourceMutationEvent } from '../Docking/projectResourceEvents'
-import {
-  isSceneActorNode,
-  isSceneCollisionNode,
-  mapSceneNodes
-} from '../SceneHierarchy/sceneHierarchyModel'
 
 interface UseSceneWorkspaceSessionOptions {
   projectPath: string
@@ -49,29 +46,6 @@ const remapDescendantPath = (
   return resourcePath === previousRootPath
     ? nextRootPath
     : `${nextRootPath}${resourcePath.slice(previousRootPath.length)}`
-}
-
-const remapReferencedAssetPath = (
-  assetPath: string | null,
-  event: ResourceMutationEvent
-): string | null => {
-  if (!assetPath) {
-    return null
-  }
-
-  if (event.action === 'delete' && isSameOrDescendantPath(assetPath, event.resourcePath)) {
-    return null
-  }
-
-  if (
-    (event.action === 'rename' || event.action === 'move') &&
-    event.previousResourcePath &&
-    isSameOrDescendantPath(assetPath, event.previousResourcePath)
-  ) {
-    return remapDescendantPath(assetPath, event.previousResourcePath, event.resourcePath)
-  }
-
-  return assetPath
 }
 
 export const useSceneWorkspaceSession = ({
@@ -258,67 +232,22 @@ export const useSceneWorkspaceSession = ({
         return
       }
 
-      const nextTilemapPath = remapReferencedAssetPath(activeSceneDocument.tilemapPath, event)
-      const nextWindowPath = remapReferencedAssetPath(activeSceneDocument.windowPath, event)
-      const nextScriptPath = remapReferencedAssetPath(activeSceneDocument.scriptPath, event)
-      const nextNodes = mapSceneNodes(activeSceneDocument.nodes, (node) => {
-        if (isSceneActorNode(node)) {
-          return {
-            ...node,
-            resourcePath: remapReferencedAssetPath(node.resourcePath ?? null, event) ?? undefined,
-            spritePath: remapReferencedAssetPath(node.spritePath, event),
-            scriptPath: remapReferencedAssetPath(node.scriptPath ?? null, event)
-          }
-        }
+      const referenceUpdate =
+        event.action === 'delete'
+          ? clearProjectAssetDocumentReferences(activeSceneDocument, event.resourcePath)
+          : (event.action === 'rename' || event.action === 'move') && event.previousResourcePath
+            ? remapProjectAssetDocumentReferences(
+                activeSceneDocument,
+                event.previousResourcePath,
+                event.resourcePath
+              )
+            : { document: activeSceneDocument, changed: false }
 
-        if (isSceneCollisionNode(node)) {
-          return {
-            ...node,
-            callbacks: (node.callbacks ?? []).flatMap((callback) => {
-              const nextCallbackScriptPath = remapReferencedAssetPath(callback.scriptPath, event)
-              return nextCallbackScriptPath
-                ? [
-                    {
-                      ...callback,
-                      scriptPath: nextCallbackScriptPath
-                    }
-                  ]
-                : []
-            }),
-            exitCallbacks: (node.exitCallbacks ?? []).flatMap((callback) => {
-              const nextCallbackScriptPath = remapReferencedAssetPath(callback.scriptPath, event)
-              return nextCallbackScriptPath
-                ? [
-                    {
-                      ...callback,
-                      scriptPath: nextCallbackScriptPath
-                    }
-                  ]
-                : []
-            })
-          }
-        }
-
-        return node
-      })
-
-      const sceneReferencesChanged =
-        nextScriptPath !== activeSceneDocument.scriptPath ||
-        nextTilemapPath !== activeSceneDocument.tilemapPath ||
-        nextWindowPath !== activeSceneDocument.windowPath ||
-        nextNodes.some((node, index) => node !== activeSceneDocument.nodes[index])
-
-      if (!sceneReferencesChanged) {
+      if (!referenceUpdate.changed) {
         return
       }
 
-      setActiveSceneDocument({
-        ...activeSceneDocument,
-        scriptPath: nextScriptPath,
-        tilemapPath: nextTilemapPath,
-        windowPath: nextWindowPath,
-        nodes: nextNodes
-      })
+      setActiveSceneDocument(referenceUpdate.document as SceneAssetDocument)
       setSceneStatusMessage(null)
     },
     [activeSceneDocument, activeScenePath, closeActiveScene]

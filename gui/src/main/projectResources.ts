@@ -42,6 +42,10 @@ import {
   writeDeletedResourceMetadata
 } from './projectResourceDeletedStore'
 import { resolveResourceDirectory } from './projectResourceFilesystem'
+import {
+  clearProjectAssetReferencePaths,
+  updateProjectAssetReferencePaths
+} from './projectAssetReferences'
 import { getProjectResourceTypeStrategy } from './projectResourceTypeStrategies'
 import {
   buildProjectResourceView,
@@ -612,6 +616,12 @@ export const renameProjectResource = async (
     )
   )
   const persistedResources = await writeProjectResources(state, relocatedResources)
+  await updateProjectAssetReferencePaths(
+    state.projectPath,
+    persistedResources,
+    normalizedResourcePath,
+    nextResourcePath
+  )
 
   return {
     view: buildProjectResourceView(state, persistedResources, parentPath),
@@ -706,6 +716,7 @@ export const deleteProjectResource = async (
       (resource) => !isSameOrDescendantPath(resource.path, normalizedResourcePath)
     )
   )
+  await clearProjectAssetReferencePaths(state.projectPath, nextResources, normalizedResourcePath)
 
   return {
     view: buildProjectResourceView(state, nextResources, trackedResource.parentPath ?? ''),
@@ -866,6 +877,14 @@ export const transferProjectResource = async (
   }
 
   const persistedResources = await writeProjectResources(state, nextResources)
+  if (mode === 'move') {
+    await updateProjectAssetReferencePaths(
+      state.projectPath,
+      persistedResources,
+      normalizedResourcePath,
+      target.resourcePath
+    )
+  }
 
   return {
     view: buildProjectResourceView(state, persistedResources, normalizedDestinationParentPath),
