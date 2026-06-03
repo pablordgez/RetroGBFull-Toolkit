@@ -4,16 +4,14 @@ import { join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
     createProjectStructure,
-    getProjectLauncherErrorMessage,
-    isValidProjectName,
     listRecentProjects,
     rememberRecentProject,
     validateProjectDirectory
-} from '../../src/main/projectLauncher';
+} from '../../../src/main/projectLauncher';
 
 const tempDirectories: string[] = [];
 
-describe('projectLauncher helpers', () => {
+describe('projectLauncher integration', () => {
     afterEach(async () => {
         await Promise.all(
             tempDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
@@ -46,16 +44,6 @@ describe('projectLauncher helpers', () => {
             code: 'EEXIST'
         });
 
-        expect(
-            getProjectLauncherErrorMessage({ code: 'EEXIST' }, 'create')
-        ).toBe('A project folder with that name already exists in the selected location. Choose a different name or location.');
-    });
-
-    it('rejects invalid project names that would break on Windows or Linux', () => {
-        expect(isValidProjectName('')).toBe(false);
-        expect(isValidProjectName('bad/name')).toBe(false);
-        expect(isValidProjectName('CON')).toBe(false);
-        expect(isValidProjectName('ValidProject')).toBe(true);
     });
 
     it('keeps only valid recent projects and moves reopened projects to the top', async () => {
@@ -86,12 +74,33 @@ describe('projectLauncher helpers', () => {
         expect(recentProjects.map((project) => project.name)).toEqual(['Alpha', 'Beta']);
     });
 
-    it('falls back to a friendly generic message for unexpected errors', () => {
-        expect(getProjectLauncherErrorMessage(new Error('raw internal failure'), 'create')).toBe(
-            'Something went wrong while creating the project. Please try again.'
+    it('rejects a project when the project JSON has invalid syntax', async () => {
+        const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-launcher-'));
+        tempDirectories.push(workspaceDirectory);
+
+        const project = await createProjectStructure(workspaceDirectory, 'BrokenSyntax');
+        await writeFile(join(project.path, 'BrokenSyntax.json'), '{ "name": "BrokenSyntax", ', 'utf-8');
+
+        const validation = await validateProjectDirectory(project.path);
+
+        expect(validation.isValid).toBe(false);
+        expect(validation.message).toContain('not valid JSON');
+    });
+
+    it('rejects a project when the project JSON does not match project schema', async () => {
+        const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-launcher-'));
+        tempDirectories.push(workspaceDirectory);
+
+        const project = await createProjectStructure(workspaceDirectory, 'BrokenShape');
+        await writeFile(
+            join(project.path, 'BrokenShape.json'),
+            JSON.stringify({ name: 'BrokenShape', resources: {} }, null, 2),
+            'utf-8'
         );
-        expect(getProjectLauncherErrorMessage(new Error('raw internal failure'), 'open')).toBe(
-            'Something went wrong while opening the project. Please try again.'
-        );
+
+        const validation = await validateProjectDirectory(project.path);
+
+        expect(validation.isValid).toBe(false);
+        expect(validation.message).toContain('not a valid project JSON file');
     });
 });

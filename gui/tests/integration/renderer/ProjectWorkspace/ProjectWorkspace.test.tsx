@@ -2,8 +2,8 @@ import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PROJECT_ASSET_DRAG_MIME } from '../../../src/renderer/src/components/ProjectAssets/projectAssetDrag'
-import { ProjectWorkspace } from '../../../src/renderer/src/components/ProjectWorkspace/ProjectWorkspace'
+import { PROJECT_ASSET_DRAG_MIME } from '../../../../src/renderer/src/components/ProjectAssets/projectAssetDrag'
+import { ProjectWorkspace } from '../../../../src/renderer/src/components/ProjectWorkspace/ProjectWorkspace'
 
 const renderWorkspace = (entry: string, { strictMode = false }: { strictMode?: boolean } = {}) => {
   const workspace = (

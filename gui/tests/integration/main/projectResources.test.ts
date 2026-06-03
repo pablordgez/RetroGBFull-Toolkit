@@ -2,12 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createProjectStructure } from '../../src/main/projectLauncher'
+import { createProjectStructure } from '../../../src/main/projectLauncher'
 import {
   ensureProjectAssetFileAvailable,
   loadProjectAssetFile,
   saveProjectAssetFile
-} from '../../src/main/projectAssetFiles'
+} from '../../../src/main/projectAssetFiles'
 import {
   createProjectFolder,
   createProjectResource,
@@ -23,18 +23,20 @@ import {
   transferProjectResource,
   updateProjectResourceBank,
   updateProjectStartingScene
-} from '../../src/main/projectResources'
+} from '../../../src/main/projectResources'
 import {
   PROJECT_ASSET_EXTENSIONS,
   ProjectAssetKind,
+  type ActorAssetDocument,
+  type SceneAssetDocument,
   createDefaultProjectAssetDocument,
   serializeProjectAssetDocument
-} from '../../src/shared/projectAssets'
-import { loadProjectScriptResource } from '../../src/main/projectCode'
+} from '../../../src/shared/projectAssets'
+import { loadProjectScriptResource } from '../../../src/main/projectCode'
 
 const tempDirectories: string[] = []
 
-describe('project resource helpers', () => {
+describe('projectResources integration', () => {
   afterEach(async () => {
     await Promise.all(
       tempDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
@@ -371,6 +373,242 @@ describe('project resource helpers', () => {
     expect(nestedView.items.map((item) => item.name)).toEqual(['Bat'])
   })
 
+  it('updates asset references when referenced resources and folders are moved or renamed', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    await createProjectResource(project.path, 'folder', '', 'Tilesets')
+    await createProjectResource(project.path, 'folder', '', 'Maps')
+    await createProjectResource(project.path, 'folder', '', 'Scenes')
+    await createProjectResource(project.path, 'folder', '', 'Actors')
+    await createProjectResource(project.path, 'folder', '', 'Sprites')
+    await createProjectResource(project.path, 'folder', '', 'Archive')
+
+    const tileset = await createProjectResource(project.path, 'tileset', 'Tilesets', 'Main')
+    const tilemap = await createProjectResource(project.path, 'tilemap', 'Maps', 'Room')
+    const scene = await createProjectResource(project.path, 'scene', 'Scenes', 'Intro')
+    const actor = await createProjectResource(project.path, 'actor', 'Actors', 'Hero')
+    const sprite = await createProjectResource(project.path, 'sprite', 'Sprites', 'HeroSprite')
+    const sceneScript = await createProjectScriptResource(project.path, 'scene', 'RoomLogic')
+    const actorScript = await createProjectScriptResource(project.path, 'actor', 'HeroLogic')
+
+    const tilemapPayload = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...tilemapPayload.document,
+      tilesetPath: tileset.resourcePath
+    })
+
+    const scenePayload = await loadProjectAssetFile(project.path, scene.resourcePath)
+    await saveProjectAssetFile(project.path, scene.resourcePath, {
+      ...scenePayload.document,
+      tilemapPath: tilemap.resourcePath,
+      scriptPath: sceneScript.resourcePath,
+      scriptProperties: {
+        background: tilemap.resourcePath
+      },
+      nodes: [
+        {
+          id: 'hero',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          resourcePath: actor.resourcePath,
+          spritePath: sprite.resourcePath,
+          scriptPath: actorScript.resourcePath,
+          scriptProperties: {
+            idle_animation: sprite.resourcePath
+          },
+          x: 0,
+          y: 0,
+          physicsMode: 'balanced',
+          followCamera: false,
+          children: [
+            {
+              id: 'hero-hitbox',
+              type: 'collision',
+              name: 'Hitbox',
+              isCollapsed: false,
+              x: 0,
+              y: 0,
+              width: 8,
+              height: 8,
+              isBlocking: true,
+              callbacks: [{ scriptPath: actorScript.resourcePath, functionName: 'OnEnter' }],
+              exitCallbacks: [{ scriptPath: actorScript.resourcePath, functionName: 'OnExit' }],
+              children: []
+            }
+          ]
+        }
+      ]
+    } as SceneAssetDocument)
+
+    const actorPayload = await loadProjectAssetFile(project.path, actor.resourcePath)
+    await saveProjectAssetFile(project.path, actor.resourcePath, {
+      ...actorPayload.document,
+      root: {
+        ...(actorPayload.document as ActorAssetDocument).root,
+        spritePath: sprite.resourcePath,
+        scriptPath: actorScript.resourcePath,
+        scriptProperties: {
+          idle_animation: sprite.resourcePath
+        }
+      }
+    } as ActorAssetDocument)
+
+    const renamedMapsFolder = await renameProjectResource(project.path, 'folder', 'Maps', 'Levels')
+    const renamedTileset = await renameProjectResource(
+      project.path,
+      'tileset',
+      tileset.resourcePath,
+      'Ground'
+    )
+    const movedSpritesFolder = await transferProjectResource(
+      project.path,
+      'folder',
+      'Sprites',
+      'Archive',
+      'move'
+    )
+    const movedActor = await transferProjectResource(
+      project.path,
+      'actor',
+      actor.resourcePath,
+      'Archive',
+      'move'
+    )
+    await createProjectResource(project.path, 'folder', 'src/CustomActors', 'Archive')
+    const movedActorScript = await transferProjectResource(
+      project.path,
+      'script',
+      actorScript.resourcePath,
+      'src/CustomActors/Archive',
+      'move'
+    )
+
+    const reloadedScene = (await loadProjectAssetFile(project.path, scene.resourcePath))
+      .document as SceneAssetDocument
+    const reloadedTilemap = await loadProjectAssetFile(
+      project.path,
+      `${renamedMapsFolder.resourcePath}/Room${PROJECT_ASSET_EXTENSIONS.tilemap}`
+    )
+    const reloadedActor = (await loadProjectAssetFile(project.path, movedActor.resourcePath))
+      .document as ActorAssetDocument
+
+    expect(reloadedScene.tilemapPath).toBe(
+      `${renamedMapsFolder.resourcePath}/Room${PROJECT_ASSET_EXTENSIONS.tilemap}`
+    )
+    expect(reloadedScene.scriptPath).toBe(sceneScript.resourcePath)
+    expect(reloadedScene.scriptProperties?.background).toBe(
+      `${renamedMapsFolder.resourcePath}/Room${PROJECT_ASSET_EXTENSIONS.tilemap}`
+    )
+    expect(reloadedTilemap.document).toMatchObject({
+      tilesetPath: renamedTileset.resourcePath
+    })
+    expect(reloadedScene.nodes[0]).toMatchObject({
+      type: 'actor',
+      resourcePath: movedActor.resourcePath,
+      spritePath: `${movedSpritesFolder.resourcePath}/HeroSprite${PROJECT_ASSET_EXTENSIONS.sprite}`,
+      scriptPath: movedActorScript.resourcePath,
+      scriptProperties: {
+        idle_animation: `${movedSpritesFolder.resourcePath}/HeroSprite${PROJECT_ASSET_EXTENSIONS.sprite}`
+      }
+    })
+    expect(reloadedActor.root).toMatchObject({
+      spritePath: `${movedSpritesFolder.resourcePath}/HeroSprite${PROJECT_ASSET_EXTENSIONS.sprite}`,
+      scriptPath: movedActorScript.resourcePath
+    })
+    expect(reloadedScene.nodes[0].children[0]).toMatchObject({
+      callbacks: [{ scriptPath: movedActorScript.resourcePath, functionName: 'OnEnter' }],
+      exitCallbacks: [{ scriptPath: movedActorScript.resourcePath, functionName: 'OnExit' }]
+    })
+  })
+
+  it('clears asset references when referenced resources are deleted', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    await createProjectResource(project.path, 'folder', '', 'Tilesets')
+    await createProjectResource(project.path, 'folder', '', 'Maps')
+    await createProjectResource(project.path, 'folder', '', 'Scenes')
+    await createProjectResource(project.path, 'folder', '', 'Sprites')
+
+    const tileset = await createProjectResource(project.path, 'tileset', 'Tilesets', 'Main')
+    const tilemap = await createProjectResource(project.path, 'tilemap', 'Maps', 'Room')
+    const scene = await createProjectResource(project.path, 'scene', 'Scenes', 'Intro')
+    const sprite = await createProjectResource(project.path, 'sprite', 'Sprites', 'HeroSprite')
+    const actorScript = await createProjectScriptResource(project.path, 'actor', 'HeroLogic')
+
+    const tilemapPayload = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+    await saveProjectAssetFile(project.path, tilemap.resourcePath, {
+      ...tilemapPayload.document,
+      tilesetPath: tileset.resourcePath
+    })
+
+    const scenePayload = await loadProjectAssetFile(project.path, scene.resourcePath)
+    await saveProjectAssetFile(project.path, scene.resourcePath, {
+      ...scenePayload.document,
+      tilemapPath: tilemap.resourcePath,
+      nodes: [
+        {
+          id: 'hero',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          spritePath: sprite.resourcePath,
+          scriptPath: actorScript.resourcePath,
+          scriptProperties: {
+            idle_animation: sprite.resourcePath
+          },
+          x: 0,
+          y: 0,
+          physicsMode: 'balanced',
+          followCamera: false,
+          children: [
+            {
+              id: 'hero-hitbox',
+              type: 'collision',
+              name: 'Hitbox',
+              isCollapsed: false,
+              x: 0,
+              y: 0,
+              width: 8,
+              height: 8,
+              isBlocking: true,
+              callbacks: [{ scriptPath: actorScript.resourcePath, functionName: 'OnEnter' }],
+              exitCallbacks: [{ scriptPath: actorScript.resourcePath, functionName: 'OnExit' }],
+              children: []
+            }
+          ]
+        }
+      ]
+    } as SceneAssetDocument)
+
+    await deleteProjectResource(project.path, 'tileset', tileset.resourcePath)
+    await deleteProjectResource(project.path, 'sprite', sprite.resourcePath)
+    await deleteProjectResource(project.path, 'script', actorScript.resourcePath)
+
+    const reloadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+    const reloadedScene = (await loadProjectAssetFile(project.path, scene.resourcePath))
+      .document as SceneAssetDocument
+
+    expect(reloadedTilemap.document).toMatchObject({
+      tilesetPath: null
+    })
+    expect(reloadedScene.tilemapPath).toBe(tilemap.resourcePath)
+    expect(reloadedScene.nodes[0]).toMatchObject({
+      type: 'actor',
+      spritePath: null,
+      scriptProperties: {
+        idle_animation: null
+      }
+    })
+    expect(reloadedScene.nodes[0]).not.toHaveProperty('scriptPath')
+    expect(reloadedScene.nodes[0].children[0]).toMatchObject({
+      callbacks: [],
+      exitCallbacks: []
+    })
+  })
+
   it('stores and restores bank overrides for bankable resources', async () => {
     const workspaceDirectory = await createTempWorkspace()
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
@@ -497,6 +735,34 @@ describe('project resource helpers', () => {
 
     const rootView = await listProjectResources(project.path)
     expect(rootView.items).toEqual([])
+  })
+
+  it('returns a friendly error when loading an asset with invalid JSON syntax', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+
+    await writeFile(join(project.path, sprite.resourcePath), '{ "kind": "sprite", ', 'utf-8')
+
+    await expect(loadProjectAssetFile(project.path, sprite.resourcePath)).rejects.toThrow(
+      'The asset "Hero" has invalid JSON and could not be loaded.'
+    )
+  })
+
+  it('returns a friendly error when loading an asset with invalid document data', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+
+    await writeFile(
+      join(project.path, sprite.resourcePath),
+      JSON.stringify({ kind: 'sprite', version: 1 }, null, 2),
+      'utf-8'
+    )
+
+    await expect(loadProjectAssetFile(project.path, sprite.resourcePath)).rejects.toThrow(
+      'The asset "Hero" has invalid data and could not be loaded.'
+    )
   })
 
   it('removes missing tracked folders when opening them', async () => {

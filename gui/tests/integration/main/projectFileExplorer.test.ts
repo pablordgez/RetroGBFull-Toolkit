@@ -3,13 +3,13 @@ import { mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createProjectStructure } from '../../src/main/projectLauncher'
-import { showProjectResourceInFileExplorer } from '../../src/main/projectFileExplorer'
-import { createProjectResource } from '../../src/main/projectResources'
+import { createProjectStructure } from '../../../src/main/projectLauncher'
+import { showProjectResourceInFileExplorer } from '../../../src/main/projectFileExplorer'
+import { createProjectResource } from '../../../src/main/projectResources'
 
 const tempDirectories: string[] = []
 
-describe('projectFileExplorer helpers', () => {
+describe('projectFileExplorer integration', () => {
   beforeEach(() => {
     vi.mocked(shell.openPath).mockClear()
     vi.mocked(shell.openPath).mockResolvedValue('')

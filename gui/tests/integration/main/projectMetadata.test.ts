@@ -2,18 +2,18 @@ import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createProjectStructure } from '../../src/main/projectLauncher'
+import { createProjectStructure } from '../../../src/main/projectLauncher'
 import {
   loadProjectSaveDataState,
   readProjectTrackedResourceBank,
   readProjectTrackedResourceBanks,
   saveProjectSaveDataState
-} from '../../src/main/projectMetadata'
-import { DEFAULT_PROJECT_RESOURCE_BANK } from '../../src/shared/projectResourceModels'
+} from '../../../src/main/projectMetadata'
+import { DEFAULT_PROJECT_RESOURCE_BANK } from '../../../src/shared/projectResourceModels'
 
 const tempDirectories: string[] = []
 
-describe('projectMetadata helpers', () => {
+describe('projectMetadata integration', () => {
   afterEach(async () => {
     await Promise.all(
       tempDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))

@@ -104,7 +104,7 @@ describe('<ScriptEditor />', () => {
     window.localStorage.clear()
     vi.mocked(window.api.loadProjectScriptResource).mockReset()
     vi.mocked(window.api.saveProjectScriptResource).mockReset()
-    vi.mocked(window.api.getProjectCodeWorkspaceSnapshot).mockClear()
+    vi.mocked(window.api.getProjectCodeWorkspaceSnapshot).mockReset()
     vi.mocked(window.api.confirmEditorClose).mockClear()
     vi.mocked(window.api.onEditorCloseRequested).mockReset()
     createScriptEditorRuntimeMock.mockClear()
@@ -120,6 +120,11 @@ describe('<ScriptEditor />', () => {
       sourceContent:
         '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Test_bankref)\n\n',
       headerContent: '#ifndef TEST_H\n#define TEST_H\n\n#endif // TEST_H\n'
+    })
+    vi.mocked(window.api.getProjectCodeWorkspaceSnapshot).mockResolvedValue({
+      workspaceRoot: '/workspace',
+      files: [],
+      sourceFileCount: 0
     })
   })
 

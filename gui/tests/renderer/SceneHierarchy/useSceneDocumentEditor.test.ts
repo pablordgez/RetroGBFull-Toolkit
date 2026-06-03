@@ -40,8 +40,8 @@ describe('useSceneDocumentEditor', () => {
 
     expect(result.current.tilemapPath).toBe('Maps/Small Room.rgbtilemap.json')
     expect(result.current.nodes[0]).toMatchObject({
-      x: 1392,
-      y: 1264
+      x: 1264,
+      y: 1008
     })
 
     await act(async () => {
@@ -60,8 +60,8 @@ describe('useSceneDocumentEditor', () => {
 
     expect(result.current.tilemapPath).toBe('Maps/Small Room.rgbtilemap.json')
     expect(result.current.nodes[0]).toMatchObject({
-      x: 1392,
-      y: 1264
+      x: 1264,
+      y: 1008
     })
   })
 

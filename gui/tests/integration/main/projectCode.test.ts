@@ -2,17 +2,17 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { loadProjectAssetFile, saveProjectAssetFile } from '../../src/main/projectAssetFiles'
-import { saveProjectSaveDataState, saveProjectTagState } from '../../src/main/projectMetadata'
-import { createProjectStructure } from '../../src/main/projectLauncher'
-import { normalizeCodeIdentifierStem } from '../../src/shared/codeIdentifiers'
+import { loadProjectAssetFile, saveProjectAssetFile } from '../../../src/main/projectAssetFiles'
+import { saveProjectSaveDataState, saveProjectTagState } from '../../../src/main/projectMetadata'
+import { createProjectStructure } from '../../../src/main/projectLauncher'
+import { normalizeCodeIdentifierStem } from '../../../src/shared/codeIdentifiers'
 import {
   buildProjectCode,
   copyBundledEngineCore,
   listProjectScriptCallbackCandidates,
   loadProjectScriptResource,
   saveProjectScriptResource
-} from '../../src/main/projectCode'
+} from '../../../src/main/projectCode'
 import {
   createProjectResource,
   createProjectScriptResource,
@@ -20,7 +20,7 @@ import {
   listProjectScriptResources,
   updateProjectResourceBank,
   updateProjectStartingScene
-} from '../../src/main/projectResources'
+} from '../../../src/main/projectResources'
 
 const tempDirectories: string[] = []
 
@@ -32,7 +32,7 @@ const prepareBundledGbdkFixture = async (workspaceDirectory: string): Promise<vo
   process.env['RETROGBFULL_BUNDLED_GBDK_PATH'] = bundledGbdkPath
 }
 
-describe('projectCode collision callback helpers', () => {
+describe('projectCode integration', () => {
   afterEach(async () => {
     delete process.env['RETROGBFULL_BUNDLED_GBDK_PATH']
     await Promise.all(
