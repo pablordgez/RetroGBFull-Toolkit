@@ -1039,6 +1039,8 @@ describe('projectCode integration', () => {
     const refreshedMainSource = await readFile(mainSourcePath, 'utf-8')
 
     expect(copyResult.copiedPaths).toContain('src/main.c')
+    expect(copyResult.copiedPaths).not.toContain('docs/package.json')
+    expect(copyResult.copiedPaths).not.toContain('obj')
     expect(copyResult.skippedPaths).not.toContain('src/main.c')
     expect(refreshedMainSource).toContain('#include "GameManager/GameManager.h"')
     expect(refreshedMainSource).toContain('init_actor_functions();')

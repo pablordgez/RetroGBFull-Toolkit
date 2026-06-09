@@ -6,6 +6,7 @@ import type { GbdkToolchainSource } from '../shared/projectGbdk'
 import type { MakeToolchainSource } from '../shared/projectMake'
 
 export const IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES = new Set(['deleted-resources'])
+export const IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES = new Set(['docs', 'obj'])
 export const INTERNAL_GENERATION_DIRECTORY = '.retrogbfull'
 export const RESOURCE_GENERATION_MANIFEST_PATH = `${INTERNAL_GENERATION_DIRECTORY}/resource-generation-manifest.json`
 export const SCRIPT_ENVIRONMENT_PATH = 'src/ScriptEnvironment.h'
@@ -114,9 +115,10 @@ export const walkRelativePaths = async (
 // cleans up files in the target directory that are in the source directory
 export const cleanupBundledDirectoryInTarget = async (
   sourceBasePath: string,
-  targetBasePath: string
+  targetBasePath: string,
+  ignoredRootDirectories = new Set<string>()
 ): Promise<void> => {
-  const relativePaths = await walkRelativePaths(sourceBasePath)
+  const relativePaths = await walkRelativePaths(sourceBasePath, '', ignoredRootDirectories)
 
   for (const relativePath of relativePaths) {
     const sourcePath = join(sourceBasePath, relativePath)
@@ -138,9 +140,10 @@ export const cleanupBundledDirectoryInTarget = async (
 // copies files from a directory into the project, skipping files that already exist in the target location
 export const copyBundledDirectoryIntoTarget = async (
   sourceBasePath: string,
-  targetBasePath: string
+  targetBasePath: string,
+  ignoredRootDirectories = new Set<string>()
 ): Promise<{ copiedPaths: string[]; skippedPaths: string[] }> => {
-  const relativePaths = await walkRelativePaths(sourceBasePath)
+  const relativePaths = await walkRelativePaths(sourceBasePath, '', ignoredRootDirectories)
   const copiedPaths: string[] = []
   const skippedPaths: string[] = []
 

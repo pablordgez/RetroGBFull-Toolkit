@@ -7,7 +7,8 @@ import {
   copyBundledDirectoryIntoTarget,
   ensureProjectDirectory,
   getBundledCorePath,
-  getBundledGbdkPath
+  getBundledGbdkPath,
+  IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES
 } from './projectCodeShared'
 import { writeGeneratedScriptEnvironment } from './projectCodeScripts'
 
@@ -15,11 +16,16 @@ export const copyBundledEngineCore = async (projectPath: string): Promise<CopyEn
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
   const bundledCorePath = getBundledCorePath()
 
-  await cleanupBundledDirectoryInTarget(bundledCorePath, normalizedProjectPath)
+  await cleanupBundledDirectoryInTarget(
+    bundledCorePath,
+    normalizedProjectPath,
+    IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES
+  )
 
   const { copiedPaths, skippedPaths } = await copyBundledDirectoryIntoTarget(
     bundledCorePath,
-    normalizedProjectPath
+    normalizedProjectPath,
+    IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES
   )
 
   await writeGeneratedScriptEnvironment(normalizedProjectPath)

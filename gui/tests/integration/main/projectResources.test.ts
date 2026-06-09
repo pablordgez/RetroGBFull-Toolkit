@@ -737,6 +737,66 @@ describe('projectResources integration', () => {
     expect(rootView.items).toEqual([])
   })
 
+  it('rejects unsupported and untracked asset file selections before loading', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await writeFile(
+      join(project.path, `Loose${PROJECT_ASSET_EXTENSIONS.sprite}`),
+      serializeProjectAssetDocument(createDefaultProjectAssetDocument('sprite')),
+      'utf-8'
+    )
+
+    await expect(loadProjectAssetFile(project.path, 'notes.txt')).rejects.toMatchObject({
+      userMessage: 'The selected file is not a supported asset.'
+    })
+    await expect(
+      loadProjectAssetFile(project.path, `Loose${PROJECT_ASSET_EXTENSIONS.sprite}`)
+    ).rejects.toMatchObject({
+      userMessage: 'The selected asset is not tracked in this project.'
+    })
+  })
+
+  it('removes a tracked asset when its resource path points at a directory', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+
+    await rm(join(project.path, sprite.resourcePath), { force: true })
+    await mkdir(join(project.path, sprite.resourcePath), { recursive: true })
+
+    await expect(
+      ensureProjectAssetFileAvailable(project.path, sprite.resourcePath)
+    ).rejects.toMatchObject({
+      userMessage: 'The asset "Hero" could not be found, so it was removed from the project.'
+    })
+    await expect(listProjectResources(project.path)).resolves.toMatchObject({ items: [] })
+  })
+
+  it('rejects asset document kind mismatches while loading and saving tracked assets', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
+
+    await writeFile(
+      join(project.path, sprite.resourcePath),
+      serializeProjectAssetDocument(createDefaultProjectAssetDocument('tilemap')),
+      'utf-8'
+    )
+
+    await expect(loadProjectAssetFile(project.path, sprite.resourcePath)).rejects.toMatchObject({
+      userMessage: 'The asset file type does not match its extension.'
+    })
+    await expect(
+      saveProjectAssetFile(
+        project.path,
+        sprite.resourcePath,
+        createDefaultProjectAssetDocument('tilemap')
+      )
+    ).rejects.toMatchObject({
+      userMessage: 'The asset data does not match the target file type.'
+    })
+  })
+
   it('returns a friendly error when loading an asset with invalid JSON syntax', async () => {
     const workspaceDirectory = await createTempWorkspace()
     const project = await createProjectStructure(workspaceDirectory, 'MyProject')
@@ -810,6 +870,84 @@ describe('projectResources integration', () => {
     expect(scanResult.removedCount).toBe(2)
     expect(rootView.items.map((item) => item.name)).toEqual(['Sprites'])
     expect(spritesView.items.map((item) => item.name)).toEqual(['Hero'])
+  })
+
+  it('returns an empty scan result when tracked folders, assets, and scripts are already valid', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    await createProjectResource(project.path, 'folder', '', 'Sprites')
+    await createProjectResource(project.path, 'sprite', 'Sprites', 'Hero')
+    await createProjectScriptResource(project.path, 'general', 'Shared')
+
+    await expect(scanProjectDirectory(project.path)).resolves.toEqual({
+      trackedCount: 0,
+      removedCount: 0
+    })
+  })
+
+  it('skips internal and managed root entries while scanning untracked project files', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    await mkdir(join(project.path, '.retrogbfull-history'), { recursive: true })
+    await mkdir(join(project.path, 'obj'), { recursive: true })
+    await mkdir(join(project.path, 'Sprites'), { recursive: true })
+    await writeFile(
+      join(project.path, '.retrogbfull-history', `Ignored${PROJECT_ASSET_EXTENSIONS.sprite}`),
+      serializeProjectAssetDocument(createDefaultProjectAssetDocument('sprite')),
+      'utf-8'
+    )
+    await writeFile(
+      join(project.path, 'Sprites', `Hero${PROJECT_ASSET_EXTENSIONS.sprite}`),
+      serializeProjectAssetDocument(createDefaultProjectAssetDocument('sprite')),
+      'utf-8'
+    )
+    await writeFile(
+      join(project.path, 'Sprites', `WrongType${PROJECT_ASSET_EXTENSIONS.sprite}`),
+      serializeProjectAssetDocument(createDefaultProjectAssetDocument('tilemap')),
+      'utf-8'
+    )
+    await writeFile(
+      join(project.path, 'obj', `Ignored${PROJECT_ASSET_EXTENSIONS.sprite}`),
+      serializeProjectAssetDocument(createDefaultProjectAssetDocument('sprite')),
+      'utf-8'
+    )
+
+    const scanResult = await scanProjectDirectory(project.path)
+    const rootView = await listProjectResources(project.path)
+    const spritesView = await listProjectResources(project.path, 'Sprites')
+
+    expect(scanResult).toEqual({ trackedCount: 2, removedCount: 0 })
+    expect(rootView.items.map((item) => item.name)).toEqual(['Sprites'])
+    expect(spritesView.items.map((item) => item.name)).toEqual(['Hero'])
+  })
+
+  it('removes missing resource subtrees, missing script files, and stale starting scenes during scans', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const sprites = await createProjectResource(project.path, 'folder', '', 'Sprites')
+    await createProjectResource(project.path, 'sprite', sprites.resourcePath, 'Hero')
+    const scene = await createProjectResource(project.path, 'scene', '', 'Opening')
+    const script = await createProjectScriptResource(project.path, 'actor', 'HeroActor')
+
+    await updateProjectStartingScene(project.path, scene.resourcePath)
+    await rm(join(project.path, 'Sprites'), { recursive: true, force: true })
+    await rm(join(project.path, scene.resourcePath), { force: true })
+    await rm(join(project.path, script.resourcePath.replace(/\.c$/i, '.h')), { force: true })
+
+    const scanResult = await scanProjectDirectory(project.path)
+    const rootView = await listProjectResources(project.path)
+    const projectFileContents = JSON.parse(
+      await readFile(join(project.path, 'MyProject.json'), 'utf-8')
+    ) as {
+      startingScenePath: string | null
+    }
+
+    expect(scanResult).toEqual({ trackedCount: 0, removedCount: 4 })
+    expect(rootView.items.map((item) => item.name)).not.toContain('Sprites')
+    expect(rootView.items.map((item) => item.name)).not.toContain('Opening')
+    expect(projectFileContents.startingScenePath).toBeNull()
   })
 })
 
