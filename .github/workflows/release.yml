@@ -1,0 +1,129 @@
+name: Release Distributables
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: Release name shown on GitHub
+        required: true
+        type: string
+      tag_name:
+        description: Git tag to create or update. Leave blank for v<package-version>-build-<run-number>.
+        required: false
+        type: string
+      prerelease:
+        description: Mark the GitHub release as a pre-release
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.metadata.outputs.tag_name }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Compute tag
+        id: metadata
+        shell: bash
+        run: |
+          package_version="$(node -p "require('./gui/package.json').version")"
+          requested_tag="${{ inputs.tag_name }}"
+          if [ -z "$requested_tag" ]; then
+            requested_tag="v${package_version}-build-${{ github.run_number }}"
+          fi
+          echo "tag_name=$requested_tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            build_script: build:win
+            artifact_name: windows-installer
+          - name: macOS
+            os: macos-latest
+            build_script: build:mac
+            artifact_name: macos-installer
+          - name: Linux
+            os: ubuntu-latest
+            build_script: build:linux
+            artifact_name: linux-installers
+
+    defaults:
+      run:
+        working-directory: ./gui
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ./gui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build distributable
+        run: npm run ${{ matrix.build_script }} -- --publish never
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload distributable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            gui/dist/*.exe
+            gui/dist/*.dmg
+            gui/dist/*.deb
+            gui/dist/*.AppImage
+            gui/dist/latest*.yml
+            gui/dist/*.blockmap
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Create GitHub release
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download distributables
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
+          name: ${{ inputs.release_name }}
+          prerelease: ${{ inputs.prerelease }}
+          files: release-artifacts/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -44,6 +44,8 @@ interface AppWindowOptions {
 }
 
 const ELECTRON_APP_SCHEME = 'app'
+const APP_DISPLAY_NAME = 'RetroGBFull-Toolkit'
+const APP_USER_DATA_DIRECTORY = 'retrogbfull-toolkit'
 const CROSS_ORIGIN_RESPONSE_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp'
@@ -52,6 +54,10 @@ const CROSS_ORIGIN_WEB_REQUEST_HEADERS = {
   'Cross-Origin-Opener-Policy': ['same-origin'],
   'Cross-Origin-Embedder-Policy': ['require-corp']
 }
+const shouldDisableChromiumSandbox =
+  process.platform === 'linux' &&
+  !is.dev &&
+  process.env['RETROGBFULL_ENABLE_CHROMIUM_SANDBOX'] !== '1'
 
 const editorWindowsWaitingForCloseConfirmation = new Set<number>()
 const projectWindowPaths = new Map<number, string>()
@@ -59,6 +65,13 @@ const projectWindowsWaitingForCleanup = new Set<number>()
 const projectWindowsReadyToClose = new Set<number>()
 let isQuittingAfterCleanup = false
 let hasHandledBeforeQuitCleanup = false
+
+if (shouldDisableChromiumSandbox) {
+  app.commandLine.appendSwitch('no-sandbox')
+}
+
+app.setName(APP_DISPLAY_NAME)
+app.setPath('userData', join(app.getPath('appData'), APP_USER_DATA_DIRECTORY))
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -211,7 +224,7 @@ const createAppWindow = (hash: string, options?: AppWindowOptions): BrowserWindo
     height: options?.height ?? 1000,
     show: false,
     autoHideMenuBar: true,
-    title: options?.title,
+    title: options?.title ?? APP_DISPLAY_NAME,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -268,7 +281,7 @@ const createProjectEditorWindow = (
     width: 1440,
     height: 900,
     showWhenReady: false,
-    title: `${project.name} - RetroGBFull Toolkit`
+    title: `${project.name} - ${APP_DISPLAY_NAME}`
   })
 
   registerProjectWindow(projectWindow, project.path)
@@ -297,7 +310,7 @@ const closeCurrentProject = async (event: IpcMainInvokeEvent): Promise<boolean> 
   const launcherWindow = createAppWindow('/', {
     width: 1080,
     height: 760,
-    title: 'RetroGBFull Toolkit',
+    title: APP_DISPLAY_NAME,
     showWhenReady: false
   })
 
@@ -334,6 +347,7 @@ function createWindow(): void {
     height: 760,
     show: false,
     autoHideMenuBar: true,
+    title: APP_DISPLAY_NAME,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -406,7 +420,7 @@ app.whenReady().then(() => {
   }
 
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.retrogbfull.toolkit')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
