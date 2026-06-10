@@ -62,12 +62,15 @@ const buildTileBytes = (pixels: number[]): number[] => {
 
 // builds a sprite byte array: for each frame, split by rows of 8x8 tiles (in 8x16 mode for each tile, the tile in
 // the following row is also included), for each tile build the tile bytes and concatenate them
-const buildSpriteFrameBytes = (document: SpriteAssetDocument): number[] => {
+const buildSpriteFrameBytes = (
+  document: SpriteAssetDocument,
+  use8x16SpriteMode = document.is8x16Mode
+): number[] => {
   const bytes: number[] = []
   // width is document width in 8 pixel tiles
   const tilesAcross = Math.max(1, Math.ceil(document.width / 8))
   // height depends on mode
-  const tilesDown = document.is8x16Mode
+  const tilesDown = use8x16SpriteMode
     ? Math.max(1, Math.ceil(document.height / 16))
     : Math.max(1, Math.ceil(document.height / 8))
 
@@ -78,7 +81,7 @@ const buildSpriteFrameBytes = (document: SpriteAssetDocument): number[] => {
       for (let tileX = 0; tileX < tilesAcross; tileX += 1) {
         // builds an array with the rows that the tile(s) occupy: in 8x16 mode it's the current tile and
         // the one in the next row, in 8x8 mode, just the current tile
-        const tileRows = document.is8x16Mode ? [tileY * 16, tileY * 16 + 8] : [tileY * 8]
+        const tileRows = use8x16SpriteMode ? [tileY * 16, tileY * 16 + 8] : [tileY * 8]
 
         for (const startRow of tileRows) {
           const pixels: number[] = []
@@ -109,8 +112,11 @@ interface SpriteMetaspriteLayoutEntry {
   dtile: number
 }
 
-const hasSpriteMetaspriteLayout = (document: SpriteAssetDocument): boolean => {
-  const maxSingleSpriteHeight = document.is8x16Mode ? 16 : 8
+const hasSpriteMetaspriteLayout = (
+  document: SpriteAssetDocument,
+  use8x16SpriteMode = document.is8x16Mode
+): boolean => {
+  const maxSingleSpriteHeight = use8x16SpriteMode ? 16 : 8
   return document.width > 8 || document.height > maxSingleSpriteHeight
 }
 
@@ -141,12 +147,13 @@ const isSpriteTileBlank = (
 
 // build entries with x, y and dtile for each sprite in a metasprite
 const collectSpriteMetaspriteEntries = (
-  document: SpriteAssetDocument
+  document: SpriteAssetDocument,
+  use8x16SpriteMode = document.is8x16Mode
 ): SpriteMetaspriteLayoutEntry[] => {
   const tilesAcross = Math.max(1, Math.ceil(document.width / 8))
 
   // different logic for 8x16 mode
-  if (document.is8x16Mode) {
+  if (use8x16SpriteMode) {
     const spriteRows = Math.max(1, Math.ceil(document.height / 16))
     const entries: SpriteMetaspriteLayoutEntry[] = []
 
@@ -212,9 +219,13 @@ const collectSpriteMetaspriteEntries = (
 }
 
 // build metasprite data
-const buildMetaspriteLines = (identifier: string, document: SpriteAssetDocument): string[] => {
+const buildMetaspriteLines = (
+  identifier: string,
+  document: SpriteAssetDocument,
+  use8x16SpriteMode = document.is8x16Mode
+): string[] => {
   const tilesAcross = Math.max(1, Math.ceil(document.width / 8))
-  const tilesDown = document.is8x16Mode
+  const tilesDown = use8x16SpriteMode
     ? Math.max(1, Math.ceil(document.height / 16))
     : Math.max(1, Math.ceil(document.height / 8))
 
@@ -223,7 +234,7 @@ const buildMetaspriteLines = (identifier: string, document: SpriteAssetDocument)
   }
 
   const lines: string[] = [`const metasprite_t ${identifier}_metasprite_data[] = {`]
-  const entries = collectSpriteMetaspriteEntries(document)
+  const entries = collectSpriteMetaspriteEntries(document, use8x16SpriteMode)
   // pivot starts at the center
   let previousX = document.width / 2
   let previousY = document.height / 2
@@ -250,11 +261,14 @@ const buildAnimationDuration = (fps: number): number => {
 
 // builds the header and source files for a sprite
 export const buildSpriteResourceFiles = (
-  sprite: ProjectAssetRecordLike
+  sprite: ProjectAssetRecordLike,
+  use8x16SpriteMode = (sprite.document as SpriteAssetDocument).is8x16Mode
 ): { headerPath: string; sourcePath: string; headerContent: string; sourceContent: string } => {
   const document = sprite.document as SpriteAssetDocument
-  const hasMetasprite = hasSpriteMetaspriteLayout(document)
-  const metaspriteLines = hasMetasprite ? buildMetaspriteLines(sprite.identifier, document) : []
+  const hasMetasprite = hasSpriteMetaspriteLayout(document, use8x16SpriteMode)
+  const metaspriteLines = hasMetasprite
+    ? buildMetaspriteLines(sprite.identifier, document, use8x16SpriteMode)
+    : []
   const resourceDirectory = `res/${sprite.identifier}`
   const headerPath = `${resourceDirectory}/${sprite.identifier}.h`
   const sourcePath = `${resourceDirectory}/${sprite.identifier}.c`
@@ -290,7 +304,7 @@ export const buildSpriteResourceFiles = (
     `BANKREF(${sprite.identifier}_bankref)`,
     '',
     `const uint8_t ${sprite.identifier}_sprite_data[] = {`,
-    formatByteArray(buildSpriteFrameBytes(document)),
+    formatByteArray(buildSpriteFrameBytes(document, use8x16SpriteMode)),
     '};',
     ...(metaspriteLines.length > 0 ? ['', ...metaspriteLines] : []),
     ''
@@ -748,7 +762,10 @@ export const buildSongRegistryFiles = (
 
 // builds the animation registry
 export const buildAnimationRegistryFiles = (
-  sprites: ProjectAssetRecordLike[]
+  sprites: ProjectAssetRecordLike[],
+  use8x16SpriteMode = sprites.some(
+    (sprite) => (sprite.document as SpriteAssetDocument).is8x16Mode
+  )
 ): { headerContent: string; sourceContent: string } => {
   const includeLines = sprites.map(
     (sprite) => `#include "${sprite.identifier}/${sprite.identifier}.h"`
@@ -768,6 +785,8 @@ export const buildAnimationRegistryFiles = (
     '#define ANIMATION_REGISTRY_H',
     '#include "Assets/SpaceManager.h"',
     '#include "Animation.h"',
+    '',
+    `#define SPRITES_8X16_ENABLED ${use8x16SpriteMode ? 1 : 0}`,
     '',
     ...includeLines,
     ...(includeLines.length > 0 ? [''] : []),
@@ -810,7 +829,7 @@ export const buildAnimationRegistryFiles = (
   // define the animation_data array with entries for each sprite pointing to its bank and sprite data
   const animationDefinitionLines = sprites.flatMap((sprite) => {
     const document = sprite.document as SpriteAssetDocument
-    const hasMetasprite = hasSpriteMetaspriteLayout(document)
+    const hasMetasprite = hasSpriteMetaspriteLayout(document, use8x16SpriteMode)
     const metaspriteExpression = hasMetasprite
       ? `${sprite.identifier}_metasprite_data`
       : '(void*) 0'

@@ -10,6 +10,7 @@ import { normalizeCodeIdentifierStem } from '../shared/codeIdentifiers'
 import type { BuildProjectCodeResult } from '../shared/projectCodeWorkspace'
 import {
   type SceneAssetDocument,
+  type SpriteAssetDocument,
   type TilemapAssetDocument,
   type WindowAssetDocument,
   getProjectAssetDisplayName,
@@ -17,7 +18,7 @@ import {
   parseProjectAssetDocument
 } from '../shared/projectAssets'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
-import { ensureBundledGbdkAvailableForProject } from './projectEngineBundle'
+import { copyBundledEngineCore, ensureBundledGbdkAvailableForProject } from './projectEngineBundle'
 import {
   CORE_PLACEHOLDER_SCENE_FILE_MARKER,
   IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES,
@@ -354,8 +355,9 @@ const writeManagedTextFile = async (
 }
 
 export const buildProjectCode = async (projectPath: string): Promise<BuildProjectCodeResult> => {
-  // normalize project path and ensure GBDK is available
+  // normalize project path and refresh the bundled engine/toolchain files
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
+  await copyBundledEngineCore(normalizedProjectPath)
   await ensureBundledGbdkAvailableForProject(normalizedProjectPath)
 
   // load all project resources, scripts and tags
@@ -371,6 +373,9 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
 
   // split by kind and build maps for each one
   const spriteAssets = assets.filter((asset) => asset.kind === 'sprite')
+  const use8x16SpriteMode = spriteAssets.some(
+    (asset) => (asset.document as SpriteAssetDocument).is8x16Mode
+  )
   const tilesetAssets = assets.filter((asset) => asset.kind === 'tileset')
   const tilemapAssets = assets.filter((asset) => asset.kind === 'tilemap')
   const windowAssets = assets.filter((asset) => asset.kind === 'window')
@@ -485,7 +490,7 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
 
   // generate sprite resource headers/sources
   for (const sprite of spriteAssets) {
-    const files = buildSpriteResourceFiles(sprite)
+    const files = buildSpriteResourceFiles(sprite, use8x16SpriteMode)
     managedResourceDirectories.add(dirname(files.headerPath).replace(/\\/g, '/'))
     writtenFiles.push(
       await writeManagedTextFile(normalizedProjectPath, files.headerPath, files.headerContent)
@@ -586,7 +591,7 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
   }
 
   // regenerate registries used by runtime lookups
-  const animationRegistryFiles = buildAnimationRegistryFiles(spriteAssets)
+  const animationRegistryFiles = buildAnimationRegistryFiles(spriteAssets, use8x16SpriteMode)
   writtenFiles.push(
     await writeManagedTextFile(
       normalizedProjectPath,

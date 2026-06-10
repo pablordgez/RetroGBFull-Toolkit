@@ -43,6 +43,9 @@ void main(void)
     // END STARTING SCENE INSTANTIATION
     enable_interrupts();
 
+#if SPRITES_8X16_ENABLED
+    LCDC_REG |= 0x04U;
+#endif
     DISPLAY_ON;
     SHOW_BKG;
     SHOW_SPRITES;

@@ -111,6 +111,12 @@ describe('projectCCodeEmitters', () => {
     expect(metasprite.headerContent).toContain('#include <gb/metasprites.h>')
     expect(metasprite.sourceContent).toContain('const metasprite_t BigHero_metasprite_data[]')
     expect(metasprite.sourceContent).toContain('METASPR_TERM')
+
+    const globally8x16 = buildSpriteResourceFiles(asset('sprite', 'GlobalHero', spriteDocument()), true)
+    expect(globally8x16.headerContent).not.toContain('metasprite_t')
+    expect(globally8x16.sourceContent).toContain(
+      '0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00'
+    )
   })
 
   it('builds tileset and map files with embedded or shared tilesets', () => {
@@ -215,6 +221,7 @@ describe('projectCCodeEmitters', () => {
   it('builds animation registries for empty and populated sprites', () => {
     const empty = buildAnimationRegistryFiles([])
     expect(empty.headerContent).toContain('NUMBER_OF_ANIMATIONS = 1')
+    expect(empty.headerContent).toContain('#define SPRITES_8X16_ENABLED 0')
     expect(empty.sourceContent).toContain('{0, (void*) 0}')
 
     const populated = buildAnimationRegistryFiles([
@@ -222,9 +229,17 @@ describe('projectCCodeEmitters', () => {
       asset('sprite', 'BigHero', spriteDocument({ width: 16, height: 8 }))
     ])
     expect(populated.headerContent).toContain('#include "Hero/Hero.h"')
+    expect(populated.headerContent).toContain('#define SPRITES_8X16_ENABLED 0')
     expect(populated.sourceContent).toContain('.metasprite = (void*) 0')
     expect(populated.sourceContent).toContain('.metasprite = BigHero_metasprite_data')
     expect(populated.sourceContent).toContain('[BigHero] = {BANK(BigHero_bankref), BigHero_sprite_data}')
+
+    const globally8x16 = buildAnimationRegistryFiles([
+      asset('sprite', 'TinyHero', spriteDocument()),
+      asset('sprite', 'TallHero', spriteDocument({ height: 16, is8x16Mode: true }))
+    ])
+    expect(globally8x16.headerContent).toContain('#define SPRITES_8X16_ENABLED 1')
+    expect(globally8x16.sourceContent).toContain('.metasprite = (void*) 0')
   })
 
   it('builds map registries and reports missing tilesets', () => {

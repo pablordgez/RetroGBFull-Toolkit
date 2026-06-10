@@ -304,6 +304,13 @@ describe('projectCode integration', () => {
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
     const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
     const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
+    const animationRegistryHeaderPath = join(
+      project.path,
+      'src',
+      'Assets',
+      'Animations',
+      'AnimationRegistry.h'
+    )
     const animationRegistrySourcePath = join(
       project.path,
       'src',
@@ -355,6 +362,13 @@ describe('projectCode integration', () => {
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
     const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
     const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
+    const animationRegistryHeaderPath = join(
+      project.path,
+      'src',
+      'Assets',
+      'Animations',
+      'AnimationRegistry.h'
+    )
     const animationRegistrySourcePath = join(
       project.path,
       'src',
@@ -388,8 +402,10 @@ describe('projectCode integration', () => {
     await buildProjectCode(project.path)
 
     const spriteSource = await readFile(spriteSourcePath, 'utf-8')
+    const animationRegistryHeader = await readFile(animationRegistryHeaderPath, 'utf-8')
     const animationRegistrySource = await readFile(animationRegistrySourcePath, 'utf-8')
 
+    expect(animationRegistryHeader).toContain('#define SPRITES_8X16_ENABLED 1')
     expect(spriteSource).toContain(`const metasprite_t ${spriteIdentifier}_metasprite_data[] = {`)
     expect(spriteSource).toContain('{ .dy=0, .dx=-8, .dtile=4, .props=0 },')
     expect(spriteSource).toContain('{ .dy=0, .dx=8, .dtile=6, .props=0 },')
@@ -405,6 +421,13 @@ describe('projectCode integration', () => {
     const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
     const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
     const spriteHeaderPath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.h`)
+    const animationRegistryHeaderPath = join(
+      project.path,
+      'src',
+      'Assets',
+      'Animations',
+      'AnimationRegistry.h'
+    )
     const animationRegistrySourcePath = join(
       project.path,
       'src',
@@ -432,10 +455,12 @@ describe('projectCode integration', () => {
 
     const spriteSource = await readFile(spriteSourcePath, 'utf-8')
     const spriteHeader = await readFile(spriteHeaderPath, 'utf-8')
+    const animationRegistryHeader = await readFile(animationRegistryHeaderPath, 'utf-8')
     const animationRegistrySource = await readFile(animationRegistrySourcePath, 'utf-8')
 
     expect(spriteHeader).not.toContain('metasprite_data')
     expect(spriteSource).not.toContain('_metasprite_data')
+    expect(animationRegistryHeader).toContain('#define SPRITES_8X16_ENABLED 1')
     expect(animationRegistrySource).toContain('.metasprite = (void*) 0')
   })
 
@@ -1045,6 +1070,22 @@ describe('projectCode integration', () => {
     expect(refreshedMainSource).toContain('#include "GameManager/GameManager.h"')
     expect(refreshedMainSource).toContain('init_actor_functions();')
     expect(refreshedMainSource).not.toContain('local override that should be replaced')
+  })
+
+  it('refreshes existing core files during project builds', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const animationSourcePath = join(project.path, 'src', 'Assets', 'Animations', 'Animation.c')
+
+    await writeFile(animationSourcePath, '// stale engine core file\n', 'utf-8')
+
+    await buildProjectCode(project.path)
+
+    const refreshedAnimationSource = await readFile(animationSourcePath, 'utf-8')
+    expect(refreshedAnimationSource).toContain('void init_animation_system(void) BANKED')
+    expect(refreshedAnimationSource).not.toContain('stale engine core file')
   })
 
   it('emits non-default banks into generated resources and managed script preambles', async () => {
