@@ -5,13 +5,45 @@ export default defineConfig(mergeConfig(sharedConfig, {
   test: {
     // Only include integration tests
     include: ['tests/integration/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    testTimeout: 20000,
     coverage: {
       reportsDirectory: 'coverage/integration',
-      // Define files to calculate coverage for (Integration)
-      // You can adjust this to 'src/main/**/*.{ts,tsx}' or specific files
-      include: ['src/**/*.{ts,tsx}'], 
+      include: [
+        'src/main/projectAssetReferences.ts',
+        'src/main/projectAssetFiles.ts',
+        'src/main/projectBuildCode.ts',
+        'src/main/projectCode.ts',
+        'src/main/projectCodeFiles.ts',
+        'src/main/projectCodeIntelligence.ts',
+        'src/main/projectCodeScripts.ts',
+        'src/main/projectCodeShared.ts',
+        'src/main/projectCompile.ts',
+        'src/main/projectEngineBundle.ts',
+        'src/main/projectFileExplorer.ts',
+        'src/main/projectLauncher.ts',
+        'src/main/projectMetadata.ts',
+        'src/main/projectResourceDeletedStore.ts',
+        'src/main/projectResourceDiscovery.ts',
+        'src/main/projectResourceRepository.ts',
+        'src/main/projectResources.ts',
+        'src/main/projectResourceTypeStrategies.ts',
+        'src/renderer/src/components/Docking/ResourceManagementPane.tsx',
+        'src/renderer/src/components/ProjectLauncher/ProjectLauncher.tsx',
+        'src/renderer/src/components/ProjectWorkspace/ProjectWorkspace.tsx',
+        'src/renderer/src/components/SceneHierarchy/SceneViewport.tsx',
+        'src/renderer/src/components/SpriteEditor/SpriteEditor.tsx',
+        'src/renderer/src/components/TilemapEditor/TileGridAssetEditor.tsx',
+        'src/renderer/src/components/TilemapEditor/TilemapEditor.tsx',
+        'src/renderer/src/components/Tileset/TilesetEditor.tsx'
+      ],
       // @ts-expect-error - ignore
       all: true,
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        statements: 80,
+        branches: 80
+      }
     },
   },
 }));

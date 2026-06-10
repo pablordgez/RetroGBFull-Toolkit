@@ -1,10 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { ProjectAssetDocument, ProjectAssetKind } from '../shared/projectAssets'
+import type { GbdkInstallResult, GbdkToolchainStatus } from '../shared/projectGbdk'
+import type { MakeInstallResult, MakeToolchainStatus } from '../shared/projectMake'
 import type { ProjectSaveDataState } from '../shared/projectSaveData'
+import type { ProjectTagState } from '../shared/projectTags'
+import type { RuntimePlatform } from '../shared/runtimePlatform'
 import type {
+  BuildAndCompileProjectResult,
   BuildProjectCodeResult,
   CopyEngineCoreResult,
+  ProjectBuildProgressPayload,
   ProjectCodeSymbolIndex,
   ProjectCodeWorkspaceSnapshot,
   ProjectScriptCallbackCandidate,
@@ -35,6 +41,10 @@ interface ProjectActionResponse {
   project?: RecentProject
 }
 
+interface AppPreferences {
+  scriptEditorTheme: 'light' | 'dark'
+}
+
 interface ProjectAssetFilePayload {
   assetKind: ProjectAssetKind
   resourcePath: string
@@ -53,10 +63,16 @@ interface ProjectScriptSavedEventPayload {
   scriptKind: ProjectScriptKind
 }
 
+interface ProjectTagsSavedEventPayload {
+  projectPath: string
+}
+
 // Custom APIs for renderer
 const api = {
   openProjectSaveDataEditor: (projectPath: string) =>
     ipcRenderer.invoke('project:save-data:open-editor', projectPath) as Promise<boolean>,
+  openProjectTagEditor: (projectPath: string) =>
+    ipcRenderer.invoke('project:tags:open-editor', projectPath) as Promise<boolean>,
   openProjectAssetEditor: (assetType: ProjectAssetKind, projectPath: string, assetPath: string) =>
     ipcRenderer.invoke('project:assets:open-editor', assetType, projectPath, assetPath) as Promise<boolean>,
   openProjectScriptEditor: (
@@ -79,7 +95,23 @@ const api = {
   closeCurrentProject: () => ipcRenderer.invoke('project:close-current') as Promise<boolean>,
   openProjectInFileExplorer: (projectPath: string) =>
     ipcRenderer.invoke('project:open-in-file-explorer', projectPath) as Promise<boolean>,
+  showProjectResourceInFileExplorer: (projectPath: string, resourcePath: string) =>
+    ipcRenderer.invoke(
+      'project:resources:show-in-file-explorer',
+      projectPath,
+      resourcePath
+    ) as Promise<boolean>,
   getRecentProjects: () => ipcRenderer.invoke('project:list-recent') as Promise<RecentProject[]>,
+  getAppPreferences: () => ipcRenderer.invoke('app:preferences:get') as Promise<AppPreferences>,
+  saveAppPreferences: (preferences: Partial<AppPreferences>) =>
+    ipcRenderer.invoke('app:preferences:save', preferences) as Promise<AppPreferences>,
+  getRuntimePlatform: () => ipcRenderer.invoke('app:runtime-platform') as Promise<RuntimePlatform>,
+  getGbdkToolchainStatus: () => ipcRenderer.invoke('gbdk:status') as Promise<GbdkToolchainStatus>,
+  installLatestGbdkToolchain: () =>
+    ipcRenderer.invoke('gbdk:install-latest') as Promise<GbdkInstallResult>,
+  getMakeToolchainStatus: () => ipcRenderer.invoke('make:status') as Promise<MakeToolchainStatus>,
+  installLatestMakeToolchain: () =>
+    ipcRenderer.invoke('make:install-latest') as Promise<MakeInstallResult>,
   loadProjectSaveData: (projectPath: string) =>
     ipcRenderer.invoke('project:save-data:load', projectPath) as Promise<ProjectSaveDataState>,
   saveProjectSaveData: (projectPath: string, saveDataState: ProjectSaveDataState) =>
@@ -88,6 +120,10 @@ const api = {
       projectPath,
       saveDataState
     ) as Promise<ProjectSaveDataState>,
+  loadProjectTags: (projectPath: string) =>
+    ipcRenderer.invoke('project:tags:load', projectPath) as Promise<ProjectTagState>,
+  saveProjectTags: (projectPath: string, tagState: ProjectTagState) =>
+    ipcRenderer.invoke('project:tags:save', projectPath, tagState) as Promise<ProjectTagState>,
   loadProjectAssetFile: (projectPath: string, assetPath: string) =>
     ipcRenderer.invoke('project:assets:load', projectPath, assetPath) as Promise<ProjectAssetFilePayload>,
   saveProjectAssetFile: (projectPath: string, assetPath: string, document: ProjectAssetDocument) =>
@@ -222,8 +258,12 @@ const api = {
     ipcRenderer.invoke('project:code:copy-engine-core', projectPath) as Promise<CopyEngineCoreResult>,
   readMaxCollisionCallbacks: (projectPath: string) =>
     ipcRenderer.invoke('project:code:read-max-collision-callbacks', projectPath) as Promise<number>,
+  readMaxTagSlots: (projectPath: string) =>
+    ipcRenderer.invoke('project:code:read-max-tag-slots', projectPath) as Promise<number>,
   buildProjectCode: (projectPath: string) =>
     ipcRenderer.invoke('project:code:build', projectPath) as Promise<BuildProjectCodeResult>,
+  buildAndCompileProject: (projectPath: string) =>
+    ipcRenderer.invoke('project:code:build-and-compile', projectPath) as Promise<BuildAndCompileProjectResult>,
   getProjectCodeSymbolIndex: (projectPath: string) =>
     ipcRenderer.invoke('project:code:symbol-index', projectPath) as Promise<ProjectCodeSymbolIndex>,
   getProjectCodeWorkspaceSnapshot: (projectPath: string) =>
@@ -278,6 +318,26 @@ const api = {
     ): void => listener(payload)
     ipcRenderer.on('project:script-saved', wrappedListener)
     return () => ipcRenderer.removeListener('project:script-saved', wrappedListener)
+  },
+  onProjectTagsSaved: (
+    listener: (payload: ProjectTagsSavedEventPayload) => void
+  ): (() => void) => {
+    const wrappedListener = (
+      _event: Electron.IpcRendererEvent,
+      payload: ProjectTagsSavedEventPayload
+    ): void => listener(payload)
+    ipcRenderer.on('project:tags-saved', wrappedListener)
+    return () => ipcRenderer.removeListener('project:tags-saved', wrappedListener)
+  },
+  onProjectBuildProgress: (
+    listener: (payload: ProjectBuildProgressPayload) => void
+  ): (() => void) => {
+    const wrappedListener = (
+      _event: Electron.IpcRendererEvent,
+      payload: ProjectBuildProgressPayload
+    ): void => listener(payload)
+    ipcRenderer.on('project:build-progress', wrappedListener)
+    return () => ipcRenderer.removeListener('project:build-progress', wrappedListener)
   },
   confirmEditorClose: () => ipcRenderer.invoke('editor:confirm-close') as Promise<boolean>
 }

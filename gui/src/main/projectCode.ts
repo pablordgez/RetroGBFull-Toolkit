@@ -1,4 +1,5 @@
 export { buildProjectCode } from './projectBuildCode'
+export { buildAndCompileProject, compileProject } from './projectCompile'
 export { copyBundledEngineCore } from './projectEngineBundle'
 export type { ProjectScriptRecordLike } from './projectCodeScripts'
 export {
@@ -7,6 +8,7 @@ export {
   loadProjectScriptResource,
   moveProjectScriptFilesToDeletedContainer,
   readMaxCollisionCallbacks,
+  readMaxTagSlots,
   renameProjectScriptFiles,
   restoreProjectScriptFilesFromDeletedContainer,
   saveProjectScriptResource,

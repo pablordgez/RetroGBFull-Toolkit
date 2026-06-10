@@ -5,57 +5,25 @@ import {
   dialog,
   ipcMain,
   IpcMainInvokeEvent,
-  net,
-  protocol,
   session
 } from 'electron'
-import { basename, join, normalize, resolve } from 'path'
-import { pathToFileURL } from 'url'
+import { createReadStream } from 'fs'
+import { mkdir, readFile, stat, writeFile } from 'fs/promises'
+import { createServer, type Server, type ServerResponse } from 'http'
+import type { AddressInfo } from 'net'
+import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import {
-  createProjectStructure,
   getProjectLauncherErrorMessage,
-  listRecentProjects,
-  rememberRecentProject,
-  validateProjectDirectory
+  rememberRecentProject
 } from './projectLauncher'
-import {
-  clearDeletedProjectResources,
-  createProjectFolder,
-  createProjectResource,
-  deleteProjectFolder,
-  deleteProjectResource,
-  finalizeDeletedProjectResource,
-  getProjectResourceErrorMessage,
-  listProjectScriptResources,
-  listProjectResources,
-  createProjectScriptResource,
-  renameProjectFolder,
-  renameProjectResource,
-  scanProjectDirectory,
-  restoreDeletedProjectResource,
-  transferProjectResource,
-  updateProjectResourceBank,
-  updateProjectStartingScene
-} from './projectResources'
-import { ensureProjectAssetFileAvailable, loadProjectAssetFile, saveProjectAssetFile } from './projectAssetFiles'
-import {
-  loadProjectSaveDataState,
-  saveProjectSaveDataState
-} from './projectMetadata'
-import { PROJECT_ASSET_LABELS, ProjectAssetKind } from '../shared/projectAssets'
-import {
-  buildProjectCode,
-  copyBundledEngineCore,
-  listProjectScriptCallbackCandidates,
-  loadProjectScriptResource,
-  readMaxCollisionCallbacks,
-  saveProjectScriptResource
-} from './projectCode'
-import { getProjectCodeWorkspaceSnapshot } from './projectCodeLanguageService'
-import { getProjectCodeSymbolIndex } from './projectCodeIntelligence'
-import { PROJECT_SCRIPT_LABELS, ProjectScriptKind, getProjectScriptDisplayName } from '../shared/projectScripts'
+import { clearDeletedProjectResources } from './projectResources'
+import { registerCodeIpcHandlers } from './ipcCodeHandlers'
+import { registerEditorIpcHandlers } from './ipcEditorHandlers'
+import { registerProjectIpcHandlers } from './ipcProjectHandlers'
+import { registerResourceIpcHandlers } from './ipcResourceHandlers'
+import { registerToolchainIpcHandlers } from './ipcToolchainHandlers'
 
 interface ProjectActionResponse {
   ok: boolean
@@ -77,83 +45,157 @@ interface AppWindowOptions {
   title?: string
 }
 
-interface ProjectAssetSavedEventPayload {
-  projectPath: string
-  assetPath: string
-  assetKind: ProjectAssetKind
+type ScriptEditorTheme = 'light' | 'dark'
+
+interface AppPreferences {
+  scriptEditorTheme: ScriptEditorTheme
 }
 
-interface ProjectScriptSavedEventPayload {
-  projectPath: string
-  resourcePath: string
-  scriptKind: ProjectScriptKind
+const APP_DISPLAY_NAME = 'RetroGBFull-Toolkit'
+const APP_USER_DATA_DIRECTORY = 'retrogbfull-toolkit'
+const DEFAULT_APP_PREFERENCES: AppPreferences = {
+  scriptEditorTheme: 'light'
 }
-
-const ELECTRON_APP_SCHEME = 'app'
 const CROSS_ORIGIN_RESPONSE_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp'
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Origin-Agent-Cluster': '?1'
 }
 const CROSS_ORIGIN_WEB_REQUEST_HEADERS = {
   'Cross-Origin-Opener-Policy': ['same-origin'],
-  'Cross-Origin-Embedder-Policy': ['require-corp']
+  'Cross-Origin-Embedder-Policy': ['require-corp'],
+  'Cross-Origin-Resource-Policy': ['same-origin'],
+  'Origin-Agent-Cluster': ['?1']
 }
+const RENDERER_CONTENT_TYPES: Record<string, string> = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml; charset=utf-8',
+  '.ttf': 'font/ttf',
+  '.wasm': 'application/wasm',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2'
+}
+const shouldDisableChromiumSandbox =
+  process.platform === 'linux' &&
+  !is.dev &&
+  process.env['RETROGBFULL_ENABLE_CHROMIUM_SANDBOX'] !== '1'
 
 const editorWindowsWaitingForCloseConfirmation = new Set<number>()
 const projectWindowPaths = new Map<number, string>()
 const projectWindowsWaitingForCleanup = new Set<number>()
 const projectWindowsReadyToClose = new Set<number>()
+let packagedRendererServer: Server | null = null
+let packagedRendererServerOrigin: string | null = null
 let isQuittingAfterCleanup = false
 let hasHandledBeforeQuitCleanup = false
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: ELECTRON_APP_SCHEME,
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      corsEnabled: true
-    }
-  }
-])
+if (shouldDisableChromiumSandbox) {
+  app.commandLine.appendSwitch('no-sandbox')
+}
+
+app.setName(APP_DISPLAY_NAME)
+app.setPath('userData', join(app.getPath('appData'), APP_USER_DATA_DIRECTORY))
 
 const getPackagedRendererRoot = (): string => {
   return resolve(__dirname, '../renderer')
 }
 
 const buildRendererWindowUrl = (hash = ''): string => {
+  if (!packagedRendererServerOrigin) {
+    throw new Error('Packaged renderer server has not started.')
+  }
+
   const normalizedHash = hash.startsWith('/') ? hash : `/${hash}`
-  return `${ELECTRON_APP_SCHEME}://renderer/index.html#${normalizedHash}`
+  return `${packagedRendererServerOrigin}/index.html#${normalizedHash}`
 }
 
-const registerRendererProtocol = (): void => {
-  protocol.handle(ELECTRON_APP_SCHEME, async (request) => {
-    const requestUrl = new URL(request.url)
-    const rendererRoot = getPackagedRendererRoot()
-    const relativePath =
-      requestUrl.hostname === 'renderer' && requestUrl.pathname !== '/'
-        ? requestUrl.pathname
-        : '/index.html'
-    const normalizedPath = normalize(decodeURIComponent(relativePath)).replace(/^([\\/])+/, '')
-    const absolutePath = resolve(rendererRoot, normalizedPath)
+const resolvePackagedRendererFilePath = (pathname: string): string | null => {
+  let decodedPath: string
 
-    if (!absolutePath.startsWith(rendererRoot)) {
-      return new Response('Not found', {
-        status: 404,
-        headers: CROSS_ORIGIN_RESPONSE_HEADERS
-      })
+  try {
+    decodedPath = decodeURIComponent(pathname === '/' ? '/index.html' : pathname)
+  } catch {
+    return null
+  }
+
+  const rendererRoot = getPackagedRendererRoot()
+  const normalizedPath = normalize(decodedPath).replace(/^([\\/])+/, '')
+  const absolutePath = resolve(rendererRoot, normalizedPath)
+  const relativePath = relative(rendererRoot, absolutePath)
+
+  if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    return null
+  }
+
+  return absolutePath
+}
+
+const sendPackagedRendererFile = async (
+  response: ServerResponse,
+  filePath: string | null
+): Promise<void> => {
+  if (!filePath) {
+    response.writeHead(404, CROSS_ORIGIN_RESPONSE_HEADERS)
+    response.end('Not found')
+    return
+  }
+
+  try {
+    const fileStats = await stat(filePath)
+
+    if (!fileStats.isFile()) {
+      throw new Error('Renderer asset path is not a file.')
     }
 
-    const fileResponse = await net.fetch(pathToFileURL(absolutePath).toString())
+    response.writeHead(200, {
+      ...CROSS_ORIGIN_RESPONSE_HEADERS,
+      'Content-Length': fileStats.size,
+      'Content-Type': RENDERER_CONTENT_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+    })
 
-    return new Response(fileResponse.body, {
-      status: fileResponse.status,
-      statusText: fileResponse.statusText,
-      headers: {
-        ...Object.fromEntries(fileResponse.headers.entries()),
-        ...CROSS_ORIGIN_RESPONSE_HEADERS
-      }
+    createReadStream(filePath)
+      .on('error', () => {
+        if (!response.headersSent) {
+          response.writeHead(500, CROSS_ORIGIN_RESPONSE_HEADERS)
+        }
+
+        response.end('Failed to read renderer asset.')
+      })
+      .pipe(response)
+  } catch {
+    response.writeHead(404, CROSS_ORIGIN_RESPONSE_HEADERS)
+    response.end('Not found')
+  }
+}
+
+const startPackagedRendererServer = async (): Promise<void> => {
+  if (packagedRendererServerOrigin) {
+    return
+  }
+
+  const server = createServer((request, response) => {
+    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1')
+    void sendPackagedRendererFile(response, resolvePackagedRendererFilePath(requestUrl.pathname))
+  })
+
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const handleError = (error: Error): void => {
+      rejectPromise(error)
+    }
+
+    server.once('error', handleError)
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', handleError)
+      const address = server.address() as AddressInfo
+      packagedRendererServerOrigin = `http://127.0.0.1:${address.port}`
+      packagedRendererServer = server
+      resolvePromise()
     })
   })
 }
@@ -166,6 +208,22 @@ const enableCrossOriginIsolationHeaders = (): void => {
         ...CROSS_ORIGIN_WEB_REQUEST_HEADERS
       }
     })
+  })
+}
+
+const enableDevToolsShortcuts = (window: BrowserWindow): void => {
+  window.webContents.on('before-input-event', (event, input) => {
+    const isToggleDevToolsShortcut =
+      input.type === 'keyDown' &&
+      (input.key === 'F12' ||
+        ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i'))
+
+    if (!isToggleDevToolsShortcut) {
+      return
+    }
+
+    event.preventDefault()
+    window.webContents.toggleDevTools()
   })
 }
 
@@ -226,6 +284,50 @@ const getRecentProjectsStorePath = (): string => {
   return join(app.getPath('userData'), 'recent-projects.json')
 }
 
+const getAppPreferencesStorePath = (): string => {
+  return join(app.getPath('userData'), 'app-preferences.json')
+}
+
+const isScriptEditorTheme = (value: unknown): value is ScriptEditorTheme => {
+  return value === 'light' || value === 'dark'
+}
+
+const readAppPreferences = async (): Promise<AppPreferences> => {
+  try {
+    const rawContent = await readFile(getAppPreferencesStorePath(), 'utf-8')
+    const parsedPreferences = JSON.parse(rawContent) as Partial<AppPreferences>
+
+    return {
+      scriptEditorTheme: isScriptEditorTheme(parsedPreferences.scriptEditorTheme)
+        ? parsedPreferences.scriptEditorTheme
+        : DEFAULT_APP_PREFERENCES.scriptEditorTheme
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[app-preferences] failed to read preferences, using defaults', error)
+    }
+
+    return DEFAULT_APP_PREFERENCES
+  }
+}
+
+const saveAppPreferences = async (
+  preferences: Partial<AppPreferences>
+): Promise<AppPreferences> => {
+  const currentPreferences = await readAppPreferences()
+  const nextPreferences: AppPreferences = {
+    ...currentPreferences,
+    scriptEditorTheme: isScriptEditorTheme(preferences.scriptEditorTheme)
+      ? preferences.scriptEditorTheme
+      : currentPreferences.scriptEditorTheme
+  }
+  const storePath = getAppPreferencesStorePath()
+
+  await mkdir(dirname(storePath), { recursive: true })
+  await writeFile(storePath, `${JSON.stringify(nextPreferences, null, 2)}\n`, 'utf-8')
+  return nextPreferences
+}
+
 const buildProjectActionErrorResponse = (
   action: ProjectActionKind,
   error: unknown
@@ -257,7 +359,7 @@ const createAppWindow = (hash: string, options?: AppWindowOptions): BrowserWindo
     height: options?.height ?? 1000,
     show: false,
     autoHideMenuBar: true,
-    title: options?.title,
+    title: options?.title ?? APP_DISPLAY_NAME,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -314,7 +416,7 @@ const createProjectEditorWindow = (
     width: 1440,
     height: 900,
     showWhenReady: false,
-    title: `${project.name} - RetroGBFull Toolkit`
+    title: `${project.name} - ${APP_DISPLAY_NAME}`
   })
 
   registerProjectWindow(projectWindow, project.path)
@@ -343,7 +445,7 @@ const closeCurrentProject = async (event: IpcMainInvokeEvent): Promise<boolean> 
   const launcherWindow = createAppWindow('/', {
     width: 1080,
     height: 760,
-    title: 'RetroGBFull Toolkit',
+    title: APP_DISPLAY_NAME,
     showWhenReady: false
   })
 
@@ -380,6 +482,7 @@ function createWindow(): void {
     height: 760,
     show: false,
     autoHideMenuBar: true,
+    title: APP_DISPLAY_NAME,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -405,24 +508,75 @@ function createWindow(): void {
   }
 }
 
+const confirmEditorClose = async (event: IpcMainInvokeEvent): Promise<boolean> => {
+  const editorWindow = getSenderWindow(event)
+
+  if (!editorWindow) {
+    return false
+  }
+
+  editorWindowsWaitingForCloseConfirmation.add(editorWindow.webContents.id)
+  editorWindow.close()
+  return true
+}
+
+const registerIpcHandlers = (): void => {
+  ipcMain.handle('app:preferences:get', async () => {
+    return readAppPreferences()
+  })
+
+  ipcMain.handle('app:preferences:save', async (_, preferences: Partial<AppPreferences>) => {
+    return saveAppPreferences(preferences)
+  })
+
+  registerProjectIpcHandlers({
+    getRecentProjectsStorePath,
+    showProjectDialog,
+    openProject,
+    closeCurrentProject,
+    getSenderWindow,
+    buildProjectActionErrorResponse
+  })
+
+  registerEditorIpcHandlers({
+    createChildWindow,
+    confirmEditorClose
+  })
+
+  registerCodeIpcHandlers()
+  registerResourceIpcHandlers()
+  registerToolchainIpcHandlers()
+}
+
+registerIpcHandlers()
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (!is.dev && !process.env['RETROGBFULL_RUNTIME_GBDK_PATH']) {
+    process.env['RETROGBFULL_RUNTIME_GBDK_PATH'] = join(app.getPath('userData'), 'gbdk')
+  }
+
+  if (!is.dev && !process.env['RETROGBFULL_RUNTIME_MAKE_PATH']) {
+    process.env['RETROGBFULL_RUNTIME_MAKE_PATH'] = join(app.getPath('userData'), 'make')
+  }
+
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.retrogbfull.toolkit')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
   // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+    enableDevToolsShortcuts(window)
   })
 
   enableCrossOriginIsolationHeaders()
 
   if (!is.dev) {
-    registerRendererProtocol()
+    await startPackagedRendererServer()
   }
 
   createWindow()
@@ -445,6 +599,7 @@ app.on('before-quit', (event) => {
   void clearDeletedResourcesForOpenProjects()
     .finally(() => {
       isQuittingAfterCleanup = true
+      packagedRendererServer?.close()
       app.quit()
     })
 })
@@ -459,451 +614,4 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
-ipcMain.handle('project:list-recent', async () => {
-  return listRecentProjects(getRecentProjectsStorePath())
-})
-
-ipcMain.handle('project:pick-create-location', async () => {
-  const dialogOptions = {
-    title: 'Choose Where To Create A Project',
-    buttonLabel: 'Use Folder',
-    properties: ['openDirectory' as const]
-  }
-  const result = await showProjectDialog(dialogOptions)
-
-  if (result.canceled || result.filePaths.length === 0) {
-    return null
-  }
-
-  return result.filePaths[0]
-})
-
-ipcMain.handle('project:create', async (event, parentDirectory: string, projectName: string) => {
-  try {
-    const project = await createProjectStructure(parentDirectory, projectName)
-    return openProject(project.path, getSenderWindow(event))
-  } catch (error) {
-    return buildProjectActionErrorResponse('create', error)
-  }
-})
-
-ipcMain.handle('project:open-dialog', async (event) => {
-  try {
-    const dialogOptions = {
-      title: 'Open Project Folder',
-      buttonLabel: 'Open Project',
-      properties: ['openDirectory' as const]
-    }
-    const result = await showProjectDialog(dialogOptions)
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return {
-        ok: false,
-        canceled: true,
-        message: 'Project selection was canceled.'
-      } satisfies ProjectActionResponse
-    }
-
-    const selectedPath = result.filePaths[0]
-    const validation = await validateProjectDirectory(selectedPath)
-
-    if (!validation.isValid) {
-      return {
-        ok: false,
-        canceled: false,
-        message: validation.message ?? 'The selected folder is not a valid project.'
-      } satisfies ProjectActionResponse
-    }
-
-    return openProject(validation.path, getSenderWindow(event))
-  } catch (error) {
-    return buildProjectActionErrorResponse('open', error)
-  }
-})
-
-ipcMain.handle('project:open-recent', async (event, projectPath: string) => {
-  try {
-    return await openProject(projectPath, getSenderWindow(event))
-  } catch (error) {
-    return buildProjectActionErrorResponse('open', error)
-  }
-})
-
-ipcMain.handle('project:close-current', async (event) => {
-  return closeCurrentProject(event)
-})
-
-ipcMain.handle('project:open-in-file-explorer', async (_, projectPath: string) => {
-  const validation = await validateProjectDirectory(projectPath)
-
-  if (!validation.isValid) {
-    throw new Error(validation.message ?? 'The selected project could not be loaded.')
-  }
-
-  const openResult = await shell.openPath(validation.path)
-
-  if (openResult) {
-    throw new Error(openResult)
-  }
-
-  return true
-})
-
-ipcMain.handle('project:assets:open-editor', async (_, assetType: ProjectAssetKind, projectPath: string, assetPath: string) => {
-  await ensureProjectAssetFileAvailable(projectPath, assetPath)
-
-  const searchParams = new URLSearchParams({
-    projectPath,
-    assetPath
-  })
-
-  createChildWindow(`/${assetType}-editor?${searchParams.toString()}`, {
-    width: 1440,
-    height: 900,
-    title: `${PROJECT_ASSET_LABELS[assetType]} Editor`,
-    interceptClose: true
-  })
-
-  return true
-})
-
-ipcMain.handle(
-  'project:scripts:open-editor',
-  async (_, projectPath: string, resourcePath: string, scriptKind: ProjectScriptKind) => {
-    const scriptName = getProjectScriptDisplayName(basename(resourcePath))
-    const searchParams = new URLSearchParams({
-      projectPath,
-      resourcePath,
-      scriptKind
-    })
-
-    createChildWindow(`/script-editor?${searchParams.toString()}`, {
-      width: 1440,
-      height: 900,
-      title: `${PROJECT_SCRIPT_LABELS[scriptKind]} - ${scriptName}`,
-      interceptClose: true
-    })
-
-    return true
-  }
-)
-
-ipcMain.handle('project:save-data:open-editor', async (_, projectPath: string) => {
-  const searchParams = new URLSearchParams({
-    projectPath
-  })
-
-  createChildWindow(`/save-data-editor?${searchParams.toString()}`, {
-    width: 1200,
-    height: 860,
-    title: 'Save Data Editor',
-    interceptClose: true
-  })
-
-  return true
-})
-
-ipcMain.handle('project:assets:load', async (_, projectPath: string, assetPath: string) => {
-  return loadProjectAssetFile(projectPath, assetPath)
-})
-
-ipcMain.handle('project:assets:save', async (_, projectPath: string, assetPath: string, document) => {
-  const payload = await saveProjectAssetFile(projectPath, assetPath, document)
-
-  BrowserWindow.getAllWindows().forEach((window) => {
-    if (!window.isDestroyed()) {
-      window.webContents.send('project:asset-saved', {
-        projectPath,
-        assetPath,
-        assetKind: payload.assetKind
-      } satisfies ProjectAssetSavedEventPayload)
-    }
-  })
-
-  return payload
-})
-
-ipcMain.handle(
-  'project:save-data:load',
-  async (_, projectPath: string) => {
-    return loadProjectSaveDataState(projectPath)
-  }
-)
-
-ipcMain.handle(
-  'project:save-data:save',
-  async (_, projectPath: string, saveDataState) => {
-    return saveProjectSaveDataState(projectPath, saveDataState)
-  }
-)
-
-ipcMain.handle(
-  'project:scripts:create',
-  async (_, projectPath: string, scriptKind: ProjectScriptKind, resourceName?: string) => {
-    try {
-      return await createProjectScriptResource(projectPath, scriptKind, resourceName)
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'create'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:scripts:load',
-  async (_, projectPath: string, resourcePath: string, scriptKind: ProjectScriptKind) => {
-    return loadProjectScriptResource(projectPath, resourcePath, scriptKind)
-  }
-)
-
-ipcMain.handle(
-  'project:scripts:save',
-  async (
-    _,
-    projectPath: string,
-    resourcePath: string,
-    scriptKind: ProjectScriptKind,
-    editableSourceContent: string,
-    headerContent: string
-  ) => {
-    const payload = await saveProjectScriptResource(
-      projectPath,
-      resourcePath,
-      scriptKind,
-      editableSourceContent,
-      headerContent
-    )
-
-    BrowserWindow.getAllWindows().forEach((window) => {
-      if (!window.isDestroyed()) {
-        window.webContents.send('project:script-saved', {
-          projectPath,
-          resourcePath,
-          scriptKind
-        } satisfies ProjectScriptSavedEventPayload)
-      }
-    })
-
-    return payload
-  }
-)
-
-ipcMain.handle(
-  'project:scripts:list',
-  async (_, projectPath: string, scriptKind?: ProjectScriptKind) => {
-    const scripts = await listProjectScriptResources(projectPath, scriptKind)
-    return scripts.map((script) => ({
-      path: script.path,
-      name: script.name,
-      scriptKind: script.scriptKind
-    }))
-  }
-)
-
-ipcMain.handle(
-  'project:scripts:list-callback-candidates',
-  async (_, projectPath: string, scriptKind?: ProjectScriptKind) => {
-    const scripts = await listProjectScriptResources(projectPath, scriptKind)
-    return listProjectScriptCallbackCandidates(projectPath, scripts)
-  }
-)
-
-ipcMain.handle('project:code:copy-engine-core', async (_, projectPath: string) => {
-  return copyBundledEngineCore(projectPath)
-})
-
-ipcMain.handle('project:code:read-max-collision-callbacks', async (_, projectPath: string) => {
-  return readMaxCollisionCallbacks(projectPath)
-})
-
-ipcMain.handle('project:code:build', async (_, projectPath: string) => {
-  return buildProjectCode(projectPath)
-})
-
-ipcMain.handle('project:code:symbol-index', async (_, projectPath: string) => {
-  return getProjectCodeSymbolIndex(projectPath)
-})
-
-ipcMain.handle('project:code:workspace-snapshot', async (_, projectPath: string) => {
-  return getProjectCodeWorkspaceSnapshot(projectPath)
-})
-
-ipcMain.handle('editor:confirm-close', async (event) => {
-  const editorWindow = getSenderWindow(event)
-
-  if (!editorWindow) {
-    return false
-  }
-
-  editorWindowsWaitingForCloseConfirmation.add(editorWindow.webContents.id)
-  editorWindow.close()
-  return true
-})
-
-ipcMain.handle('project:resources:list', async (_, projectPath: string, currentPath?: string) => {
-  try {
-    return await listProjectResources(projectPath, currentPath)
-  } catch (error) {
-    throw new Error(getProjectResourceErrorMessage(error, 'load'))
-  }
-})
-
-ipcMain.handle('project:resources:create-folder', async (_, projectPath: string, parentPath?: string) => {
-  try {
-    return await createProjectFolder(projectPath, parentPath)
-  } catch (error) {
-    throw new Error(getProjectResourceErrorMessage(error, 'create'))
-  }
-})
-
-ipcMain.handle(
-  'project:resources:create',
-  async (_, projectPath: string, resourceType: string, parentPath?: string, resourceName?: string) => {
-    try {
-      return await createProjectResource(
-        projectPath,
-        resourceType as Parameters<typeof createProjectResource>[1],
-        parentPath,
-        resourceName
-      )
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'create'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:rename-folder',
-  async (_, projectPath: string, folderPath: string, nextName: string) => {
-    try {
-      return await renameProjectFolder(projectPath, folderPath, nextName)
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'rename'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:rename',
-  async (_, projectPath: string, resourceType: string, resourcePath: string, nextName: string) => {
-    try {
-      return await renameProjectResource(
-        projectPath,
-        resourceType as Parameters<typeof renameProjectResource>[1],
-        resourcePath,
-        nextName
-      )
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'rename'))
-    }
-  }
-)
-
-ipcMain.handle('project:resources:delete-folder', async (_, projectPath: string, folderPath: string) => {
-  try {
-    return await deleteProjectFolder(projectPath, folderPath)
-  } catch (error) {
-    throw new Error(getProjectResourceErrorMessage(error, 'delete'))
-  }
-})
-
-ipcMain.handle(
-  'project:resources:delete',
-  async (_, projectPath: string, resourceType: string, resourcePath: string, deletionId?: string) => {
-    try {
-      return await deleteProjectResource(
-        projectPath,
-        resourceType as Parameters<typeof deleteProjectResource>[1],
-        resourcePath,
-        deletionId
-      )
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'delete'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:transfer',
-  async (
-    _,
-    projectPath: string,
-    resourceType: string,
-    resourcePath: string,
-    destinationParentPath?: string,
-    mode?: string
-  ) => {
-    try {
-      return await transferProjectResource(
-        projectPath,
-        resourceType as Parameters<typeof transferProjectResource>[1],
-        resourcePath,
-        destinationParentPath,
-        mode as Parameters<typeof transferProjectResource>[4]
-      )
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'paste'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:update-bank',
-  async (_, projectPath: string, resourceType: string, resourcePath: string, bank: number) => {
-    try {
-      return await updateProjectResourceBank(
-        projectPath,
-        resourceType as Parameters<typeof updateProjectResourceBank>[1],
-        resourcePath,
-        bank
-      )
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'bank'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:update-starting-scene',
-  async (_, projectPath: string, scenePath: string | null) => {
-    try {
-      return await updateProjectStartingScene(projectPath, scenePath)
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'create'))
-    }
-  }
-)
-
-ipcMain.handle('project:resources:scan', async (_, projectPath: string) => {
-  try {
-    return await scanProjectDirectory(projectPath)
-  } catch (error) {
-    throw new Error(getProjectResourceErrorMessage(error, 'load'))
-  }
-})
-
-ipcMain.handle(
-  'project:resources:restore-deleted',
-  async (_, projectPath: string, deletionId: string) => {
-    try {
-      return await restoreDeletedProjectResource(projectPath, deletionId)
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'create'))
-    }
-  }
-)
-
-ipcMain.handle(
-  'project:resources:finalize-deleted',
-  async (_, projectPath: string, deletionId: string) => {
-    try {
-      await finalizeDeletedProjectResource(projectPath, deletionId)
-      return true
-    } catch (error) {
-      throw new Error(getProjectResourceErrorMessage(error, 'delete'))
-    }
-  }
-)
 

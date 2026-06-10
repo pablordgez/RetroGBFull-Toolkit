@@ -17,7 +17,6 @@ type ScriptEditorTab = 'source' | 'header'
 type ScriptEditorStatusTone = 'info' | 'error'
 type ScriptEditorTheme = 'light' | 'dark'
 
-const SCRIPT_EDITOR_THEME_STORAGE_KEY = 'retrogbfull.scriptEditorTheme'
 const EMPTY_MONACO_MODEL_SENTINEL = '\n'
 
 const buildSnapshot = (editableSourceContent: string, headerContent: string): string => {
@@ -70,22 +69,48 @@ export const ScriptEditor = (): ReactElement => {
   const activeTabRef = useRef<ScriptEditorTab>('source')
   const [isEditorReady, setIsEditorReady] = useState(false)
   const [isRuntimeStartAllowed, setIsRuntimeStartAllowed] = useState(false)
-  const [theme, setTheme] = useState<ScriptEditorTheme>(() => {
-    if (typeof window === 'undefined') {
-      return 'light'
-    }
-
-    const storedTheme = window.localStorage.getItem(SCRIPT_EDITOR_THEME_STORAGE_KEY)
-    return storedTheme === 'dark' ? 'dark' : 'light'
-  })
+  const [theme, setTheme] = useState<ScriptEditorTheme>('light')
+  const [hasLoadedThemePreference, setHasLoadedThemePreference] = useState(false)
 
   const isScriptBacked = projectPath.length > 0 && resourcePath.length > 0 && scriptKind !== null
   const isDirty =
     savedSnapshot !== null && buildSnapshot(editableSourceContent, headerContent) !== savedSnapshot
 
   useEffect(() => {
-    window.localStorage.setItem(SCRIPT_EDITOR_THEME_STORAGE_KEY, theme)
-  }, [theme])
+    let isCancelled = false
+
+    const loadThemePreference = async (): Promise<void> => {
+      try {
+        const preferences = await window.api.getAppPreferences()
+
+        if (!isCancelled) {
+          setTheme(preferences.scriptEditorTheme)
+        }
+      } catch (error) {
+        console.warn('[script-editor] failed to load theme preference', error)
+      } finally {
+        if (!isCancelled) {
+          setHasLoadedThemePreference(true)
+        }
+      }
+    }
+
+    void loadThemePreference()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hasLoadedThemePreference) {
+      return
+    }
+
+    void window.api.saveAppPreferences({ scriptEditorTheme: theme }).catch((error) => {
+      console.warn('[script-editor] failed to save theme preference', error)
+    })
+  }, [hasLoadedThemePreference, theme])
 
   useEffect(() => {
     configureMonaco()
@@ -454,8 +479,7 @@ export const ScriptEditor = (): ReactElement => {
               <details className="script-editor__preamble">
                 <summary>Injected engine preamble</summary>
                 <p className="script-editor__preamble-copy">
-                  These engine includes and `#pragma bank 255` stay managed by the toolkit. Add any
-                  extra includes in the editable source.
+                  Managed includes and `#pragma bank 255`.
                 </p>
                 <pre>{managedSourcePrefix}</pre>
               </details>

@@ -1,0 +1,83 @@
+:root {
+  --retro-ink: #0f380f;
+  --retro-panel: #c4bebb;
+  --retro-accent: #9bbc0f;
+  --retro-accent-deep: #8bac0f;
+  --retro-shadow: #306230;
+  --retro-warn: #c98364;
+  --retro-scroll-track:
+    linear-gradient(
+      180deg,
+      rgba(15, 56, 15, 0.2) 0%,
+      rgba(15, 56, 15, 0.08) 100%
+    ),
+    linear-gradient(180deg, rgba(196, 190, 187, 0.92) 0%, rgba(139, 172, 15, 0.22) 100%);
+  --retro-scroll-thumb:
+    linear-gradient(
+      180deg,
+      rgba(155, 188, 15, 0.98) 0%,
+      rgba(139, 172, 15, 0.98) 45%,
+      rgba(48, 98, 48, 0.98) 100%
+    );
+  --retro-scroll-thumb-hover:
+    linear-gradient(
+      180deg,
+      rgba(196, 190, 187, 0.98) 0%,
+      rgba(155, 188, 15, 0.98) 38%,
+      rgba(48, 98, 48, 0.98) 100%
+    );
+  --retro-scroll-thumb-active:
+    linear-gradient(
+      180deg,
+      rgba(15, 56, 15, 0.96) 0%,
+      rgba(48, 98, 48, 0.98) 100%
+    );
+}
+
+html {
+  scrollbar-color: var(--retro-shadow) var(--retro-panel);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--retro-shadow) rgba(196, 190, 187, 0.86);
+}
+
+*::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+*::-webkit-scrollbar-track {
+  border: 2px solid var(--retro-ink);
+  background: var(--retro-scroll-track);
+  box-shadow: inset 0 0 0 1px rgba(15, 56, 15, 0.12);
+}
+
+*::-webkit-scrollbar-corner {
+  background: rgba(196, 190, 187, 0.96);
+  border: 2px solid var(--retro-ink);
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid var(--retro-ink);
+  background: var(--retro-scroll-thumb);
+  box-shadow:
+    inset 0 0 0 1px rgba(196, 190, 187, 0.22),
+    1px 1px 0 rgba(15, 56, 15, 0.35);
+  min-height: 28px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--retro-scroll-thumb-hover);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: var(--retro-scroll-thumb-active);
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}

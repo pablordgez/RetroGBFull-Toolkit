@@ -37,6 +37,7 @@ const createScene = (): SceneAssetDocument => ({
       },
       x: 0,
       y: 0,
+      physicsMode: 'balanced',
       followCamera: false,
       children: [
         {
@@ -50,6 +51,7 @@ const createScene = (): SceneAssetDocument => ({
           height: 32,
           isBlocking: true,
           callbacks: [],
+          exitCallbacks: [],
           children: []
         }
       ]
@@ -167,6 +169,16 @@ const renderInspector = () => {
           actorScriptPropertyDefinitions={actorScriptPropertyDefinitions}
           collisionCallbackCandidates={collisionCallbackCandidates}
           maxCollisionCallbacks={4}
+          maxTagSlots={2}
+          projectTags={[
+            { id: 'player', name: 'Player' },
+            { id: 'friendly', name: 'Friendly' },
+            { id: 'enemy', name: 'Enemy' }
+          ]}
+          defaultSpritePalettes={[['#9bbc0f', '#8bac0f', '#306230', '#0f380f'], null]}
+          defaultBackgroundPalette={['#9bbc0f', '#8bac0f', '#306230', '#0f380f']}
+          spritePaletteMismatchPaths={['Sprites/HeroAlt.rgbsprite.json']}
+          backgroundPaletteMismatchPaths={['Windows/Hud.rgbwindow.json']}
           onRequestActorScriptSelection={onRequestActorScriptSelection}
           onRequestSpriteSelection={onRequestSpriteSelection}
           onRequestSceneAnimationPropertySelection={onRequestSceneAnimationPropertySelection}
@@ -179,6 +191,9 @@ const renderInspector = () => {
           }}
           onSetCollisionCallbacks={(nodeId, callbacks) => {
             editor.setCollisionCallbacks(nodeId, callbacks)
+          }}
+          onSetCollisionExitCallbacks={(nodeId, callbacks) => {
+            editor.setCollisionExitCallbacks(nodeId, callbacks)
           }}
         />
       </>
@@ -220,6 +235,7 @@ describe('SceneInspectorPane', () => {
     expect(screen.getByDisplayValue('3')).toBeInTheDocument()
     expect(screen.getByLabelText('active')).toBeChecked()
     expect(screen.getByText('HeroIdle')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /physics mode/i })).toHaveValue('balanced')
     expect(screen.getByRole('combobox', { name: /mood/i })).toHaveValue('MOOD_ALERT')
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Sprite' }))
@@ -231,6 +247,12 @@ describe('SceneInspectorPane', () => {
       'hero-node',
       'idle_animation'
     )
+
+    fireEvent.click(screen.getByLabelText('Player'))
+    fireEvent.click(screen.getByLabelText('Friendly'))
+    expect(screen.getByLabelText('Player')).toBeChecked()
+    expect(screen.getByLabelText('Friendly')).toBeChecked()
+    expect(screen.getByLabelText('Enemy')).toBeDisabled()
 
     const followCameraCheckbox = screen.getByLabelText('Follow camera')
     fireEvent.click(followCameraCheckbox)
@@ -257,12 +279,45 @@ describe('SceneInspectorPane', () => {
       target: { value: 'MOOD_CALM' }
     })
     expect(screen.getByRole('combobox', { name: /mood/i })).toHaveValue('MOOD_CALM')
+
+    fireEvent.change(screen.getByRole('combobox', { name: /physics mode/i }), {
+      target: { value: 'highFidelity' }
+    })
+    expect(screen.getByRole('combobox', { name: /physics mode/i })).toHaveValue('highFidelity')
   })
 
   it('shows and updates scene script properties when the scene root is selected', () => {
     const { onRequestSceneAnimationPropertySelection } = renderInspector()
 
     expect(screen.getByDisplayValue('2')).toBeInTheDocument()
+    expect(screen.getByText('Sprite Palette 0')).toBeInTheDocument()
+    expect(screen.getByText(/Sprite palette matches neither scene palette: HeroAlt/)).toBeInTheDocument()
+    expect(screen.getByText('Background/Window Palette')).toBeInTheDocument()
+    expect(screen.getByText(/Background\/window palette differs: Hud/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Sprite Palette 0 color 0')).not.toBeInTheDocument()
+
+    const dataTransfer = {
+      value: '',
+      effectAllowed: 'move',
+      setData(_type: string, value: string) {
+        this.value = value
+      },
+      getData() {
+        return this.value
+      }
+    }
+    const spritePalette0 = within(screen.getByLabelText('Sprite Palette 0'))
+    fireEvent.dragStart(spritePalette0.getByTitle('Index 0: #9bbc0f. Drag to reorder.'), {
+      dataTransfer
+    })
+    fireEvent.drop(spritePalette0.getByTitle('Index 2: #306230. Drag to reorder.'), {
+      dataTransfer
+    })
+    expect(
+      within(screen.getByLabelText('Sprite Palette 0')).getByTitle(
+        'Index 0: #8bac0f. Drag to reorder.'
+      )
+    ).toBeInTheDocument()
 
     const gravityInput = screen.getByRole('textbox', { name: /gravity/i })
     fireEvent.change(gravityInput, { target: { value: '12' } })
@@ -329,5 +384,22 @@ describe('SceneInspectorPane', () => {
 
     expect(screen.getByText('OnRoomCollision')).toBeInTheDocument()
     expect(screen.getByText('Room.c')).toBeInTheDocument()
+  })
+
+  it('adds collision exit callbacks with the same picker flow', () => {
+    renderInspector()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Collision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Exit Callback' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Add Collision Exit Callback')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /Shared/i }))
+    fireEvent.click(within(dialog).getByRole('button', { name: /OnSharedCollision/i }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('OnSharedCollision')).toBeInTheDocument()
+    expect(screen.getByText('Shared.c')).toBeInTheDocument()
   })
 })

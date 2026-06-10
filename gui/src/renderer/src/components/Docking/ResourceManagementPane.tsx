@@ -1,9 +1,18 @@
-import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  forwardRef,
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import { ContextMenuOption, ContextMenuRegion } from '../ContextMenu/ContextMenuRegion'
 import { useHistory } from '../hooks/history/useHistory'
 import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts'
 import { getCommandShortcutLabelPrefix, isEditableElementTarget } from '../utils/keyboardShortcuts'
-import { PROJECT_SCRIPT_LABELS, type ProjectScriptKind } from '../../../../shared/projectScripts'
+import type { ProjectScriptKind } from '../../../../shared/projectScripts'
 import type {
   ProjectDeletedResourceResult,
   ProjectResourceItem,
@@ -12,18 +21,28 @@ import type {
   ProjectResourceView
 } from '../../../../shared/projectResourceModels'
 import { type ResourceMutationEvent } from './projectResourceEvents'
-import { ResourceManagementGridItem } from './ResourceManagementGridItem'
+import { ResourceManagementGrid } from './ResourceManagementGrid'
+import { BankResourceModal, DeleteResourceModal } from './ResourceManagementModals'
+import type {
+  EditingResourceState,
+  PendingBankResourceState,
+  PendingDeleteResourceState,
+  ResourceClipboardOperation,
+  ResourceClipboardState,
+  ResourceStatusTone
+} from './ResourceManagementState'
 import {
   buildClassName,
   formatLocationLabel,
   getFriendlyErrorMessage,
   getParentResourcePath,
-  getResourceTypeLabel,
   getTrackedResourceKind,
   isResourceNameConflictMessage,
-  isSceneResource,
   supportsBankOverride
 } from './resourceManagementShared'
+import {
+  buildResourceCreationMenuItems,
+} from './resourceCreationMenu'
 import './ResourceManagementPane.css'
 
 interface ResourceManagementPaneProps {
@@ -35,48 +54,19 @@ interface ResourceManagementPaneProps {
   onResourceMutation?: (event: ResourceMutationEvent) => void
 }
 
-interface EditingResourceState {
-  path: string
-  draftName: string
-  originalName: string
-  resourceType: ProjectResourceKind
+export interface ResourceManagementPaneHandle {
+  createResource: (resourceType: Exclude<ProjectResourceKind, 'script'>) => void
+  createScriptResource: (scriptKind: ProjectScriptKind) => void
 }
 
-interface PendingDeleteResourceState {
-  path: string
-  name: string
-  resourceType: ProjectResourceKind
-  scriptKind?: ProjectScriptKind | null
-}
-
-interface PendingBankResourceState {
-  path: string
-  name: string
-  resourceType: ProjectResourceKind
-  currentBank: number
-  draftBank: string
-}
-
-type ResourceClipboardOperation = 'copy' | 'cut'
-
-interface ResourceClipboardState {
-  operation: ResourceClipboardOperation
-  resourcePath: string
-  resourceName: string
-  resourceType: ProjectResourceKind
-  parentPath: string
-}
-
-type ResourceStatusTone = 'error' | 'info'
-
-export const ResourceManagementPane = ({
+export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, ResourceManagementPaneProps>(function ResourceManagementPane({
   className,
   projectPath = '',
   refreshVersion = 0,
   onOpenScene,
   onCurrentPathChange,
   onResourceMutation
-}: ResourceManagementPaneProps): ReactElement => {
+}: ResourceManagementPaneProps, ref): ReactElement {
   const paneRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const isCommittingRenameRef = useRef(false)
@@ -707,7 +697,7 @@ export const ResourceManagementPane = ({
 
   const handleCreateResource = useCallback(
     async (resourceType: Exclude<ProjectResourceKind, 'script'>) => {
-      if (!projectPath) {
+      if (!projectPath || isInteractionDisabled) {
         return
       }
 
@@ -794,12 +784,12 @@ export const ResourceManagementPane = ({
         setIsBusy(false)
       }
     },
-    [notifyResourceMutation, projectPath, record, resourceView?.currentPath]
+    [isInteractionDisabled, notifyResourceMutation, projectPath, record, resourceView?.currentPath]
   )
 
   const handleCreateScriptResource = useCallback(
     async (scriptKind: ProjectScriptKind) => {
-      if (!projectPath) {
+      if (!projectPath || isInteractionDisabled) {
         return
       }
 
@@ -881,7 +871,34 @@ export const ResourceManagementPane = ({
         setIsBusy(false)
       }
     },
-    [beginResourceEditing, notifyResourceMutation, projectPath, record]
+    [beginResourceEditing, isInteractionDisabled, notifyResourceMutation, projectPath, record]
+  )
+
+  const createMenuItems = useMemo(
+    () =>
+      buildResourceCreationMenuItems({
+        disabled: !projectPath || isInteractionDisabled,
+        onCreateResource: (resourceType) => {
+          void handleCreateResource(resourceType)
+        },
+        onCreateScriptResource: (scriptKind) => {
+          void handleCreateScriptResource(scriptKind)
+        }
+      }),
+    [handleCreateResource, handleCreateScriptResource, isInteractionDisabled, projectPath]
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      createResource: (resourceType) => {
+        void handleCreateResource(resourceType)
+      },
+      createScriptResource: (scriptKind) => {
+        void handleCreateScriptResource(scriptKind)
+      }
+    }),
+    [handleCreateResource, handleCreateScriptResource]
   )
 
   const handleDeleteResource = useCallback(async () => {
@@ -1006,6 +1023,31 @@ export const ResourceManagementPane = ({
     [currentResourcePath, isInteractionDisabled, loadResources, onOpenScene, projectPath]
   )
 
+  const handleShowResourceInFileExplorer = useCallback(
+    async (resource: ProjectResourceItem): Promise<void> => {
+      if (!projectPath || isInteractionDisabled) {
+        return
+      }
+
+      setIsBusy(true)
+
+      try {
+        await window.api.showProjectResourceInFileExplorer(projectPath, resource.path)
+      } catch (error) {
+        console.error('[resource-management-pane] showProjectResourceInFileExplorer failed', error)
+        showErrorStatus(
+          getFriendlyErrorMessage(
+            error,
+            'Something went wrong while opening the resource in the file explorer. Please try again.'
+          )
+        )
+      } finally {
+        setIsBusy(false)
+      }
+    },
+    [isInteractionDisabled, projectPath]
+  )
+
   const handleSaveResourceBank = useCallback(async (): Promise<void> => {
     if (!pendingBankResource || !projectPath) {
       return
@@ -1086,69 +1128,7 @@ export const ResourceManagementPane = ({
       {
         id: 'new',
         label: 'New...',
-        children: [
-          {
-            id: 'new-folder',
-            label: 'Folder',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('folder')
-          },
-          {
-            id: 'new-sprite',
-            label: 'Sprite',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('sprite')
-          },
-          {
-            id: 'new-tileset',
-            label: 'Tileset',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('tileset')
-          },
-          {
-            id: 'new-tilemap',
-            label: 'Tilemap',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('tilemap')
-          },
-          {
-            id: 'new-window',
-            label: 'Window',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('window')
-          },
-          {
-            id: 'new-scene',
-            label: 'Scene',
-            disabled: !projectPath || isInteractionDisabled,
-            onSelect: () => void handleCreateResource('scene')
-          },
-          {
-            id: 'new-script',
-            label: 'Script',
-            disabled: !projectPath || isInteractionDisabled,
-            children: [
-              {
-                id: 'new-script-actor',
-                label: PROJECT_SCRIPT_LABELS.actor,
-                disabled: !projectPath || isInteractionDisabled,
-                onSelect: () => void handleCreateScriptResource('actor')
-              },
-              {
-                id: 'new-script-scene',
-                label: PROJECT_SCRIPT_LABELS.scene,
-                disabled: !projectPath || isInteractionDisabled,
-                onSelect: () => void handleCreateScriptResource('scene')
-              },
-              {
-                id: 'new-script-general',
-                label: PROJECT_SCRIPT_LABELS.general,
-                disabled: !projectPath || isInteractionDisabled,
-                onSelect: () => void handleCreateScriptResource('general')
-              }
-            ]
-          }
-        ]
+        children: createMenuItems
       },
       {
         id: 'paste',
@@ -1160,11 +1140,8 @@ export const ResourceManagementPane = ({
     ]
   }, [
     canPasteClipboardResource,
-    handleCreateResource,
-    handleCreateScriptResource,
     handlePasteClipboardResource,
-    isInteractionDisabled,
-    projectPath,
+    createMenuItems,
     shortcutLabels.paste
   ])
 
@@ -1211,255 +1188,85 @@ export const ResourceManagementPane = ({
             </div>
           )}
 
-          <div className="resource-management-pane__grid" role="list">
-            {resourceView?.items.map((resource) => {
-              const resourceType = getTrackedResourceKind(resource)
-              const isEditing = editingResource?.path === resource.path
-              const isSelected = selectedResourcePath === resource.path
-              const isPendingCut =
-                clipboardResource?.operation === 'cut' &&
-                clipboardResource.resourcePath === resource.path
+          <ResourceManagementGrid
+            resources={resourceView?.items}
+            editingResource={editingResource}
+            clipboardResource={clipboardResource}
+            selectedResourcePath={selectedResourcePath}
+            isInteractionDisabled={isInteractionDisabled}
+            canPasteClipboardResource={canPasteClipboardResource}
+            renameInputRef={renameInputRef}
+            shortcutLabels={shortcutLabels}
+            startingScenePath={startingScenePath}
+            onSelectResource={setSelectedResourcePath}
+            onOpenResource={handleOpenResource}
+            onCommitRename={commitResourceRename}
+            onCancelRename={() => {
+              setEditingResource(null)
+              setStatusMessage(null)
+            }}
+            onDraftNameChange={(resourcePath, draftName) => {
+              setEditingResource((currentResource) => {
+                if (!currentResource || currentResource.path !== resourcePath) {
+                  return currentResource
+                }
 
-              if (resourceType) {
-                const resourceMenuOptions: ContextMenuOption[] = [
-                  {
-                    id: `copy-${resource.path}`,
-                    label: 'Copy',
-                    shortcutLabel: shortcutLabels.copy,
-                    disabled: isInteractionDisabled || !resourceType,
-                    onSelect: () => placeClipboardResource(resource, 'copy')
-                  },
-                  {
-                    id: `cut-${resource.path}`,
-                    label: 'Cut',
-                    shortcutLabel: shortcutLabels.cut,
-                    disabled: isInteractionDisabled || !resourceType,
-                    onSelect: () => placeClipboardResource(resource, 'cut')
-                  },
-                  {
-                    id: `paste-${resource.path}`,
-                    label: 'Paste',
-                    shortcutLabel: shortcutLabels.paste,
-                    disabled: !canPasteClipboardResource,
-                    onSelect: () => void handlePasteClipboardResource()
-                  },
-                  ...(isSceneResource(resource)
-                    ? [
-                        {
-                          id: `start-scene-${resource.path}`,
-                          label:
-                            startingScenePath === resource.path
-                              ? 'Clear Starting Scene'
-                              : 'Set As Starting Scene',
-                          disabled: isInteractionDisabled,
-                          onSelect: () => {
-                            void handleSetStartingScene(
-                              startingScenePath === resource.path ? null : resource.path,
-                              resource.name
-                            )
-                          }
-                        } satisfies ContextMenuOption
-                      ]
-                    : []),
-                  ...(supportsBankOverride(resource)
-                    ? [
-                        {
-                          id: `bank-${resource.path}`,
-                          label: 'Bank...',
-                          disabled: isInteractionDisabled,
-                          onSelect: () => {
-                            setPendingBankResource({
-                              path: resource.path,
-                              name: resource.name,
-                              resourceType,
-                              currentBank: resource.bank ?? 255,
-                              draftBank: String(resource.bank ?? 255)
-                            })
-                          }
-                        } satisfies ContextMenuOption
-                      ]
-                    : []),
-                  {
-                    id: `rename-${resource.path}`,
-                    label: 'Rename',
-                    disabled: isInteractionDisabled,
-                    onSelect: () => beginResourceEditing(resource.path, resource.name, resourceType)
-                  },
-                  {
-                    id: `delete-${resource.path}`,
-                    label: 'Delete',
-                    disabled: isInteractionDisabled,
-                    onSelect: () => {
-                      setPendingDeleteResource({
-                        path: resource.path,
-                        name: resource.name,
-                        resourceType,
-                        scriptKind: resource.type === 'file' ? (resource.scriptKind ?? null) : null
-                      })
-                    }
-                  }
-                ]
-
-                return (
-                  <ResourceManagementGridItem
-                    key={resource.path}
-                    resource={resource}
-                    menuOptions={resourceMenuOptions}
-                    isEditing={isEditing}
-                    isInteractionDisabled={isInteractionDisabled}
-                    isPendingCut={Boolean(isPendingCut)}
-                    isSelected={isSelected}
-                    editingDraftName={editingResource?.draftName ?? ''}
-                    renameInputRef={renameInputRef}
-                    startingScenePath={startingScenePath}
-                    onSelect={setSelectedResourcePath}
-                    onOpen={handleOpenResource}
-                    onCommitRename={commitResourceRename}
-                    onCancelRename={() => {
-                      setEditingResource(null)
-                      setStatusMessage(null)
-                    }}
-                    onDraftNameChange={(nextName) => {
-                      setEditingResource((currentResource) => {
-                        if (!currentResource || currentResource.path !== resource.path) {
-                          return currentResource
-                        }
-
-                        return {
-                          ...currentResource,
-                          draftName: nextName
-                        }
-                      })
-                    }}
-                  />
-                )
-              }
-
-              return (
-                <ResourceManagementGridItem
-                  key={resource.path}
-                  resource={resource}
-                  isEditing={false}
-                  isInteractionDisabled={isInteractionDisabled}
-                  isPendingCut={false}
-                  isSelected={isSelected}
-                  editingDraftName=""
-                  renameInputRef={renameInputRef}
-                  startingScenePath={startingScenePath}
-                  onSelect={setSelectedResourcePath}
-                  onOpen={handleOpenResource}
-                  onCommitRename={commitResourceRename}
-                  onCancelRename={() => undefined}
-                  onDraftNameChange={() => undefined}
-                />
-              )
-            })}
-          </div>
+                return {
+                  ...currentResource,
+                  draftName
+                }
+              })
+            }}
+            onPlaceClipboardResource={placeClipboardResource}
+            onPasteClipboardResource={handlePasteClipboardResource}
+            onShowResourceInFileExplorer={handleShowResourceInFileExplorer}
+            onSetStartingScene={handleSetStartingScene}
+            onBeginResourceEditing={beginResourceEditing}
+            onRequestDeleteResource={setPendingDeleteResource}
+            onRequestBankResource={setPendingBankResource}
+          />
         </div>
 
         {pendingDeleteResource && (
-          <div className="resource-management-pane__modal-backdrop">
-            <div className="resource-management-pane__modal" role="dialog" aria-modal="true">
-              <h2>Delete &quot;{pendingDeleteResource.name}&quot;?</h2>
-              <p className="resource-management-pane__modal-copy">
-                This action cannot be reversed and will remove everything inside that{' '}
-                {getResourceTypeLabel(
-                  pendingDeleteResource.resourceType,
-                  pendingDeleteResource.scriptKind
-                ).toLowerCase()}
-                .
-              </p>
-
-              <div className="resource-management-pane__modal-actions">
-                <button
-                  type="button"
-                  onClick={() => setPendingDeleteResource(null)}
-                  disabled={isInteractionDisabled}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteResource()}
-                  disabled={isInteractionDisabled}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
+          <DeleteResourceModal
+            resource={pendingDeleteResource}
+            isInteractionDisabled={isInteractionDisabled}
+            onCancel={() => setPendingDeleteResource(null)}
+            onConfirm={() => void handleDeleteResource()}
+          />
         )}
 
         {pendingBankResource && (
-          <div className="resource-management-pane__modal-backdrop">
-            <div className="resource-management-pane__modal" role="dialog" aria-modal="true">
-              <h2>Set Bank For &quot;{pendingBankResource.name}&quot;</h2>
-              <p className="resource-management-pane__modal-copy">
-                Choose the ROM bank that should be emitted for this generated source file or script
-                preamble.
-              </p>
-
-              <label
-                className="resource-management-pane__modal-copy"
-                style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}
-              >
-                <span>Bank (0-255)</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={255}
-                  value={pendingBankResource.draftBank}
-                  onChange={(event) => {
-                    const nextValue = event.target.value
-                    setPendingBankResource((currentBankResource) =>
-                      currentBankResource
-                        ? {
-                            ...currentBankResource,
-                            draftBank: nextValue
-                          }
-                        : null
-                    )
-                  }}
-                  disabled={isInteractionDisabled}
-                />
-              </label>
-
-              <div className="resource-management-pane__modal-actions">
-                <button
-                  type="button"
-                  onClick={() => setPendingBankResource(null)}
-                  disabled={isInteractionDisabled}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPendingBankResource((currentBankResource) =>
-                      currentBankResource
-                        ? {
-                            ...currentBankResource,
-                            draftBank: '255'
-                          }
-                        : null
-                    )
-                  }
-                  disabled={isInteractionDisabled || pendingBankResource.currentBank === 255}
-                >
-                  Reset To 255
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleSaveResourceBank()}
-                  disabled={isInteractionDisabled}
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
+          <BankResourceModal
+            resource={pendingBankResource}
+            isInteractionDisabled={isInteractionDisabled}
+            onCancel={() => setPendingBankResource(null)}
+            onDraftBankChange={(draftBank) => {
+              setPendingBankResource((currentBankResource) =>
+                currentBankResource
+                  ? {
+                      ...currentBankResource,
+                      draftBank
+                    }
+                  : null
+              )
+            }}
+            onReset={() => {
+              setPendingBankResource((currentBankResource) =>
+                currentBankResource
+                  ? {
+                      ...currentBankResource,
+                      draftBank: '255'
+                    }
+                  : null
+              )
+            }}
+            onSave={() => void handleSaveResourceBank()}
+          />
         )}
       </div>
     </ContextMenuRegion>
   )
-}
+})
+
+ResourceManagementPane.displayName = 'ResourceManagementPane'

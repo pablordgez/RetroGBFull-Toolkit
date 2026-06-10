@@ -1,13 +1,22 @@
-import { type ReactElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import '../style/SpriteEditor.css'
-import { ResourceManagementPane } from '../Docking/ResourceManagementPane'
+import {
+  ResourceManagementPane,
+  type ResourceManagementPaneHandle
+} from '../Docking/ResourceManagementPane'
+import { buildResourceCreationMenuItems } from '../Docking/resourceCreationMenu'
 import { ResizablePaneLayout } from '../Layout/ResizablePaneLayout'
 import { AppMenuBar, AppMenuDefinition, AppMenuItem } from '../MenuBar/AppMenuBar'
 import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt'
 import { SceneEditorWorkspace } from './SceneEditorWorkspace'
+import { MakeSetupGuideModal } from '../Toolchains/MakeSetupGuideModal'
 import { useSceneWorkspaceSession } from './useSceneWorkspaceSession'
 import './ProjectWorkspace.css'
+import type { GbdkToolchainStatus } from '../../../../shared/projectGbdk'
+import type { MakeToolchainStatus } from '../../../../shared/projectMake'
+import type { ProjectBuildProgressPayload } from '../../../../shared/projectCodeWorkspace'
+import type { RuntimePlatform } from '../../../../shared/runtimePlatform'
 
 interface RecentProject {
   name: string
@@ -33,10 +42,15 @@ const GENERIC_WORKSPACE_ERRORS = {
   close: 'Something went wrong while closing the project. Please try again.',
   fileExplorer: 'Something went wrong while opening the project folder.',
   scan: 'Something went wrong while scanning the project directory.',
-  copyCore: 'Something went wrong while copying the engine core.',
-  buildCode: 'Something went wrong while building project code.',
-  openSaveData: 'Something went wrong while opening the save-data editor.'
+  buildCode: 'Something went wrong while building the project.',
+  buildAndCompile: 'Something went wrong while building and compiling the project.',
+  openSaveData: 'Something went wrong while opening the save-data editor.',
+  openTags: 'Something went wrong while opening the tag editor.'
 } as const
+
+const formatCount = (count: number, singular: string, plural = `${singular}s`): string => {
+  return `${count} ${count === 1 ? singular : plural}`
+}
 
 const formatScanStatusMessage = (result: ProjectDirectoryScanResult): string => {
   const messageParts: string[] = []
@@ -60,19 +74,59 @@ const formatScanStatusMessage = (result: ProjectDirectoryScanResult): string => 
   return messageParts.join(' ')
 }
 
+const formatBuildStatusMessage = (result: {
+  saveDataEntryCount: number
+  spriteCount: number
+  tilesetCount: number
+  tilemapCount: number
+  windowCount: number
+  musicCount: number
+  sceneCount: number
+}): string => {
+  return `Built project code for ${formatCount(result.saveDataEntryCount, 'save entry', 'save entries')}, ${formatCount(result.spriteCount, 'sprite')}, ${formatCount(result.tilesetCount, 'tileset')}, ${formatCount(result.tilemapCount, 'tilemap')}, ${formatCount(result.windowCount, 'window')}, ${formatCount(result.musicCount, 'music asset', 'music assets')}, and ${formatCount(result.sceneCount, 'scene')}.`
+}
+
+const formatBuildProgressMessage = (progress: ProjectBuildProgressPayload): string => {
+  switch (progress.stage) {
+    case 'build':
+      return progress.message || 'Building project code...'
+    case 'clean':
+      return progress.message
+        ? `Cleaning previous build... ${progress.message}`
+        : 'Cleaning previous build...'
+    case 'compile':
+      return progress.message ? `Compiling... ${progress.message}` : 'Compiling...'
+    default:
+      return progress.message
+  }
+}
+
 export const ProjectWorkspace = (): ReactElement => {
   const [searchParams] = useSearchParams()
   const projectName = searchParams.get('projectName') ?? 'Project Workspace'
   const projectPath = searchParams.get('projectPath') ?? ''
+  const resourcePaneRef = useRef<ResourceManagementPaneHandle | null>(null)
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
   const [refreshVersion, setRefreshVersion] = useState(0)
   const [resourceManagerCurrentPath, setResourceManagerCurrentPath] = useState('')
   const [statusMessage, setStatusMessage] = useState<WorkspaceStatus | null>(null)
+  const [activeBuildOperation, setActiveBuildOperation] = useState<'build' | 'build-and-compile' | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const [gbdkStatus, setGbdkStatus] = useState<GbdkToolchainStatus | null>(null)
+  const [isInstallingGbdk, setIsInstallingGbdk] = useState(false)
+  const [makeStatus, setMakeStatus] = useState<MakeToolchainStatus | null>(null)
+  const [isInstallingMake, setIsInstallingMake] = useState(false)
+  const [isRefreshingMakeStatus, setIsRefreshingMakeStatus] = useState(false)
+  const [runtimePlatform, setRuntimePlatform] = useState<RuntimePlatform>('unknown')
+  const [isMakeGuideOpen, setIsMakeGuideOpen] = useState(false)
 
   const showStatus = (tone: WorkspaceStatusTone, text: string): void => {
     setStatusMessage({ tone, text })
   }
+
+  const dismissStatus = useCallback((): void => {
+    setStatusMessage(null)
+  }, [])
 
   const {
     activeScenePath,
@@ -105,9 +159,60 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [])
 
+  const refreshMakeStatus = useCallback(async (options?: { announceSuccess?: boolean }) => {
+    setIsRefreshingMakeStatus(true)
+
+    try {
+      const nextMakeStatus = await window.api.getMakeToolchainStatus()
+      setMakeStatus(nextMakeStatus)
+
+      if (nextMakeStatus.installed) {
+        if (options?.announceSuccess) {
+          showStatus('info', `GNU Make detected at ${nextMakeStatus.executablePath}.`)
+        }
+      }
+    } catch (error) {
+      console.error('[project-workspace] getMakeToolchainStatus failed', error)
+      showStatus('error', 'Something went wrong while checking GNU Make.')
+    } finally {
+      setIsRefreshingMakeStatus(false)
+    }
+  }, [])
+
   useEffect(() => {
     void loadRecentProjects()
   }, [loadRecentProjects])
+
+  useEffect(() => {
+    const loadToolchainStatuses = async () => {
+      try {
+        setRuntimePlatform(await window.api.getRuntimePlatform())
+      } catch (error) {
+        console.error('[project-workspace] getRuntimePlatform failed', error)
+        setRuntimePlatform('unknown')
+      }
+
+      try {
+        setGbdkStatus(await window.api.getGbdkToolchainStatus())
+      } catch (error) {
+        console.error('[project-workspace] getGbdkToolchainStatus failed', error)
+      }
+
+      await refreshMakeStatus()
+    }
+
+    void loadToolchainStatuses()
+  }, [projectPath, refreshMakeStatus])
+
+  useEffect(() => {
+    return window.api.onProjectBuildProgress((payload) => {
+      if (payload.projectPath !== projectPath) {
+        return
+      }
+
+      showStatus('info', formatBuildProgressMessage(payload))
+    })
+  }, [projectPath])
 
   const handleOpenProject = useCallback(async () => {
     setIsBusy(true)
@@ -195,41 +300,18 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [projectPath])
 
-  const handleCopyEngineCore = useCallback(async () => {
+  const handleBuildProject = useCallback(async () => {
     if (!projectPath) {
       return
     }
 
+    setActiveBuildOperation('build')
     setIsBusy(true)
-
-    try {
-      const result = await window.api.copyProjectEngineCore(projectPath)
-      showStatus(
-        'info',
-        `Copied ${result.copiedPaths.length} core item${result.copiedPaths.length === 1 ? '' : 's'} and skipped ${result.skippedPaths.length}.`
-      )
-      setRefreshVersion((currentVersion) => currentVersion + 1)
-    } catch (error) {
-      console.error('[project-workspace] copyProjectEngineCore failed', error)
-      showStatus('error', error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.copyCore)
-    } finally {
-      setIsBusy(false)
-    }
-  }, [projectPath])
-
-  const handleBuildProjectCode = useCallback(async () => {
-    if (!projectPath) {
-      return
-    }
-
-    setIsBusy(true)
+    showStatus('info', 'Building project code...')
 
     try {
       const result = await window.api.buildProjectCode(projectPath)
-      showStatus(
-        'info',
-        `Built project code for ${result.saveDataEntryCount} save entr${result.saveDataEntryCount === 1 ? 'y' : 'ies'}, ${result.spriteCount} sprites, ${result.tilesetCount} tilesets, ${result.tilemapCount} tilemaps, ${result.windowCount} windows, and ${result.sceneCount} scenes.`
-      )
+      showStatus('info', formatBuildStatusMessage(result))
       setRefreshVersion((currentVersion) => currentVersion + 1)
     } catch (error) {
       console.error('[project-workspace] buildProjectCode failed', error)
@@ -238,6 +320,7 @@ export const ProjectWorkspace = (): ReactElement => {
         error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.buildCode
       )
     } finally {
+      setActiveBuildOperation(null)
       setIsBusy(false)
     }
   }, [projectPath])
@@ -258,6 +341,90 @@ export const ProjectWorkspace = (): ReactElement => {
         error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openSaveData
       )
     } finally {
+      setIsBusy(false)
+    }
+  }, [projectPath])
+
+  const handleInstallGbdk = useCallback(async () => {
+    setIsInstallingGbdk(true)
+
+    try {
+      const result = await window.api.installLatestGbdkToolchain()
+      setGbdkStatus(result)
+      showStatus('info', `Installed ${result.releaseTag} from ${result.assetName}.`)
+    } catch (error) {
+      console.error('[project-workspace] installLatestGbdkToolchain failed', error)
+      showStatus(
+        'error',
+        error instanceof Error ? error.message : 'Something went wrong while installing GBDK.'
+      )
+    } finally {
+      setIsInstallingGbdk(false)
+    }
+  }, [])
+
+  const handleInstallMake = useCallback(async () => {
+    setIsInstallingMake(true)
+
+    try {
+      const result = await window.api.installLatestMakeToolchain()
+      setMakeStatus(result)
+      showStatus('info', `Installed GNU Make ${result.releaseVersion} from ${result.archiveName}.`)
+    } catch (error) {
+      console.error('[project-workspace] installLatestMakeToolchain failed', error)
+      setIsMakeGuideOpen(true)
+      showStatus(
+        'error',
+        error instanceof Error ? error.message : 'Something went wrong while installing GNU Make.'
+      )
+    } finally {
+      setIsInstallingMake(false)
+    }
+  }, [])
+
+  const isInstallingToolchain = isInstallingGbdk || isInstallingMake
+  const isBuildDisabled =
+    isBusy || isInstallingToolchain || !projectPath || !Boolean(gbdkStatus?.installed)
+  const isBuildAndCompileDisabled = isBuildDisabled || !Boolean(makeStatus?.installed)
+
+  const handleOpenTagEditor = useCallback(async () => {
+    if (!projectPath) {
+      return
+    }
+
+    setIsBusy(true)
+
+    try {
+      await window.api.openProjectTagEditor(projectPath)
+    } catch (error) {
+      console.error('[project-workspace] openProjectTagEditor failed', error)
+      showStatus('error', error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openTags)
+    } finally {
+      setIsBusy(false)
+    }
+  }, [projectPath])
+
+  const handleBuildAndCompileProject = useCallback(async () => {
+    if (!projectPath) {
+      return
+    }
+
+    setActiveBuildOperation('build-and-compile')
+    setIsBusy(true)
+    showStatus('info', 'Building project code...')
+
+    try {
+      const result = await window.api.buildAndCompileProject(projectPath)
+      showStatus('info', `Built project code and compiled ${result.compileResult.romPath ?? 'the ROM output'}.`)
+      setRefreshVersion((currentVersion) => currentVersion + 1)
+    } catch (error) {
+      console.error('[project-workspace] buildAndCompileProject failed', error)
+      showStatus(
+        'error',
+        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.buildAndCompile
+      )
+    } finally {
+      setActiveBuildOperation(null)
       setIsBusy(false)
     }
   }, [projectPath])
@@ -292,6 +459,18 @@ export const ProjectWorkspace = (): ReactElement => {
       onSelect: () => void handleLoadRecentProject(project.path)
     }))
   }, [handleLoadRecentProject, isBusy, projectPath, recentProjects])
+
+  const createMenuItems = useMemo((): AppMenuItem[] => {
+    return buildResourceCreationMenuItems({
+      disabled: !projectPath,
+      onCreateResource: (resourceType) => {
+        resourcePaneRef.current?.createResource(resourceType)
+      },
+      onCreateScriptResource: (scriptKind) => {
+        resourcePaneRef.current?.createScriptResource(scriptKind)
+      }
+    })
+  }, [projectPath])
 
   const menus = useMemo((): AppMenuDefinition[] => {
     return [
@@ -335,6 +514,12 @@ export const ProjectWorkspace = (): ReactElement => {
         ]
       },
       {
+        id: 'create-menu',
+        label: 'Create',
+        disabled: !projectPath,
+        items: createMenuItems
+      },
+      {
         id: 'code-menu',
         label: 'Code',
         items: [
@@ -345,29 +530,46 @@ export const ProjectWorkspace = (): ReactElement => {
             onSelect: () => void handleOpenSaveDataEditor()
           },
           {
-            id: 'copy-engine-core',
-            label: 'Copy Engine Core',
+            id: 'edit-tags',
+            label: 'Edit Tags...',
             disabled: isBusy || !projectPath,
-            onSelect: () => void handleCopyEngineCore()
+            onSelect: () => void handleOpenTagEditor()
           },
           {
-            id: 'build-project-code',
-            label: 'Build Project Code',
-            disabled: isBusy || !projectPath,
-            onSelect: () => void handleBuildProjectCode()
+            id: 'build-project',
+            label: 'Build',
+            disabled: isBuildDisabled,
+            onSelect: () => void handleBuildProject()
+          },
+          {
+            id: 'build-and-compile-project',
+            label: 'Build + Compile',
+            disabled: isBuildAndCompileDisabled,
+            onSelect: () => void handleBuildAndCompileProject()
           }
         ]
       }
     ]
   }, [
-    handleBuildProjectCode,
+    createMenuItems,
+    handleBuildAndCompileProject,
+    handleBuildProject,
     handleCloseProject,
-    handleCopyEngineCore,
+    handleInstallGbdk,
+    handleInstallMake,
     handleOpenSaveDataEditor,
+    handleOpenTagEditor,
     handleOpenProject,
     handleOpenProjectInExplorer,
     handleScanProjectDirectory,
+    gbdkStatus?.installed,
+    makeStatus?.installed,
     isBusy,
+    isInstallingGbdk,
+    isInstallingMake,
+    isInstallingToolchain,
+    isBuildAndCompileDisabled,
+    isBuildDisabled,
     loadRecentProjects,
     projectPath,
     recentProjectItems
@@ -391,7 +593,55 @@ export const ProjectWorkspace = (): ReactElement => {
           className={`project-workspace__status project-workspace__status--${statusMessage.tone}`}
           role="status"
         >
-          {statusMessage.text}
+          <div className="project-workspace__status-main">
+            {activeBuildOperation && statusMessage.tone === 'info' && (
+              <span
+                className="project-workspace__status-spinner"
+                aria-label="Build in progress"
+              />
+            )}
+            <span className="project-workspace__status-text">{statusMessage.text}</span>
+          </div>
+          {!activeBuildOperation && (
+            <button
+              type="button"
+              className="project-workspace__status-dismiss"
+              onClick={dismissStatus}
+              aria-label="Dismiss message"
+              title="Dismiss message"
+            >
+              x
+            </button>
+          )}
+        </div>
+      )}
+
+      {gbdkStatus && !gbdkStatus.installed && (
+        <div className="project-workspace__toolchain-banner" role="status">
+          <div className="project-workspace__toolchain-copy">
+            <strong>GBDK is missing</strong>
+            <span>{gbdkStatus.installPath}</span>
+          </div>
+          <button type="button" onClick={() => void handleInstallGbdk()} disabled={isBusy || isInstallingToolchain}>
+            {isInstallingGbdk ? 'Installing GBDK...' : 'Install GBDK'}
+          </button>
+        </div>
+      )}
+
+      {makeStatus && !makeStatus.installed && (
+        <div className="project-workspace__toolchain-banner" role="status">
+          <div className="project-workspace__toolchain-copy">
+            <strong>GNU Make is missing</strong>
+            <span>{makeStatus.installPath}</span>
+          </div>
+          <div className="project-workspace__toolchain-actions">
+            <button type="button" onClick={() => setIsMakeGuideOpen(true)} disabled={isBusy || isInstallingToolchain}>
+              Open Setup Guide
+            </button>
+            <button type="button" onClick={() => void handleInstallMake()} disabled={isBusy || isInstallingToolchain}>
+              {isInstallingMake ? 'Installing GNU Make...' : 'Try Install Anyway'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -400,6 +650,7 @@ export const ProjectWorkspace = (): ReactElement => {
           className="project-workspace__resizable-layout"
           pane={
             <ResourceManagementPane
+              ref={resourcePaneRef}
               className="project-workspace__resource-pane"
               onOpenScene={openScene}
               onCurrentPathChange={setResourceManagerCurrentPath}
@@ -442,6 +693,18 @@ export const ProjectWorkspace = (): ReactElement => {
           onCloseDecision={(decision) => {
             void handleSceneCloseDecision(decision)
           }}
+        />
+      )}
+
+      {isMakeGuideOpen && (
+        <MakeSetupGuideModal
+          platform={runtimePlatform}
+          status={makeStatus}
+          isRefreshing={isRefreshingMakeStatus}
+          onRefresh={() => {
+            void refreshMakeStatus({ announceSuccess: true })
+          }}
+          onClose={() => setIsMakeGuideOpen(false)}
         />
       )}
     </div>

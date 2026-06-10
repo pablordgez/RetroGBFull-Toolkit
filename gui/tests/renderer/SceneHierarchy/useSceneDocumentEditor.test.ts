@@ -40,8 +40,8 @@ describe('useSceneDocumentEditor', () => {
 
     expect(result.current.tilemapPath).toBe('Maps/Small Room.rgbtilemap.json')
     expect(result.current.nodes[0]).toMatchObject({
-      x: 1392,
-      y: 1264
+      x: 1264,
+      y: 1008
     })
 
     await act(async () => {
@@ -60,8 +60,8 @@ describe('useSceneDocumentEditor', () => {
 
     expect(result.current.tilemapPath).toBe('Maps/Small Room.rgbtilemap.json')
     expect(result.current.nodes[0]).toMatchObject({
-      x: 1392,
-      y: 1264
+      x: 1264,
+      y: 1008
     })
   })
 
@@ -204,6 +204,60 @@ describe('useSceneDocumentEditor', () => {
       width: 600,
       height: 600
     })
+  })
+
+  it('updates actor and collision tags with undo support', async () => {
+    const scene = createScene([
+      {
+        id: 'hero-node',
+        type: 'actor',
+        name: 'Hero',
+        isCollapsed: false,
+        spritePath: null,
+        x: 0,
+        y: 0,
+        followCamera: false,
+        children: [
+          {
+            id: 'hero-collision',
+            type: 'collision',
+            name: 'Hitbox',
+            isCollapsed: false,
+            x: 0,
+            y: 0,
+            width: 128,
+            height: 128,
+            isBlocking: true,
+            children: []
+          }
+        ]
+      }
+    ])
+    const { result } = renderHook(() => useSceneDocumentEditor({ scene, onSceneChange: vi.fn() }))
+
+    act(() => {
+      result.current.setNodeTags('hero-node', ['player', 'friendly'])
+    })
+
+    expect(result.current.nodes[0]).toMatchObject({
+      type: 'actor',
+      tags: ['player', 'friendly']
+    })
+
+    act(() => {
+      result.current.setNodeTags('hero-collision', ['hurtbox'])
+    })
+
+    expect((result.current.nodes[0] as SceneAssetActorNode).children[0]).toMatchObject({
+      type: 'collision',
+      tags: ['hurtbox']
+    })
+
+    await act(async () => {
+      await result.current.undo()
+    })
+
+    expect((result.current.nodes[0] as SceneAssetActorNode).children[0]).not.toHaveProperty('tags')
   })
 
   it('enforces collision placement rules for creation', () => {

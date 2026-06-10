@@ -80,7 +80,7 @@ export const ProjectScriptPickerModal = ({
               disabled={isBusy}
             >
               <span>{noneLabel ?? 'None'}</span>
-              <span className="tilemap-editor__tileset-path">Clear the current script reference.</span>
+              <span className="tilemap-editor__tileset-path">Clear script.</span>
             </button>
           )}
 

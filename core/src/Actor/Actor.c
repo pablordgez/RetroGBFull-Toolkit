@@ -5,6 +5,12 @@
 
 Actor* THIS_ACTOR;
 
+#define UPDATE_ACTOR_AND_COLLIDER_AXIS(actor_pos, collider_pos, delta) do { \
+    uint16_t old_pos = (actor_pos); \
+    UPDATE_COORD_SAFE((actor_pos), (delta)); \
+    (collider_pos) += (int16_t)((actor_pos) - old_pos); \
+} while(0)
+
 static void clamp_actor_to_map(Actor* actor) NONBANKED{
     if (THIS_SCENE == NULL || THIS_SCENE->map == NULL) {
         return;
@@ -57,10 +63,21 @@ void set_actor_animation(Animation* animation) NONBANKED{
         THIS_ACTOR->animation_state = NULL;
     }
     THIS_ACTOR->current_animation = animation;
+    if(animation == NULL){
+        return;
+    }
     THIS_ACTOR->animation_state = malloc(sizeof(AnimationState));
+    if(THIS_ACTOR->animation_state == NULL){
+        THIS_ACTOR->current_animation = NULL;
+        return;
+    }
     set_animation_context();
     init_animation_state(THIS_ACTOR->animation_state);
-    load_animation(THIS_ACTOR->x >> 4, THIS_ACTOR->y >> 4);
+    if(load_animation(THIS_ACTOR->x >> 4, THIS_ACTOR->y >> 4) == 0){
+        free(THIS_ACTOR->animation_state);
+        THIS_ACTOR->animation_state = NULL;
+        THIS_ACTOR->current_animation = NULL;
+    }
 
 } 
 
@@ -72,7 +89,9 @@ void set_collider(Collider* collider) BANKED{
     THIS_ACTOR->collider = collider;
     if(collider != NULL){
         collider->num_collision_callbacks = 0;
+        collider->num_collision_exit_callbacks = 0;
         memset(collider->on_collision, 0, sizeof(collider->on_collision));
+        memset(collider->on_collision_exit, 0, sizeof(collider->on_collision_exit));
         enable_collider(collider);
     }
 }
@@ -83,6 +102,9 @@ void set_animation_context(void) BANKED{
 }
 
 void draw(void) NONBANKED{
+    if(THIS_ACTOR->current_animation == NULL || THIS_ACTOR->animation_state == NULL){
+        return;
+    }
     set_animation_context();
     int16_t draw_x = (THIS_ACTOR->x >> 4) - (int16_t)camera_x;
     int16_t draw_y = (THIS_ACTOR->y >> 4) - (int16_t)camera_y;
@@ -98,10 +120,8 @@ void draw(void) NONBANKED{
 }
 
 void balanced_physics(int16_t dx, int16_t dy) BANKED{
-    UPDATE_COORD_SAFE(THIS_ACTOR->x, dx);
-    UPDATE_COORD_SAFE(THIS_ACTOR->y, dy);
-    UPDATE_COORD_SAFE(THIS_COLLIDER->x, dx);
-    UPDATE_COORD_SAFE(THIS_COLLIDER->y, dy);
+    UPDATE_ACTOR_AND_COLLIDER_AXIS(THIS_ACTOR->x, THIS_COLLIDER->x, dx);
+    UPDATE_ACTOR_AND_COLLIDER_AXIS(THIS_ACTOR->y, THIS_COLLIDER->y, dy);
 
     Collider* out[5];
     uint8_t num_collisions = 0;
@@ -163,12 +183,12 @@ void move_actor(int16_t dx, int16_t dy) BANKED{
         THIS_ACTOR = current;
 
         if (THIS_ACTOR->collider == NULL || THIS_ACTOR->collider->is_blocking == 0) {
-            UPDATE_COORD_SAFE(THIS_ACTOR->x, dx);
-            UPDATE_COORD_SAFE(THIS_ACTOR->y, dy);
-
             if (THIS_ACTOR->collider != NULL) {
-                UPDATE_COORD_SAFE(THIS_ACTOR->collider->x, dx);
-                UPDATE_COORD_SAFE(THIS_ACTOR->collider->y, dy);
+                UPDATE_ACTOR_AND_COLLIDER_AXIS(THIS_ACTOR->x, THIS_ACTOR->collider->x, dx);
+                UPDATE_ACTOR_AND_COLLIDER_AXIS(THIS_ACTOR->y, THIS_ACTOR->collider->y, dy);
+            } else{
+                UPDATE_COORD_SAFE(THIS_ACTOR->x, dx);
+                UPDATE_COORD_SAFE(THIS_ACTOR->y, dy);
             }
             clamp_actor_to_map(THIS_ACTOR);
             continue;
@@ -177,10 +197,8 @@ void move_actor(int16_t dx, int16_t dy) BANKED{
         THIS_COLLIDER = THIS_ACTOR->collider;
 
         if (THIS_ACTOR->physics_mode == HIGH_PERF) {
-            UPDATE_COORD_SAFE(THIS_ACTOR->x, dx);
-            UPDATE_COORD_SAFE(THIS_ACTOR->y, dy);
-            UPDATE_COORD_SAFE(THIS_COLLIDER->x, dx);
-            UPDATE_COORD_SAFE(THIS_COLLIDER->y, dy);
+            UPDATE_ACTOR_AND_COLLIDER_AXIS(THIS_ACTOR->x, THIS_COLLIDER->x, dx);
+            UPDATE_ACTOR_AND_COLLIDER_AXIS(THIS_ACTOR->y, THIS_COLLIDER->y, dy);
 
             Collider* out[1];
             uint8_t num_collisions = 0;
@@ -243,12 +261,12 @@ void set_actor_position(uint16_t x, uint16_t y) BANKED{
             next_child = next_child->sibling;
         }
         
-        UPDATE_COORD_SAFE(current->x, dx);
-        UPDATE_COORD_SAFE(current->y, dy);
-        
         if (current->collider != NULL) {
-            UPDATE_COORD_SAFE(current->collider->x, dx);
-            UPDATE_COORD_SAFE(current->collider->y, dy);
+            UPDATE_ACTOR_AND_COLLIDER_AXIS(current->x, current->collider->x, dx);
+            UPDATE_ACTOR_AND_COLLIDER_AXIS(current->y, current->collider->y, dy);
+        } else{
+            UPDATE_COORD_SAFE(current->x, dx);
+            UPDATE_COORD_SAFE(current->y, dy);
         }
         clamp_actor_to_map(current);
     }
@@ -284,4 +302,18 @@ void detach_child(Actor* child) BANKED{
             child->parent = NULL;
         }
     }
+}
+
+void destroy_actor(Actor* actor) BANKED{
+    if(actor == NULL){
+        return;
+    }
+
+    THIS_ACTOR = actor;
+    set_actor_animation(NULL);
+    set_collider(NULL);
+    actor->child = NULL;
+    actor->sibling = NULL;
+    actor->parent = NULL;
+    free(actor);
 }

@@ -3,6 +3,8 @@
 #include "Assets/SpaceManager.h"
 #include "Animation.h"
 
+#define SPRITES_8X16_ENABLED 0
+
 typedef enum {
     NUMBER_OF_ANIMATIONS = 1
 } AnimationType;

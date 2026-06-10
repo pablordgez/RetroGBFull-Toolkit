@@ -203,6 +203,10 @@ const toMonacoRange = (
   range: Range,
   prefixLineCount: number
 ): monaco.IRange | null => {
+  if (prefixLineCount > 0 && range.start.line < prefixLineCount) {
+    return null
+  }
+
   const startLineNumber = range.start.line + 1 - prefixLineCount
   const endLineNumber = range.end.line + 1 - prefixLineCount
 

@@ -5,6 +5,11 @@ import type {
   SceneAssetNode
 } from '../../../../shared/projectAssets'
 import type { ScriptPropertyMap, ScriptPropertyValue } from '../../../../shared/projectScriptProperties'
+import {
+  type SceneSpritePalettes,
+  normalizeProjectPalette,
+  normalizeSceneSpritePalettes
+} from '../../../../shared/projectPalettes'
 
 export type SceneHierarchyClipboardOperation = 'copy' | 'cut'
 
@@ -19,6 +24,8 @@ export interface SceneHierarchyHistoryState {
   scriptProperties?: ScriptPropertyMap
   tilemapPath: string | null
   windowPath: string | null
+  spritePalettes: SceneSpritePalettes
+  backgroundPalette: string[] | null
   nodes: SceneAssetNode[]
   selectedNodeId: string | null
   clipboard: SceneHierarchyClipboardState | null
@@ -41,6 +48,8 @@ export interface SceneEditorDocumentSnapshot {
   scriptProperties?: ScriptPropertyMap
   tilemapPath: string | null
   windowPath: string | null
+  spritePalettes: SceneSpritePalettes
+  backgroundPalette: string[] | null
   nodes: SceneAssetNode[]
 }
 
@@ -60,6 +69,27 @@ const SCENE_COORD_SCALE = 16
 const SCENE_COORD_MAX = 0xffff
 const SCENE_COLLISION_MIN_SIZE = SCENE_COORD_SCALE
 export const DEFAULT_SCENE_COLLISION_SIZE = 8 * SCENE_COORD_SCALE
+
+export interface SceneActorAnchorOffset {
+  x: number
+  y: number
+}
+
+export const getSceneActorAnchorOffsetForSize = (
+  spriteSize?: { width: number; height: number } | null
+): SceneActorAnchorOffset => {
+  if (!spriteSize || (spriteSize.width === 8 && spriteSize.height === 8)) {
+    return {
+      x: 8 * SCENE_COORD_SCALE,
+      y: 16 * SCENE_COORD_SCALE
+    }
+  }
+
+  return {
+    x: (Math.floor(spriteSize.width / 2) + 8) * SCENE_COORD_SCALE,
+    y: (Math.floor(spriteSize.height / 2) + 16) * SCENE_COORD_SCALE
+  }
+}
 
 export const getDefaultSceneNodeName = (type: SceneAssetNode['type']): string => {
   switch (type) {
@@ -92,6 +122,17 @@ export const cloneSceneDocumentSnapshot = (
     ...(document.scriptProperties ? { scriptProperties: { ...document.scriptProperties } } : {}),
     tilemapPath: document.tilemapPath,
     windowPath: document.windowPath,
+    spritePalettes: document.spritePalettes
+      ? normalizeSceneSpritePalettes(document.spritePalettes)
+      : [
+          'spritePalette' in document && document.spritePalette
+            ? normalizeProjectPalette(document.spritePalette)
+            : null,
+          null
+        ],
+    backgroundPalette: document.backgroundPalette
+      ? normalizeProjectPalette(document.backgroundPalette)
+      : null,
     nodes: document.nodes.map(cloneSceneNodeSnapshot)
   }
 }
@@ -458,6 +499,7 @@ export const buildDefaultSceneNode = (
       height: DEFAULT_SCENE_COLLISION_SIZE,
       isBlocking: true,
       callbacks: [],
+      exitCallbacks: [],
       children: []
     }
   }
@@ -470,7 +512,9 @@ export const buildDefaultSceneNode = (
     spritePath: null,
     x: 0,
     y: 0,
+    physicsMode: 'balanced',
     followCamera: false,
+    spritePaletteIndex: 0,
     children: []
   }
 }
@@ -489,12 +533,16 @@ export const mergeScriptPropertyValue = (
 export const clampSceneActorCoordinate = (
   value: number,
   mapTileCount: number | null,
-  edgePadding: number
+  edgePadding: number,
+  anchorOffset: number
 ): number => {
+  const minCoordinate = -anchorOffset
   const maxCoordinate =
-    mapTileCount === null ? SCENE_COORD_MAX : ((mapTileCount << 3) + edgePadding) << 4
+    mapTileCount === null
+      ? SCENE_COORD_MAX
+      : Math.max(minCoordinate, (((mapTileCount << 3) + edgePadding) << 4) - anchorOffset)
 
-  return Math.max(0, Math.min(SCENE_COORD_MAX, Math.round(value), maxCoordinate))
+  return Math.max(minCoordinate, Math.min(SCENE_COORD_MAX, Math.round(value), maxCoordinate))
 }
 
 export const clampSceneActorPosition = (
@@ -503,11 +551,12 @@ export const clampSceneActorPosition = (
   mapSize?: {
     width: number
     height: number
-  } | null
+  } | null,
+  anchorOffset = getSceneActorAnchorOffsetForSize()
 ): { x: number; y: number } => {
   return {
-    x: clampSceneActorCoordinate(x, mapSize?.width ?? null, 7),
-    y: clampSceneActorCoordinate(y, mapSize?.height ?? null, 15)
+    x: clampSceneActorCoordinate(x, mapSize?.width ?? null, 7, anchorOffset.x),
+    y: clampSceneActorCoordinate(y, mapSize?.height ?? null, 15, anchorOffset.y)
   }
 }
 

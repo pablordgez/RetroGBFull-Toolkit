@@ -1,3 +1,6 @@
 gbdk/
-cores/obj/
+core/obj/
 .tmp/
+core/docs/node_modules/
+core/docs/.docusaurus/
+core/docs/build/

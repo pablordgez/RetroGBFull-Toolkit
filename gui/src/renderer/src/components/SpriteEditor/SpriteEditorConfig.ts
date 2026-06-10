@@ -1,4 +1,6 @@
-export const GB_PALETTE = ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'];
+import { DEFAULT_GB_PALETTE } from '../../../../shared/projectPalettes';
+
+export const GB_PALETTE = [...DEFAULT_GB_PALETTE];
 export const ERASER_COLOR = 0;
 
 export const MAX_GB_WIDTH = 80;

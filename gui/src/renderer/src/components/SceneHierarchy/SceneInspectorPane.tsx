@@ -1,9 +1,14 @@
 import { type ChangeEvent, type KeyboardEvent, type ReactElement, useEffect, useMemo, useState } from 'react'
 import type {
   SceneAssetCollisionCallback,
+  SceneActorPhysicsMode,
   SceneAssetNode
 } from '../../../../shared/projectAssets'
-import { getProjectAssetDisplayName } from '../../../../shared/projectAssets'
+import {
+  SCENE_ACTOR_PHYSICS_MODES,
+  getProjectAssetDisplayName,
+  isSceneActorPhysicsMode
+} from '../../../../shared/projectAssets'
 import type {
   ParsedScriptPropertyDefinition,
   ProjectScriptCallbackCandidate
@@ -15,13 +20,21 @@ import {
   type ScriptPropertyValue
 } from '../../../../shared/projectScriptProperties'
 import type { ProjectScriptOption } from '../ProjectAssets/projectScriptBrowser'
+import type { ProjectTagEntry } from '../../../../shared/projectTags'
+import {
+  DEFAULT_GB_PALETTE,
+  type SceneSpritePalettes,
+  normalizeProjectPalette
+} from '../../../../shared/projectPalettes'
 import { ProjectScriptCallbackPickerModal } from '../ProjectAssets/ProjectScriptCallbackPickerModal'
+import { SceneCollisionCallbackControls } from './SceneCollisionCallbackControls'
 import {
   clampSceneActorPosition,
   clampSceneCollisionRect,
   findSceneNodeById,
   findSceneNodeRecord,
   formatSceneCoord,
+  getSceneActorAnchorOffsetForSize,
   isSceneActorNode,
   isSceneCollisionNode,
   parseSceneCoord
@@ -34,6 +47,7 @@ interface SceneInspectorPaneProps {
   editor: SceneDocumentEditor
   sceneLabel?: string | null
   tilemapSize: { width: number; height: number } | null
+  spritePreviews?: Record<string, { width: number; height: number }>
   sceneScriptOptions?: ProjectScriptOption[]
   actorScriptOptions?: ProjectScriptOption[]
   sceneScriptPropertyDefinitions?: ParsedScriptPropertyDefinition[]
@@ -42,6 +56,12 @@ interface SceneInspectorPaneProps {
   isCollisionCallbackPickerLoading?: boolean
   collisionCallbackPickerErrorMessage?: string | null
   maxCollisionCallbacks?: number
+  maxTagSlots?: number
+  projectTags?: ProjectTagEntry[]
+  defaultSpritePalettes?: SceneSpritePalettes
+  defaultBackgroundPalette?: string[] | null
+  spritePaletteMismatchPaths?: string[]
+  backgroundPaletteMismatchPaths?: string[]
   onRequestTilemapSelection?: () => void
   onRequestWindowSelection?: () => void
   onRequestSceneScriptSelection?: () => void
@@ -57,6 +77,7 @@ interface SceneInspectorPaneProps {
   ) => void
   onRefreshCollisionCallbackCandidates?: () => void
   onSetCollisionCallbacks?: (nodeId: string, callbacks: SceneAssetCollisionCallback[]) => void
+  onSetCollisionExitCallbacks?: (nodeId: string, callbacks: SceneAssetCollisionCallback[]) => void
 }
 
 const buildClassName = (baseClassName: string, extraClassName?: string): string => {
@@ -73,11 +94,35 @@ const getScriptPropertyInputId = (propertyName: string): string => {
   return `scene-inspector-script-property-${propertyName}`
 }
 
+const SCENE_ACTOR_PHYSICS_MODE_LABELS: Record<SceneActorPhysicsMode, string> = {
+  highPerf: 'High Performance',
+  balanced: 'Balanced',
+  highFidelity: 'High Fidelity'
+}
+
+const EMPTY_SCENE_SPRITE_PALETTES: SceneSpritePalettes = [null, null]
+
+const formatPaletteMismatchCopy = (paths: string[], singular: string, plural: string): string => {
+  if (paths.length === 0) {
+    return ''
+  }
+
+  const labels = paths
+    .slice(0, 3)
+    .map((path) => getPathLabel(path, path))
+    .join(', ')
+  const remainingCount = paths.length - 3
+  const suffix = remainingCount > 0 ? `, +${remainingCount} more` : ''
+
+  return `${paths.length === 1 ? singular : plural}: ${labels}${suffix}.`
+}
+
 export const SceneInspectorPane = ({
   className,
   editor,
   sceneLabel,
   tilemapSize,
+  spritePreviews,
   sceneScriptOptions = [],
   actorScriptOptions = [],
   sceneScriptPropertyDefinitions = [],
@@ -86,6 +131,12 @@ export const SceneInspectorPane = ({
   isCollisionCallbackPickerLoading = false,
   collisionCallbackPickerErrorMessage = null,
   maxCollisionCallbacks = 0,
+  maxTagSlots = 5,
+  projectTags = [],
+  defaultSpritePalettes = [null, null],
+  defaultBackgroundPalette = null,
+  spritePaletteMismatchPaths = [],
+  backgroundPaletteMismatchPaths = [],
   onRequestTilemapSelection = () => undefined,
   onRequestWindowSelection = () => undefined,
   onRequestSceneScriptSelection = () => undefined,
@@ -96,7 +147,8 @@ export const SceneInspectorPane = ({
   onSetSceneScriptProperty = () => undefined,
   onSetActorScriptProperty = () => undefined,
   onRefreshCollisionCallbackCandidates = () => undefined,
-  onSetCollisionCallbacks = () => undefined
+  onSetCollisionCallbacks = () => undefined,
+  onSetCollisionExitCallbacks = () => undefined
 }: SceneInspectorPaneProps): ReactElement => {
   const selectedNode = editor.selectedNode
   const selectedActor = editor.selectedActor
@@ -117,7 +169,14 @@ export const SceneInspectorPane = ({
   const [heightDraft, setHeightDraft] = useState('8')
   const [scriptPropertyDrafts, setScriptPropertyDrafts] = useState<Record<string, string>>({})
   const [scriptPropertyErrors, setScriptPropertyErrors] = useState<Record<string, string>>({})
-  const [isCollisionCallbackPickerOpen, setIsCollisionCallbackPickerOpen] = useState(false)
+  const [collisionCallbackPicker, setCollisionCallbackPicker] = useState<{
+    nodeId: string
+    mode: 'collision' | 'exit'
+  } | null>(null)
+  const collisionCallbackPickerMode =
+    selectedCollision && collisionCallbackPicker?.nodeId === selectedCollision.id
+      ? collisionCallbackPicker.mode
+      : null
 
   useEffect(() => {
     if (selectedActor) {
@@ -139,10 +198,6 @@ export const SceneInspectorPane = ({
     setWidthDraft('8')
     setHeightDraft('8')
   }, [collisionParentActor, selectedActor, selectedCollision])
-
-  useEffect(() => {
-    setIsCollisionCallbackPickerOpen(false)
-  }, [selectedCollision?.id])
 
   const activeScriptPropertyDefinitions = useMemo(() => {
     if (!selectedNode) {
@@ -193,7 +248,12 @@ export const SceneInspectorPane = ({
     const nextPosition = clampSceneActorPosition(
       axis === 'x' ? nextCoord : selectedActor.x,
       axis === 'y' ? nextCoord : selectedActor.y,
-      tilemapSize
+      tilemapSize,
+      getSceneActorAnchorOffsetForSize(
+        selectedActor.spritePath && spritePreviews
+          ? spritePreviews[selectedActor.spritePath]
+          : null
+      )
     )
 
     editor.updateActor(selectedActor.id, nextPosition)
@@ -273,6 +333,147 @@ export const SceneInspectorPane = ({
     selectedActor?.scriptPath ?? null,
     'No actor script selected'
   )
+  const sceneSpritePalettes = editor.spritePalettes ?? EMPTY_SCENE_SPRITE_PALETTES
+  const referencedSpritePalettes = defaultSpritePalettes ?? EMPTY_SCENE_SPRITE_PALETTES
+  const selectedTaggableNode = selectedActor ?? selectedCollision
+  const selectedTagIds = selectedTaggableNode?.tags ?? []
+
+  const toggleTag = (tagId: string, isSelected: boolean): void => {
+    if (!selectedTaggableNode) {
+      return
+    }
+
+    const nextTags = isSelected
+      ? [...selectedTagIds, tagId].slice(0, maxTagSlots)
+      : selectedTagIds.filter((currentTagId) => currentTagId !== tagId)
+
+    editor.setNodeTags(selectedTaggableNode.id, nextTags)
+  }
+
+  const renderTagControls = (): ReactElement | null => {
+    if (!selectedTaggableNode) {
+      return null
+    }
+
+    return (
+      <>
+        <div className="scene-inspector-pane__field">
+          <span>Tags</span>
+          <strong>
+            {selectedTagIds.length} / {maxTagSlots}
+          </strong>
+        </div>
+
+        {projectTags.length === 0 && (
+          <div className="scene-inspector-pane__hint">No project tags defined.</div>
+        )}
+
+        {projectTags.length > 0 && (
+          <div className="scene-inspector-pane__tag-list">
+            {projectTags.map((tag) => {
+              const isSelected = selectedTagIds.includes(tag.id)
+              const isDisabled = !isSelected && selectedTagIds.length >= maxTagSlots
+
+              return (
+                <label key={tag.id} className="scene-inspector-pane__tag-option">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    disabled={isDisabled}
+                    onChange={(event) => toggleTag(tag.id, event.target.checked)}
+                  />
+                  <span>{tag.name}</span>
+                </label>
+              )
+            })}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  const renderScenePalette = (
+    title: string,
+    palette: string[] | null,
+    mismatchCopy: string,
+    defaultPalette: string[] | null,
+    onChangePalette: (palette: string[]) => void,
+    onUseDefaultPalette: (palette: string[]) => void,
+    emptyLabel = 'Unset'
+  ): ReactElement => {
+    const editablePalette = normalizeProjectPalette(
+      palette ?? defaultPalette ?? DEFAULT_GB_PALETTE
+    )
+    const reorderPalette = (sourceIndex: number, targetIndex: number): void => {
+      if (sourceIndex === targetIndex) {
+        return
+      }
+
+      const nextPalette = [...editablePalette]
+      const [movedColor] = nextPalette.splice(sourceIndex, 1)
+      nextPalette.splice(targetIndex, 0, movedColor)
+      onChangePalette(nextPalette)
+    }
+
+    return (
+      <div className="scene-inspector-pane__palette">
+        <div className="scene-inspector-pane__field">
+          <span>{title}</span>
+          <strong>{palette ? 'Scene palette' : emptyLabel}</strong>
+        </div>
+
+        <div className="scene-inspector-pane__palette-row" aria-label={title}>
+          {editablePalette.map((color, index) => (
+            <div
+              key={`${title}-${color}-${index}`}
+              draggable
+              className="scene-inspector-pane__palette-swatch"
+              style={{ backgroundColor: color }}
+              title={`Index ${index}: ${color}. Drag to reorder.`}
+              onDragStart={(event) => {
+                event.dataTransfer.setData('text/plain', String(index))
+                event.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragOver={(event) => {
+                event.preventDefault()
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                const sourceIndex = Number.parseInt(
+                  event.dataTransfer.getData('text/plain'),
+                  10
+                )
+
+                if (Number.isInteger(sourceIndex)) {
+                  reorderPalette(sourceIndex, index)
+                }
+              }}
+            >
+              <span className="scene-inspector-pane__palette-swatch-index">{index}</span>
+            </div>
+          ))}
+        </div>
+
+        {mismatchCopy && (
+          <p className="scene-inspector-pane__warning" role="status">
+            {mismatchCopy}
+          </p>
+        )}
+
+        {defaultPalette && (
+          <button
+            type="button"
+            onClick={() => {
+              onUseDefaultPalette(defaultPalette)
+            }}
+          >
+            Use Referenced Palette
+          </button>
+        )}
+      </div>
+    )
+  }
+
   const commitScriptProperty = (definition: ParsedScriptPropertyDefinition): void => {
     if (definition.kind !== 'integer') {
       return
@@ -500,8 +701,12 @@ export const SceneInspectorPane = ({
       return []
     }
 
+    const assignedCallbacks =
+      collisionCallbackPickerMode === 'exit'
+        ? selectedCollision.exitCallbacks
+        : selectedCollision.callbacks
     const assignedKeys = new Set(
-      (selectedCollision.callbacks ?? []).map(
+      (assignedCallbacks ?? []).map(
         (callback) => `${callback.scriptPath}::${callback.functionName}`
       )
     )
@@ -509,7 +714,7 @@ export const SceneInspectorPane = ({
     return collisionCallbackCandidates.filter((candidate) => {
       return !assignedKeys.has(`${candidate.scriptPath}::${candidate.functionName}`)
     })
-  }, [collisionCallbackCandidates, selectedCollision])
+  }, [collisionCallbackCandidates, collisionCallbackPickerMode, selectedCollision])
 
   const getSelectionTypeLabel = (node: SceneAssetNode | null): string => {
     if (!node) {
@@ -532,14 +737,23 @@ export const SceneInspectorPane = ({
       return
     }
 
-    onSetCollisionCallbacks(selectedCollision.id, [
-      ...(selectedCollision.callbacks ?? []),
-      {
-        scriptPath: candidate.scriptPath,
-        functionName: candidate.functionName
-      }
-    ])
-    setIsCollisionCallbackPickerOpen(false)
+    const nextCallback = {
+      scriptPath: candidate.scriptPath,
+      functionName: candidate.functionName
+    }
+
+    if (collisionCallbackPickerMode === 'exit') {
+      onSetCollisionExitCallbacks(selectedCollision.id, [
+        ...(selectedCollision.exitCallbacks ?? []),
+        nextCallback
+      ])
+    } else {
+      onSetCollisionCallbacks(selectedCollision.id, [
+        ...(selectedCollision.callbacks ?? []),
+        nextCallback
+      ])
+    }
+    setCollisionCallbackPicker(null)
   }
 
   const showLegacyEmptyState =
@@ -556,13 +770,13 @@ export const SceneInspectorPane = ({
     >
       {!editor.canEdit && (
         <div className="scene-inspector-pane__empty">
-          Open a scene to inspect its hierarchy, scripts, and collision callbacks.
+          Open a scene to inspect it.
         </div>
       )}
 
       {editor.canEdit && showLegacyEmptyState && (
         <div className="scene-inspector-pane__empty">
-          Select an actor or collision in the hierarchy or scene view to edit its properties.
+          Select an actor or collision.
         </div>
       )}
 
@@ -597,6 +811,41 @@ export const SceneInspectorPane = ({
               <button type="button" onClick={onRequestWindowSelection}>
                 {editor.windowPath ? 'Change Window' : 'Select Window'}
               </button>
+
+              {renderScenePalette(
+                'Sprite Palette 0',
+                sceneSpritePalettes[0],
+                formatPaletteMismatchCopy(
+                  spritePaletteMismatchPaths,
+                  'Sprite palette matches neither scene palette',
+                  'Sprite palettes match neither scene palette'
+                ),
+                referencedSpritePalettes[0],
+                (palette) => editor.setSpritePalette(0, palette),
+                (palette) => editor.setSpritePalette(0, palette)
+              )}
+
+              {renderScenePalette(
+                'Sprite Palette 1',
+                sceneSpritePalettes[1],
+                '',
+                referencedSpritePalettes[1] ?? sceneSpritePalettes[0] ?? referencedSpritePalettes[0],
+                (palette) => editor.setSpritePalette(1, palette),
+                (palette) => editor.setSpritePalette(1, palette)
+              )}
+
+              {renderScenePalette(
+                'Background/Window Palette',
+                editor.backgroundPalette,
+                formatPaletteMismatchCopy(
+                  backgroundPaletteMismatchPaths,
+                  'Background/window palette differs',
+                  'Background/window palettes differ'
+                ),
+                defaultBackgroundPalette,
+                editor.setBackgroundPalette,
+                editor.setBackgroundPalette
+              )}
 
               <div className="scene-inspector-pane__field">
                 <span>Scene Script</span>
@@ -646,6 +895,25 @@ export const SceneInspectorPane = ({
                 {selectedActor.spritePath ? 'Change Sprite' : 'Select Sprite'}
               </button>
 
+              {selectedActor.spritePath && (
+                <div className="scene-inspector-pane__field">
+                  <label htmlFor="scene-inspector-actor-sprite-palette">Sprite Palette</label>
+                  <select
+                    id="scene-inspector-actor-sprite-palette"
+                    value={selectedActor.spritePaletteIndex ?? 0}
+                    onChange={(event) => {
+                      editor.setActorSpritePaletteIndex(
+                        selectedActor.id,
+                        Number(event.target.value) === 1 ? 1 : 0
+                      )
+                    }}
+                  >
+                    <option value={0}>Palette 0</option>
+                    <option value={1}>Palette 1</option>
+                  </select>
+                </div>
+              )}
+
               <div className="scene-inspector-pane__field">
                 <span>Actor Script</span>
                 <strong>{selectedActorScriptLabel}</strong>
@@ -670,6 +938,27 @@ export const SceneInspectorPane = ({
                 />
                 <span>Follow camera</span>
               </label>
+
+              <div className="scene-inspector-pane__field">
+                <label htmlFor="scene-inspector-actor-physics-mode">Physics Mode</label>
+                <select
+                  id="scene-inspector-actor-physics-mode"
+                  value={selectedActor.physicsMode}
+                  onChange={(event) => {
+                    const nextPhysicsMode = event.target.value
+
+                    if (isSceneActorPhysicsMode(nextPhysicsMode)) {
+                      editor.updateActor(selectedActor.id, { physicsMode: nextPhysicsMode })
+                    }
+                  }}
+                >
+                  {SCENE_ACTOR_PHYSICS_MODES.map((physicsMode) => (
+                    <option key={physicsMode} value={physicsMode}>
+                      {SCENE_ACTOR_PHYSICS_MODE_LABELS[physicsMode]}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div className="scene-inspector-pane__field">
                 <span>Scene Bounds</span>
@@ -714,7 +1003,9 @@ export const SceneInspectorPane = ({
                 </label>
               </div>
 
-              <p className="scene-inspector-pane__hint">Positions use 1/16th-pixel precision.</p>
+              <p className="scene-inspector-pane__hint">1/16th-pixel precision.</p>
+
+              {renderTagControls()}
 
               {activeScriptPropertyDefinitions.length > 0 && (
                 <>
@@ -810,76 +1101,37 @@ export const SceneInspectorPane = ({
                 </label>
               </div>
 
-              <div className="scene-inspector-pane__field">
-                <span>Collision Callbacks</span>
-                <strong>
-                  {(selectedCollision.callbacks ?? []).length} / {maxCollisionCallbacks || 0}
-                </strong>
-              </div>
+              <SceneCollisionCallbackControls
+                collision={selectedCollision}
+                maxCollisionCallbacks={maxCollisionCallbacks}
+                onSetCollisionCallbacks={onSetCollisionCallbacks}
+                onSetCollisionExitCallbacks={onSetCollisionExitCallbacks}
+                onOpenPicker={(mode) => {
+                  setCollisionCallbackPicker({ nodeId: selectedCollision.id, mode })
+                }}
+              />
 
-              <div className="scene-inspector-pane__callback-list">
-                {(selectedCollision.callbacks ?? []).length === 0 && (
-                  <div className="scene-inspector-pane__hint">No collision callbacks assigned.</div>
-                )}
-
-                {(selectedCollision.callbacks ?? []).map((callback, index) => (
-                  <div
-                    key={`${callback.scriptPath}:${callback.functionName}`}
-                    className="scene-inspector-pane__callback-item"
-                  >
-                    <div>
-                      <strong>{callback.functionName}</strong>
-                      <span>{getPathLabel(callback.scriptPath, 'Script')}</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSetCollisionCallbacks(
-                          selectedCollision.id,
-                          (selectedCollision.callbacks ?? []).filter(
-                            (_, callbackIndex) => callbackIndex !== index
-                          )
-                        )
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="scene-inspector-pane__callback-adder">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCollisionCallbackPickerOpen(true)
-                  }}
-                  disabled={
-                    maxCollisionCallbacks > 0 &&
-                    (selectedCollision.callbacks ?? []).length >= maxCollisionCallbacks
-                  }
-                >
-                  Add Callback
-                </button>
-              </div>
+              {renderTagControls()}
 
               <p className="scene-inspector-pane__hint">
-                Collision boxes use local coordinates under actor parents and scene coordinates at
-                the root.
+                Local under actors; scene coordinates at the root.
               </p>
 
-              {isCollisionCallbackPickerOpen && (
+              {collisionCallbackPickerMode && (
                 <ProjectScriptCallbackPickerModal
-                  title="Add Collision Callback"
-                  description="Choose a script, then expand it to pick one of its compatible collision callbacks."
+                  title={
+                    collisionCallbackPickerMode === 'exit'
+                      ? 'Add Collision Exit Callback'
+                      : 'Add Collision Callback'
+                  }
+                  description="Pick a compatible callback."
                   candidates={availableCollisionCandidates}
                   isLoading={isCollisionCallbackPickerLoading}
                   errorMessage={collisionCallbackPickerErrorMessage}
-                  emptyMessage="No compatible callbacks were found in general, actor, or scene scripts."
+                  emptyMessage="No compatible callbacks found."
                   onRefresh={onRefreshCollisionCallbackCandidates}
                   onClose={() => {
-                    setIsCollisionCallbackPickerOpen(false)
+                    setCollisionCallbackPicker(null)
                   }}
                   onSelect={handleSelectCollisionCallback}
                 />

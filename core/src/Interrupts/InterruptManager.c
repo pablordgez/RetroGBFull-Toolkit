@@ -32,18 +32,21 @@ static void master_vblank_isr(void) NONBANKED{
 
 static void master_lcd_isr(void) NONBANKED{
     uint8_t current_index = interrupt_lcd_current_index;
-    InterruptCallback callback;
+    uint8_t current_ly;
 
     if(current_index >= interrupt_lcd_event_count){
         return;
     }
 
-    callback = interrupt_lcd_events[current_index].callback;
-    if(callback != 0){
-        callback();
+    current_ly = interrupt_lcd_events[current_index].ly;
+    while(current_index < interrupt_lcd_event_count && interrupt_lcd_events[current_index].ly == current_ly){
+        InterruptCallback callback = interrupt_lcd_events[current_index].callback;
+        if(callback != 0){
+            callback();
+        }
+        current_index++;
     }
 
-    current_index++;
     interrupt_lcd_current_index = current_index;
     if(current_index < interrupt_lcd_event_count){
         LYC_REG = interrupt_lcd_events[current_index].ly;
@@ -324,4 +327,76 @@ uint8_t add_lcd_scanline_interrupt(uint8_t ly, InterruptCallback callback) BANKE
     }
 
     return insert_index;
+}
+
+uint8_t remove_lcd_scanline_interrupt(uint8_t ly, InterruptCallback callback) BANKED{
+    uint8_t event_removed = 0;
+    uint8_t event_index;
+
+    CRITICAL {
+        event_index = 0;
+        while(event_index < interrupt_lcd_event_count){
+            if(interrupt_lcd_events[event_index].ly == ly && interrupt_lcd_events[event_index].callback == callback){
+                uint8_t shift_index;
+
+                for(shift_index = event_index; shift_index + 1U < interrupt_lcd_event_count; shift_index++){
+                    interrupt_lcd_events[shift_index] = interrupt_lcd_events[shift_index + 1U];
+                }
+
+                interrupt_lcd_event_count--;
+                interrupt_lcd_events[interrupt_lcd_event_count].ly = 0;
+                interrupt_lcd_events[interrupt_lcd_event_count].callback = 0;
+                event_removed = 1;
+                break;
+            }
+            event_index++;
+        }
+
+        interrupt_lcd_current_index = 0;
+        if(interrupt_lcd_event_count == 0){
+            IE_REG &= (uint8_t)~LCD_IFLAG;
+            IF_REG &= (uint8_t)~LCD_IFLAG;
+        } else{
+            LYC_REG = interrupt_lcd_events[0].ly;
+            IE_REG |= LCD_IFLAG;
+        }
+    }
+
+    return event_removed;
+}
+
+void clear_lcd_scanline_interrupts_for_callback(InterruptCallback callback) BANKED{
+    uint8_t event_index;
+
+    if(callback == 0){
+        return;
+    }
+
+    CRITICAL {
+        event_index = 0;
+        while(event_index < interrupt_lcd_event_count){
+            if(interrupt_lcd_events[event_index].callback == callback){
+                uint8_t shift_index;
+
+                for(shift_index = event_index; shift_index + 1U < interrupt_lcd_event_count; shift_index++){
+                    interrupt_lcd_events[shift_index] = interrupt_lcd_events[shift_index + 1U];
+                }
+
+                interrupt_lcd_event_count--;
+                interrupt_lcd_events[interrupt_lcd_event_count].ly = 0;
+                interrupt_lcd_events[interrupt_lcd_event_count].callback = 0;
+            } else{
+                event_index++;
+            }
+        }
+
+        interrupt_lcd_current_index = 0;
+        if(interrupt_lcd_event_count == 0){
+            IE_REG &= (uint8_t)~LCD_IFLAG;
+            IF_REG &= (uint8_t)~LCD_IFLAG;
+        } else{
+            LYC_REG = interrupt_lcd_events[0].ly;
+            IE_REG |= LCD_IFLAG;
+        }
+    }
 }

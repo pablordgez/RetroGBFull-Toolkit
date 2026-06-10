@@ -41,6 +41,7 @@ void balanced_physics(int16_t dx, int16_t dy) BANKED;
 void attach_child(Actor* child) BANKED;
 void detach_child(Actor* child) BANKED;
 void set_collider(Collider* collider) BANKED;
+void destroy_actor(Actor* actor) BANKED;
 
 
 extern Actor* THIS_ACTOR;

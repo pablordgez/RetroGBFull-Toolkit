@@ -91,5 +91,46 @@ describe('imageUtils', () => {
             expect(imageData.data[2]).toBe(0);
             expect(imageData.data[3]).toBe(255); // Alpha
         });
+
+        it('should return empty string if getContext returns null', () => {
+            const mockCanvas = {
+                width: 0,
+                height: 0,
+                getContext: vi.fn(() => null),
+            };
+            document.createElement = vi.fn(() => mockCanvas);
+
+            const result = renderTileToDataURL(new Uint8Array([0]), 1, 1);
+            expect(result).toBe('');
+        });
+
+        it('should fallback to #000000 if colorIndex is out of bounds', () => {
+            const width = 1;
+            const height = 1;
+            const grid = new Uint8Array([5]); // Out of bounds for the default or provided palette
+
+            const mockCtx = {
+                 createImageData: vi.fn((w, h) => ({
+                     data: new Uint8ClampedArray(w * h * 4)
+                 })),
+                 putImageData: vi.fn(),
+            };
+            const mockCanvas = {
+                 width: 0,
+                 height: 0,
+                 getContext: vi.fn(() => mockCtx),
+                 toDataURL: vi.fn(() => "result"),
+            };
+            document.createElement = vi.fn(() => mockCanvas);
+
+            renderTileToDataURL(grid, width, height, []);
+
+            const imageData = mockCtx.createImageData.mock.results[0].value;
+            // Fallback is #000000 -> 0, 0, 0
+            expect(imageData.data[0]).toBe(0);
+            expect(imageData.data[1]).toBe(0);
+            expect(imageData.data[2]).toBe(0);
+            expect(imageData.data[3]).toBe(255); // Alpha
+        });
     });
 });

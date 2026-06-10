@@ -3,7 +3,11 @@ import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 import { MANAGED_DEFAULT_ACTOR_IDENTIFIER } from './projectSceneCodeEmitter'
 import type { ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
+import { buildProjectTagEnumName, type ProjectTagEntry } from '../shared/projectTags'
 import type {
+  MusicAssetDocument,
+  MusicChannelKey,
+  MusicPattern,
   SpriteAssetDocument,
   TilemapAssetDocument,
   TilesetAssetDocument,
@@ -58,12 +62,15 @@ const buildTileBytes = (pixels: number[]): number[] => {
 
 // builds a sprite byte array: for each frame, split by rows of 8x8 tiles (in 8x16 mode for each tile, the tile in
 // the following row is also included), for each tile build the tile bytes and concatenate them
-const buildSpriteFrameBytes = (document: SpriteAssetDocument): number[] => {
+const buildSpriteFrameBytes = (
+  document: SpriteAssetDocument,
+  use8x16SpriteMode = document.is8x16Mode
+): number[] => {
   const bytes: number[] = []
   // width is document width in 8 pixel tiles
   const tilesAcross = Math.max(1, Math.ceil(document.width / 8))
   // height depends on mode
-  const tilesDown = document.is8x16Mode
+  const tilesDown = use8x16SpriteMode
     ? Math.max(1, Math.ceil(document.height / 16))
     : Math.max(1, Math.ceil(document.height / 8))
 
@@ -74,7 +81,7 @@ const buildSpriteFrameBytes = (document: SpriteAssetDocument): number[] => {
       for (let tileX = 0; tileX < tilesAcross; tileX += 1) {
         // builds an array with the rows that the tile(s) occupy: in 8x16 mode it's the current tile and
         // the one in the next row, in 8x8 mode, just the current tile
-        const tileRows = document.is8x16Mode ? [tileY * 16, tileY * 16 + 8] : [tileY * 8]
+        const tileRows = use8x16SpriteMode ? [tileY * 16, tileY * 16 + 8] : [tileY * 8]
 
         for (const startRow of tileRows) {
           const pixels: number[] = []
@@ -105,8 +112,11 @@ interface SpriteMetaspriteLayoutEntry {
   dtile: number
 }
 
-const hasSpriteMetaspriteLayout = (document: SpriteAssetDocument): boolean => {
-  const maxSingleSpriteHeight = document.is8x16Mode ? 16 : 8
+const hasSpriteMetaspriteLayout = (
+  document: SpriteAssetDocument,
+  use8x16SpriteMode = document.is8x16Mode
+): boolean => {
+  const maxSingleSpriteHeight = use8x16SpriteMode ? 16 : 8
   return document.width > 8 || document.height > maxSingleSpriteHeight
 }
 
@@ -137,12 +147,13 @@ const isSpriteTileBlank = (
 
 // build entries with x, y and dtile for each sprite in a metasprite
 const collectSpriteMetaspriteEntries = (
-  document: SpriteAssetDocument
+  document: SpriteAssetDocument,
+  use8x16SpriteMode = document.is8x16Mode
 ): SpriteMetaspriteLayoutEntry[] => {
   const tilesAcross = Math.max(1, Math.ceil(document.width / 8))
 
   // different logic for 8x16 mode
-  if (document.is8x16Mode) {
+  if (use8x16SpriteMode) {
     const spriteRows = Math.max(1, Math.ceil(document.height / 16))
     const entries: SpriteMetaspriteLayoutEntry[] = []
 
@@ -208,9 +219,13 @@ const collectSpriteMetaspriteEntries = (
 }
 
 // build metasprite data
-const buildMetaspriteLines = (identifier: string, document: SpriteAssetDocument): string[] => {
+const buildMetaspriteLines = (
+  identifier: string,
+  document: SpriteAssetDocument,
+  use8x16SpriteMode = document.is8x16Mode
+): string[] => {
   const tilesAcross = Math.max(1, Math.ceil(document.width / 8))
-  const tilesDown = document.is8x16Mode
+  const tilesDown = use8x16SpriteMode
     ? Math.max(1, Math.ceil(document.height / 16))
     : Math.max(1, Math.ceil(document.height / 8))
 
@@ -219,7 +234,7 @@ const buildMetaspriteLines = (identifier: string, document: SpriteAssetDocument)
   }
 
   const lines: string[] = [`const metasprite_t ${identifier}_metasprite_data[] = {`]
-  const entries = collectSpriteMetaspriteEntries(document)
+  const entries = collectSpriteMetaspriteEntries(document, use8x16SpriteMode)
   // pivot starts at the center
   let previousX = document.width / 2
   let previousY = document.height / 2
@@ -246,11 +261,14 @@ const buildAnimationDuration = (fps: number): number => {
 
 // builds the header and source files for a sprite
 export const buildSpriteResourceFiles = (
-  sprite: ProjectAssetRecordLike
+  sprite: ProjectAssetRecordLike,
+  use8x16SpriteMode = (sprite.document as SpriteAssetDocument).is8x16Mode
 ): { headerPath: string; sourcePath: string; headerContent: string; sourceContent: string } => {
   const document = sprite.document as SpriteAssetDocument
-  const hasMetasprite = hasSpriteMetaspriteLayout(document)
-  const metaspriteLines = hasMetasprite ? buildMetaspriteLines(sprite.identifier, document) : []
+  const hasMetasprite = hasSpriteMetaspriteLayout(document, use8x16SpriteMode)
+  const metaspriteLines = hasMetasprite
+    ? buildMetaspriteLines(sprite.identifier, document, use8x16SpriteMode)
+    : []
   const resourceDirectory = `res/${sprite.identifier}`
   const headerPath = `${resourceDirectory}/${sprite.identifier}.h`
   const sourcePath = `${resourceDirectory}/${sprite.identifier}.c`
@@ -286,7 +304,7 @@ export const buildSpriteResourceFiles = (
     `BANKREF(${sprite.identifier}_bankref)`,
     '',
     `const uint8_t ${sprite.identifier}_sprite_data[] = {`,
-    formatByteArray(buildSpriteFrameBytes(document)),
+    formatByteArray(buildSpriteFrameBytes(document, use8x16SpriteMode)),
     '};',
     ...(metaspriteLines.length > 0 ? ['', ...metaspriteLines] : []),
     ''
@@ -360,6 +378,7 @@ export const buildMapResourceFiles = (
 ): { headerPath: string; sourcePath: string; headerContent: string; sourceContent: string } => {
   const document = resource.document as TilemapAssetDocument | WindowAssetDocument
   const tilesetDocument = tileset.document as TilesetAssetDocument
+  const runtimeGrid = buildRuntimeMapGrid(document, windowTopEnd, windowBottomStart)
   const resourceDirectory = `res/${resource.identifier}`
   const headerPath = `${resourceDirectory}/${resource.identifier}.h`
   const sourcePath = `${resourceDirectory}/${resource.identifier}.c`
@@ -405,7 +424,7 @@ export const buildMapResourceFiles = (
     `BANKREF(${resource.identifier}_bankref)`,
     '',
     `const uint8_t ${resource.identifier}_map_data[] = {`,
-    formatByteArray(document.grid),
+    formatByteArray(runtimeGrid.grid),
     '};',
     ...(!usesSharedTileset
       ? [
@@ -428,6 +447,54 @@ export const buildMapResourceFiles = (
   }
 }
 
+const clampWindowRow = (value: number, height: number): number => {
+  return Math.max(0, Math.min(height, Math.trunc(value)))
+}
+
+const buildRuntimeMapGrid = (
+  document: TilemapAssetDocument | WindowAssetDocument,
+  windowTopEnd: number,
+  windowBottomStart: number
+): { grid: number[]; height: number } => {
+  if (document.kind !== 'window') {
+    return {
+      grid: document.grid,
+      height: document.height
+    }
+  }
+
+  const topEnd = clampWindowRow(windowTopEnd, document.height)
+  const bottomStart = clampWindowRow(windowBottomStart, document.height)
+  const width = Math.max(1, document.width)
+
+  if (topEnd === 0 && bottomStart === 0) {
+    return {
+      grid: document.grid,
+      height: document.height
+    }
+  }
+
+  const rows: number[] = []
+
+  for (let row = 0; row < topEnd; row += 1) {
+    rows.push(...document.grid.slice(row * width, (row + 1) * width))
+  }
+
+  if (bottomStart > topEnd) {
+    const screenTileRows = 18
+    const bottomEnd = Math.min(document.height, screenTileRows)
+
+    for (let row = bottomStart; row < bottomEnd; row += 1) {
+      rows.push(...document.grid.slice(row * width, (row + 1) * width))
+    }
+  }
+
+  return {
+    grid: rows,
+    height: rows.length / width
+  }
+}
+
 // can reuse a tileset if it's in the same bank (and not autobanked as it's unreliable)
 export const canReuseSharedTilesetForMap = (
   map: ProjectAssetRecordLike,
@@ -436,9 +503,269 @@ export const canReuseSharedTilesetForMap = (
   return map.bank !== DEFAULT_PROJECT_RESOURCE_BANK && map.bank === tileset.bank
 }
 
+const MUSIC_CHANNELS: MusicChannelKey[] = ['ch1', 'ch2', 'ch4']
+
+const formatMusicStep = (noteIndex: number, instrument: number): string => {
+  return `{ .note_index = ${formatHexByte(noteIndex)}, .instrument = ${formatHexByte(instrument)} }`
+}
+
+const assertValidMusicDocument = (music: ProjectAssetRecordLike): MusicAssetDocument => {
+  const document = music.document as MusicAssetDocument
+
+  if (document.kind !== 'music') {
+    throw new ProjectLauncherError(`Music "${music.name}" has an invalid asset document.`)
+  }
+
+  if (!Number.isInteger(document.speed) || document.speed < 1 || document.speed > 255) {
+    throw new ProjectLauncherError(`Music "${music.name}" has an invalid speed.`)
+  }
+
+  if (
+    document.instruments.length > 256 ||
+    document.instruments.some(
+      (instrument) =>
+        !Number.isInteger(instrument.reg1) ||
+        instrument.reg1 < 0 ||
+        instrument.reg1 > 255 ||
+        !Number.isInteger(instrument.reg2) ||
+        instrument.reg2 < 0 ||
+        instrument.reg2 > 255 ||
+        !Number.isInteger(instrument.reg3) ||
+        instrument.reg3 < 0 ||
+        instrument.reg3 > 255
+    )
+  ) {
+    throw new ProjectLauncherError(`Music "${music.name}" has invalid instrument register values.`)
+  }
+
+  const patternIds = new Set(document.patterns.map((pattern) => pattern.id))
+
+  if (patternIds.size !== document.patterns.length) {
+    throw new ProjectLauncherError(`Music "${music.name}" has duplicate pattern ids.`)
+  }
+
+  for (const pattern of document.patterns) {
+    if (pattern.steps.some((step) => step.noteIndex > 71 && step.noteIndex !== 0xff)) {
+      throw new ProjectLauncherError(
+        `Music "${music.name}" has a pattern step with an invalid note.`
+      )
+    }
+
+    if (
+      pattern.steps.some(
+        (step) =>
+          step.instrument < 0 ||
+          (step.instrument >= document.instruments.length &&
+            !(
+              document.instruments.length === 0 &&
+              step.noteIndex === 0xff &&
+              step.instrument === 0
+            ))
+      )
+    ) {
+      throw new ProjectLauncherError(
+        `Music "${music.name}" has a pattern step with an invalid instrument.`
+      )
+    }
+  }
+
+  for (const channel of MUSIC_CHANNELS) {
+    const missingPatternId = document.sequence[channel].find(
+      (patternId) => patternId !== null && !patternIds.has(patternId)
+    )
+
+    if (missingPatternId) {
+      throw new ProjectLauncherError(
+        `Music "${music.name}" references a missing pattern: ${missingPatternId}`
+      )
+    }
+  }
+
+  const sequenceLength = Math.max(
+    ...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length)
+  )
+
+  if (sequenceLength < 1 || sequenceLength > 255) {
+    throw new ProjectLauncherError(`Music "${music.name}" has an invalid sequence length.`)
+  }
+
+  return document
+}
+
+const getMusicSequenceEntry = (
+  identifier: string,
+  patternsById: Map<string, MusicPattern & { index: number }>,
+  patternId: string | null | undefined
+): string => {
+  if (!patternId) {
+    return '(void*) 0'
+  }
+
+  const pattern = patternsById.get(patternId)
+  return pattern ? `&${identifier}_pattern_${pattern.index}` : '(void*) 0'
+}
+
+export const buildMusicResourceFiles = (
+  music: ProjectAssetRecordLike
+): { headerPath: string; sourcePath: string; headerContent: string; sourceContent: string } => {
+  const document = assertValidMusicDocument(music)
+  const resourceDirectory = `res/${music.identifier}`
+  const headerPath = `${resourceDirectory}/${music.identifier}.h`
+  const sourcePath = `${resourceDirectory}/${music.identifier}.c`
+  const sequenceLength = Math.max(
+    ...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length)
+  )
+  const patternsById = new Map(
+    document.patterns.map((pattern, index) => [pattern.id, { ...pattern, index }])
+  )
+
+  const headerContent = [
+    `#ifndef ${music.identifier.toUpperCase()}_H`,
+    `#define ${music.identifier.toUpperCase()}_H`,
+    '#include "Assets/Music/Music.h"',
+    '',
+    `extern const Instrument ${music.identifier}_instruments[];`,
+    ...document.patterns.map(
+      (_pattern, index) => `extern const Pattern ${music.identifier}_pattern_${index};`
+    ),
+    '',
+    `extern const Pattern* const ${music.identifier}_ch1_sequence[];`,
+    `extern const Pattern* const ${music.identifier}_ch2_sequence[];`,
+    `extern const Pattern* const ${music.identifier}_ch4_sequence[];`,
+    '',
+    `#endif /* ${music.identifier.toUpperCase()}_H */`,
+    ''
+  ].join('\n')
+
+  const instrumentLines = [
+    `const Instrument ${music.identifier}_instruments[] = {`,
+    ...(document.instruments.length > 0
+      ? document.instruments.map(
+          (instrument) =>
+            `    { .reg1 = ${formatHexByte(instrument.reg1)}, .reg2 = ${formatHexByte(instrument.reg2)}, .reg3 = ${formatHexByte(instrument.reg3)} },`
+        )
+      : ['    { .reg1 = 0x00, .reg2 = 0x00, .reg3 = 0x00 },']),
+    '};'
+  ]
+  const patternLines = document.patterns.flatMap((pattern, index) => [
+    `const Pattern ${music.identifier}_pattern_${index} = {`,
+    '    .steps = {',
+    ...pattern.steps.map((step) => `        ${formatMusicStep(step.noteIndex, step.instrument)},`),
+    '    }',
+    '};',
+    ''
+  ])
+  const sequenceLines = MUSIC_CHANNELS.flatMap((channel) => [
+    `const Pattern* const ${music.identifier}_${channel}_sequence[] = {`,
+    ...Array.from({ length: sequenceLength }, (_, index) => {
+      return `    ${getMusicSequenceEntry(
+        music.identifier,
+        patternsById,
+        document.sequence[channel][index]
+      )},`
+    }),
+    '};',
+    ''
+  ])
+  const sourceContent = [
+    `#pragma bank ${music.bank}`,
+    `#include "${music.identifier}.h"`,
+    '',
+    `BANKREF(${music.identifier}_bankref)`,
+    '',
+    ...instrumentLines,
+    '',
+    ...patternLines,
+    ...sequenceLines
+  ].join('\n')
+
+  return {
+    headerPath,
+    sourcePath,
+    headerContent,
+    sourceContent
+  }
+}
+
+export const buildSongRegistryFiles = (
+  songs: ProjectAssetRecordLike[]
+): { headerContent: string; sourceContent: string } => {
+  const includeLines = songs.map((song) => `#include "${song.identifier}/${song.identifier}.h"`)
+  const enumLines =
+    songs.length > 0 ? songs.map((song) => `    ${song.identifier},`) : ['    NUMBER_OF_SONGS = 1']
+  const headerContent = [
+    '#ifndef SONG_REGISTRY_H',
+    '#define SONG_REGISTRY_H',
+    '',
+    '#include "Music.h"',
+    ...includeLines,
+    ...(includeLines.length > 0 ? [''] : []),
+    'typedef enum {',
+    ...enumLines,
+    ...(songs.length > 0 ? ['    NUMBER_OF_SONGS'] : []),
+    '} SongType;',
+    '',
+    'extern const Song* const songs[NUMBER_OF_SONGS];',
+    '',
+    '#endif /* SONG_REGISTRY_H */',
+    ''
+  ].join('\n')
+
+  if (songs.length === 0) {
+    return {
+      headerContent,
+      sourceContent: [
+        '#include "SongRegistry.h"',
+        '',
+        'const Song* const songs[NUMBER_OF_SONGS] = {',
+        '    (void*) 0',
+        '};',
+        ''
+      ].join('\n')
+    }
+  }
+
+  const songDefinitionLines = songs.flatMap((song) => {
+    const document = assertValidMusicDocument(song)
+    const sequenceLength = Math.max(
+      ...MUSIC_CHANNELS.map((channel) => document.sequence[channel].length)
+    )
+
+    return [
+      `BANKREF_EXTERN(${song.identifier}_bankref)`,
+      `const Song _${song.identifier} = {`,
+      `    .bank = BANK(${song.identifier}_bankref),`,
+      `    .speed = ${formatHexByte(document.speed)},`,
+      `    .sequence_length = ${formatHexByte(sequenceLength)},`,
+      `    .instruments = ${song.identifier}_instruments,`,
+      `    .ch1_seq = ${song.identifier}_ch1_sequence,`,
+      `    .ch2_seq = ${song.identifier}_ch2_sequence,`,
+      `    .ch4_seq = ${song.identifier}_ch4_sequence`,
+      '};',
+      ''
+    ]
+  })
+
+  return {
+    headerContent,
+    sourceContent: [
+      '#include "SongRegistry.h"',
+      '',
+      ...songDefinitionLines,
+      'const Song* const songs[NUMBER_OF_SONGS] = {',
+      ...songs.map((song) => `    [${song.identifier}] = &_${song.identifier},`),
+      '};',
+      ''
+    ].join('\n')
+  }
+}
+
 // builds the animation registry
 export const buildAnimationRegistryFiles = (
-  sprites: ProjectAssetRecordLike[]
+  sprites: ProjectAssetRecordLike[],
+  use8x16SpriteMode = sprites.some(
+    (sprite) => (sprite.document as SpriteAssetDocument).is8x16Mode
+  )
 ): { headerContent: string; sourceContent: string } => {
   const includeLines = sprites.map(
     (sprite) => `#include "${sprite.identifier}/${sprite.identifier}.h"`
@@ -458,6 +785,8 @@ export const buildAnimationRegistryFiles = (
     '#define ANIMATION_REGISTRY_H',
     '#include "Assets/SpaceManager.h"',
     '#include "Animation.h"',
+    '',
+    `#define SPRITES_8X16_ENABLED ${use8x16SpriteMode ? 1 : 0}`,
     '',
     ...includeLines,
     ...(includeLines.length > 0 ? [''] : []),
@@ -500,7 +829,7 @@ export const buildAnimationRegistryFiles = (
   // define the animation_data array with entries for each sprite pointing to its bank and sprite data
   const animationDefinitionLines = sprites.flatMap((sprite) => {
     const document = sprite.document as SpriteAssetDocument
-    const hasMetasprite = hasSpriteMetaspriteLayout(document)
+    const hasMetasprite = hasSpriteMetaspriteLayout(document, use8x16SpriteMode)
     const metaspriteExpression = hasMetasprite
       ? `${sprite.identifier}_metasprite_data`
       : '(void*) 0'
@@ -641,11 +970,12 @@ export const buildMapRegistryFiles = (
   // define the map_data array with entries for each map pointing to its bank and map data
   const mapDefinitionLines = maps.flatMap((map) => {
     const document = map.document as TilemapAssetDocument | WindowAssetDocument
+    const runtimeGrid = buildRuntimeMapGrid(document, map.windowTopEnd, map.windowBottomStart)
     return [
       `Map _${map.identifier} = {`,
       `    .id = ${map.identifier},`,
       `    .width = ${document.width},`,
-      `    .height = ${document.height},`,
+      `    .height = ${runtimeGrid.height},`,
       `    .tileset = ${map.usesSharedTileset ? map.tileset.identifier : map.identifier}_tileset,`,
       `    .num_tiles = ${map.usesSharedTileset ? map.tileset.identifier : map.identifier}_num_tiles,`,
       '    .first_tile = 0,',
@@ -681,7 +1011,10 @@ export const buildMapRegistryFiles = (
 }
 
 // build the actor registry header
-export const buildActorRegistryHeader = (actorScripts: ProjectScriptRecordResolved[]): string => {
+export const buildActorRegistryHeader = (
+  actorScripts: ProjectScriptRecordResolved[],
+  projectTags: ProjectTagEntry[] = []
+): string => {
   const actors = [
     { identifier: MANAGED_DEFAULT_ACTOR_IDENTIFIER },
     ...actorScripts.map((script) => ({ identifier: script.identifier }))
@@ -710,19 +1043,21 @@ export const buildActorRegistryHeader = (actorScripts: ProjectScriptRecordResolv
     '} ActorType;',
     '#undef _ACTOR',
     '',
-    'extern RVoid_PVoid actor_update_functions[NUM_ACTORS];',
-    'extern RVoid_PVoid actor_init_functions[NUM_ACTORS];',
+    'extern FAR_PTR actor_update_functions[NUM_ACTORS];',
+    'extern FAR_PTR actor_init_functions[NUM_ACTORS];',
     '',
     'void init_actor_functions(void);',
     '',
     '#define _ACTOR(name) \\',
-    '    void Actor_Update_##name(void); \\',
-    '    void Actor_Init_##name(void);',
+    '    BANKREF_EXTERN(name##_bankref) \\',
+    '    void Actor_Update_##name(void) BANKED; \\',
+    '    void Actor_Init_##name(void) BANKED;',
     'ACTORS',
     '#undef _ACTOR',
     '',
     'typedef enum {',
     '    TAG_NONE,',
+    ...projectTags.map((tag) => `    ${buildProjectTagEnumName(tag.name)},`),
     '} Tags;',
     '',
     '#endif // ACTOR_REGISTRY_H',
@@ -759,14 +1094,15 @@ export const buildSceneRegistryHeader = (sceneIdentifiers: string[]): string => 
     '} SceneType; ',
     '#undef _SCENE',
     '',
-    'extern RVoid_PVoid_BANKED scene_init_state_functions[NUM_SCENES];',
-    'extern RVoid_PVoid scene_update_functions[NUM_SCENES]; ',
+    'extern FAR_PTR scene_init_state_functions[NUM_SCENES];',
+    'extern FAR_PTR scene_update_functions[NUM_SCENES]; ',
     '',
     'void init_scene_functions(void);',
     '',
     '#define _SCENE(name) \\',
+    '    BANKREF_EXTERN(name##_bankref) \\',
     '    void scene_init_state_##name(void) BANKED; \\',
-    '    void scene_update_##name(void); ',
+    '    void scene_update_##name(void) BANKED; ',
     '    SCENES ',
     '#undef _SCENE',
     '',

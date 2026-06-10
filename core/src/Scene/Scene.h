@@ -21,8 +21,8 @@ void update_actors(void) NONBANKED;
 void draw_actors(void) NONBANKED;
 void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t* out_count) BANKED;
 void cleanup_scene(Scene* scene) BANKED;
-void set_scene_map(Map* map) NONBANKED;
-void set_scene_window(Map* map) NONBANKED;
+void set_scene_map(Map* map) BANKED;
+void set_scene_window(Map* map) BANKED;
 
 extern Scene* THIS_SCENE;
 #endif // SCENE_H

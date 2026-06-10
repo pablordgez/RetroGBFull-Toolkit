@@ -21,6 +21,7 @@ import {
   collectSceneActorNodes,
   collectSceneCollisionRenderNodes,
   findSceneNodeById,
+  getSceneActorAnchorOffsetForSize,
   pixelsToSceneCoord,
   sceneCoordToPixels
 } from './sceneHierarchyModel'
@@ -36,6 +37,7 @@ interface SceneViewportProps {
     {
       path: string
       imageUrl: string
+      imageUrlsByPalette?: [string, string]
       width: number
       height: number
     }
@@ -121,8 +123,8 @@ interface WindowVisibleBand {
 }
 
 const DEFAULT_SCENE_SIZE = {
-  width: 168,
-  height: 160
+  width: 160,
+  height: 144
 }
 
 const GAME_BOY_SCREEN_SIZE = {
@@ -131,8 +133,8 @@ const GAME_BOY_SCREEN_SIZE = {
 }
 
 const MAP_RENDER_OFFSET = {
-  x: 8,
-  y: 16
+  x: 0,
+  y: 0
 }
 
 const COLLISION_HANDLE_NAMES: Array<CollisionResizeState['handle']> = ['nw', 'ne', 'sw', 'se']
@@ -228,6 +230,16 @@ export const SceneViewport = ({
   const actors = useMemo(() => {
     return collectSceneActorNodes(editor.nodes)
   }, [editor.nodes])
+  const actorAnchorOffsets = useMemo(() => {
+    return new Map(
+      actors.map((actor) => [
+        actor.id,
+        getSceneActorAnchorOffsetForSize(
+          actor.spritePath ? spritePreviews[actor.spritePath] : null
+        )
+      ])
+    )
+  }, [actors, spritePreviews])
   const collisions = useMemo(() => {
     return collectSceneCollisionRenderNodes(editor.nodes)
   }, [editor.nodes])
@@ -378,7 +390,8 @@ export const SceneViewport = ({
         const nextPosition = clampSceneActorPosition(
           pixelsToSceneCoord(worldPoint.x - currentDragState.pointerOffsetX),
           pixelsToSceneCoord(worldPoint.y - currentDragState.pointerOffsetY),
-          tilemapSize
+          tilemapSize,
+          actorAnchorOffsets.get(currentDragState.nodeId)
         )
 
         updateDragState({
@@ -464,7 +477,14 @@ export const SceneViewport = ({
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [dragState, editor, getWorldPointFromClient, tilemapSize, updateDragState])
+  }, [
+    actorAnchorOffsets,
+    dragState,
+    editor,
+    getWorldPointFromClient,
+    tilemapSize,
+    updateDragState
+  ])
 
   const buildActorStyle = (actor: SceneAssetActorNode): CSSProperties => {
     const preview =
@@ -813,7 +833,10 @@ export const SceneViewport = ({
               >
                 {preview ? (
                   <img
-                    src={preview.imageUrl}
+                    src={
+                      preview.imageUrlsByPalette?.[actor.spritePaletteIndex ?? 0] ??
+                      preview.imageUrl
+                    }
                     alt=""
                     draggable={false}
                     className="scene-viewport__actor-sprite"

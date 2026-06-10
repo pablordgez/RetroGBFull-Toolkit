@@ -123,6 +123,9 @@ const buildProjectFileContents = (projectName: string): string => {
         name: projectName,
         createdAt: new Date().toISOString(),
         startingScenePath: null,
+        tags: {
+            entries: []
+        },
         saveData: {
             entries: []
         },
@@ -141,6 +144,42 @@ const isRecentProject = (value: unknown): value is RecentProject => {
     return typeof project.name === 'string'
         && typeof project.path === 'string'
         && typeof project.lastOpenedAt === 'string';
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+    return typeof value === 'object' && value !== null;
+};
+
+const isValidProjectJsonStructure = (value: unknown): boolean => {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    if (typeof value.name !== 'string' || value.name.trim().length === 0) {
+        return false;
+    }
+
+    if (typeof value.createdAt !== 'string') {
+        return false;
+    }
+
+    const startingScenePath = value.startingScenePath;
+    if (!(startingScenePath === undefined || startingScenePath === null || typeof startingScenePath === 'string')) {
+        return false;
+    }
+
+    const hasModernTags = isRecord(value.tags) && Array.isArray(value.tags.entries);
+    const hasModernSaveData = isRecord(value.saveData) && Array.isArray(value.saveData.entries);
+    const hasModernResources = isRecord(value.resources) && Array.isArray(value.resources.items);
+    const hasModernStructure = hasModernTags && hasModernSaveData && hasModernResources;
+
+    const hasLegacyResources = isRecord(value.resources)
+        && (
+            Array.isArray(value.resources.folders)
+            || Array.isArray(value.resources.items)
+        );
+
+    return hasModernStructure || hasLegacyResources;
 };
 
 // must be a directory containing a .json file with the same name as the directory
@@ -190,6 +229,29 @@ export const validateProjectDirectory = async (projectPath: string): Promise<Pro
             path: resolvedPath,
             jsonPath,
             message: `Expected "${projectName}.json" inside the selected folder.`
+        };
+    }
+
+    try {
+        const rawProjectJson = await readFile(jsonPath, 'utf-8');
+        const parsedProjectJson = JSON.parse(rawProjectJson);
+
+        if (!isValidProjectJsonStructure(parsedProjectJson)) {
+            return {
+                isValid: false,
+                name: projectName,
+                path: resolvedPath,
+                jsonPath,
+                message: `The file "${projectName}.json" is not a valid project JSON file.`
+            };
+        }
+    } catch {
+        return {
+            isValid: false,
+            name: projectName,
+            path: resolvedPath,
+            jsonPath,
+            message: `The file "${projectName}.json" is not valid JSON. Fix it and try opening the project again.`
         };
     }
 

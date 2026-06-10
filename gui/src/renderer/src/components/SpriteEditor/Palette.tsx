@@ -64,7 +64,7 @@ export const Palette: React.FC<PaletteProps> = ({ colors, selectedColor, onSelec
                 ))}
             </div>
             <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '0.8em', opacity: 0.7 }}>
-                Drag colors to reorder.<br/>Index 0 is transparent.
+                Drag to reorder.<br/>Index 0 is transparent.
             </div>
         </div>
     );

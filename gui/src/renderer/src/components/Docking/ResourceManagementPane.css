@@ -102,6 +102,10 @@
     grid-template-columns: auto 1fr;
 }
 
+.resource-management-pane__item--scene {
+    grid-template-columns: auto 1fr auto;
+}
+
 .resource-management-pane__item:hover,
 .resource-management-pane__item:focus-visible {
     background-color: #8bac0f;
@@ -166,6 +170,8 @@
     background-color: #c4bebb;
     font-size: 0.72rem;
     font-weight: bold;
+    white-space: nowrap;
+    flex: 0 0 auto;
 }
 
 .resource-management-pane__modal-backdrop {

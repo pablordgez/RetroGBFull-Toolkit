@@ -1,9 +1,11 @@
-import { type ReactElement, useCallback, useEffect, useMemo, useRef } from 'react'
+import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ActorAssetDocument,
   SceneAssetDocument,
   TilemapAssetDocument
 } from '../../../../shared/projectAssets'
+import type { SceneSpritePalettes } from '../../../../shared/projectPalettes'
+import type { ProjectTagEntry } from '../../../../shared/projectTags'
 import { ProjectAssetPickerModal } from '../ProjectAssets/ProjectAssetPickerModal'
 import { ProjectScriptPickerModal } from '../ProjectAssets/ProjectScriptPickerModal'
 import type { ProjectAssetDragPayload } from '../ProjectAssets/projectAssetDrag'
@@ -34,6 +36,8 @@ interface SceneEditorWorkspaceProps {
   onResourcesChanged: () => void
 }
 
+const EMPTY_SCENE_SPRITE_PALETTES: SceneSpritePalettes = [null, null]
+
 export const SceneEditorWorkspace = ({
   projectPath,
   scene,
@@ -49,14 +53,22 @@ export const SceneEditorWorkspace = ({
 }: SceneEditorWorkspaceProps): ReactElement => {
   const editor = useSceneDocumentEditor({ scene, onSceneChange })
   const workspaceRef = useRef<HTMLDivElement>(null)
+  const [projectTags, setProjectTags] = useState<ProjectTagEntry[]>([])
+  const [maxTagSlots, setMaxTagSlots] = useState(5)
   const {
     tilemapDocument,
     tilemapTilesetDocument,
     windowDocument,
     windowTilesetDocument,
     spritePreviews,
+    defaultSpritePalettes,
+    defaultBackgroundPalette,
+    spritePaletteMismatchPaths,
+    backgroundPaletteMismatchPaths,
     loadError
   } = useSceneAssetReferences(projectPath, editor)
+  const activeSpritePalettes = editor.spritePalettes ?? EMPTY_SCENE_SPRITE_PALETTES
+  const referencedSpritePalettes = defaultSpritePalettes ?? EMPTY_SCENE_SPRITE_PALETTES
 
   const focusWorkspace = useCallback(() => {
     workspaceRef.current?.focus()
@@ -135,9 +147,88 @@ export const SceneEditorWorkspace = ({
   )
   const clampActorsToMap = editor.clampActorsToMap
 
+  const applyProjectTags = useCallback((nextTags: ProjectTagEntry[]): void => {
+    setProjectTags((currentTags) => {
+      const tagsChanged =
+        currentTags.length !== nextTags.length ||
+        nextTags.some((tag, index) => {
+          const currentTag = currentTags[index]
+          return !currentTag || currentTag.id !== tag.id || currentTag.name !== tag.name
+        })
+
+      return tagsChanged ? nextTags : currentTags
+    })
+  }, [])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadTags = async (): Promise<void> => {
+      if (!projectPath) {
+        setProjectTags([])
+        setMaxTagSlots(5)
+        return
+      }
+
+      try {
+        const [tagState, tagSlots] = await Promise.all([
+          window.api.loadProjectTags(projectPath),
+          window.api.readMaxTagSlots(projectPath)
+        ])
+
+        if (isCancelled) {
+          return
+        }
+
+        applyProjectTags(tagState.entries)
+        setMaxTagSlots((currentTagSlots) => (currentTagSlots === tagSlots ? currentTagSlots : tagSlots))
+      } catch (error) {
+        console.error('[scene-editor] load tags failed', error)
+      }
+    }
+
+    void loadTags()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [applyProjectTags, projectPath])
+
+  useEffect(() => {
+    if (!projectPath) {
+      return
+    }
+
+    return window.api.onProjectTagsSaved((payload) => {
+      if (payload.projectPath !== projectPath) {
+        return
+      }
+
+      void window.api.loadProjectTags(projectPath).then((tagState) => {
+        applyProjectTags(tagState.entries)
+      })
+    })
+  }, [applyProjectTags, projectPath])
+
   useEffect(() => {
     clampActorsToMap(tilemapSize)
   }, [clampActorsToMap, tilemapSize])
+
+  useEffect(() => {
+    if (!activeSpritePalettes[0] && referencedSpritePalettes[0]) {
+      editor.setSpritePalette(0, referencedSpritePalettes[0])
+    }
+
+    if (!activeSpritePalettes[1] && referencedSpritePalettes[1]) {
+      editor.setSpritePalette(1, referencedSpritePalettes[1])
+    }
+  }, [activeSpritePalettes, editor, referencedSpritePalettes])
+
+  useEffect(() => {
+    if (!editor.backgroundPalette && defaultBackgroundPalette) {
+      editor.setBackgroundPalette(defaultBackgroundPalette)
+    }
+  }, [defaultBackgroundPalette, editor])
 
   const drawSceneTilemap = useCallback(
     (canvas: HTMLCanvasElement) => {
@@ -145,9 +236,14 @@ export const SceneEditorWorkspace = ({
         return
       }
 
-      drawTilemapToCanvas(canvas, tilemapDocument, tilemapTilesetDocument)
+      drawTilemapToCanvas(
+        canvas,
+        tilemapDocument,
+        tilemapTilesetDocument,
+        editor.backgroundPalette ?? tilemapTilesetDocument.palette
+      )
     },
-    [tilemapDocument, tilemapTilesetDocument]
+    [editor.backgroundPalette, tilemapDocument, tilemapTilesetDocument]
   )
 
   const drawSceneWindow = useCallback(
@@ -156,9 +252,14 @@ export const SceneEditorWorkspace = ({
         return
       }
 
-      drawWindowToCanvas(canvas, windowDocument, windowTilesetDocument)
+      drawWindowToCanvas(
+        canvas,
+        windowDocument,
+        windowTilesetDocument,
+        editor.backgroundPalette ?? windowTilesetDocument.palette
+      )
     },
-    [windowDocument, windowTilesetDocument]
+    [editor.backgroundPalette, windowDocument, windowTilesetDocument]
   )
 
   const handleDropProjectAsset = useCallback(
@@ -268,6 +369,7 @@ export const SceneEditorWorkspace = ({
               className="project-workspace__editor-pane project-workspace__editor-pane--inspector"
               editor={editor}
               tilemapSize={tilemapSize}
+              spritePreviews={spritePreviews}
               sceneLabel={sceneLabel}
               sceneScriptOptions={sceneScriptOptions}
               actorScriptOptions={actorScriptOptions}
@@ -277,6 +379,12 @@ export const SceneEditorWorkspace = ({
               isCollisionCallbackPickerLoading={isCollisionCallbackPickerLoading}
               collisionCallbackPickerErrorMessage={collisionCallbackPickerErrorMessage}
               maxCollisionCallbacks={maxCollisionCallbacks}
+              maxTagSlots={maxTagSlots}
+              projectTags={projectTags}
+              defaultSpritePalettes={referencedSpritePalettes}
+              defaultBackgroundPalette={defaultBackgroundPalette}
+              spritePaletteMismatchPaths={spritePaletteMismatchPaths}
+              backgroundPaletteMismatchPaths={backgroundPaletteMismatchPaths}
               onRequestTilemapSelection={() => {
                 openPicker({ mode: 'tilemap' })
               }}
@@ -309,6 +417,9 @@ export const SceneEditorWorkspace = ({
               }}
               onSetCollisionCallbacks={(nodeId, callbacks) => {
                 editor.setCollisionCallbacks(nodeId, callbacks)
+              }}
+              onSetCollisionExitCallbacks={(nodeId, callbacks) => {
+                editor.setCollisionExitCallbacks(nodeId, callbacks)
               }}
             />
           }
@@ -445,8 +556,7 @@ export const SceneEditorWorkspace = ({
           <div className="editor-modal" role="dialog" aria-modal="true">
             <h2>Save &quot;{pendingActorSaveChoice.actorName}&quot;?</h2>
             <p className="editor-modal-copy">
-              This actor came from &quot;{pendingActorSaveChoice.existingResourcePath}&quot;. You
-              can overwrite that actor resource or save a new one in /
+              Overwrite &quot;{pendingActorSaveChoice.existingResourcePath}&quot; or save a new actor in /
               {resourceManagerCurrentPath || ''}.
             </p>
 

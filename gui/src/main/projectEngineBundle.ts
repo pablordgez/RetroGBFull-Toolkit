@@ -1,33 +1,67 @@
-import { stat } from 'fs/promises'
-import { dirname, join } from 'path'
+import { readFile, stat, writeFile } from 'fs/promises'
+import { basename, dirname, join } from 'path'
 import { ProjectLauncherError } from './projectLauncher'
 import type { CopyEngineCoreResult } from '../shared/projectCodeWorkspace'
 import {
-  cleanupBundledDirectoryInTarget,
   copyBundledDirectoryIntoTarget,
   ensureProjectDirectory,
   getBundledCorePath,
-  getBundledGbdkPath
+  getBundledGbdkPath,
+  IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES
 } from './projectCodeShared'
 import { writeGeneratedScriptEnvironment } from './projectCodeScripts'
+import { withProjectCoreFileOperation } from './projectCoreFileOperations'
 
-export const copyBundledEngineCore = async (projectPath: string): Promise<CopyEngineCoreResult> => {
-  const normalizedProjectPath = await ensureProjectDirectory(projectPath)
-  const bundledCorePath = getBundledCorePath()
+const MAKEFILE_PATH = 'Makefile'
 
-  await cleanupBundledDirectoryInTarget(bundledCorePath, normalizedProjectPath)
+const toProjectRomBaseName = (projectName: string): string => {
+  const normalizedName = projectName
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
 
-  const { copiedPaths, skippedPaths } = await copyBundledDirectoryIntoTarget(
-    bundledCorePath,
-    normalizedProjectPath
+  const sanitizedName = normalizedName
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[._-]+|[._-]+$/g, '')
+
+  return sanitizedName.length > 0 ? sanitizedName : 'project'
+}
+
+const updateCopiedMakefileProjectName = async (projectPath: string): Promise<void> => {
+  const makefilePath = join(projectPath, MAKEFILE_PATH)
+  const projectRomBaseName = toProjectRomBaseName(basename(projectPath))
+  const makefileContents = await readFile(makefilePath, 'utf-8')
+  const updatedMakefileContents = makefileContents.replace(
+    /^PROJECTNAME\s*=.*$/m,
+    `PROJECTNAME    = ${projectRomBaseName}`
   )
 
-  await writeGeneratedScriptEnvironment(normalizedProjectPath)
-
-  return {
-    copiedPaths,
-    skippedPaths
+  if (updatedMakefileContents !== makefileContents) {
+    await writeFile(makefilePath, updatedMakefileContents, 'utf-8')
   }
+}
+
+export const copyBundledEngineCore = async (projectPath: string): Promise<CopyEngineCoreResult> => {
+  return withProjectCoreFileOperation(projectPath, async () => {
+    const normalizedProjectPath = await ensureProjectDirectory(projectPath)
+    const bundledCorePath = getBundledCorePath()
+
+    const { copiedPaths, skippedPaths } = await copyBundledDirectoryIntoTarget(
+      bundledCorePath,
+      normalizedProjectPath,
+      IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES,
+      { overwriteExisting: true }
+    )
+
+    await updateCopiedMakefileProjectName(normalizedProjectPath)
+    await writeGeneratedScriptEnvironment(normalizedProjectPath)
+
+    return {
+      copiedPaths,
+      skippedPaths
+    }
+  })
 }
 
 // checks if the bundled GBDK is available and copies it into the project if it's not already there

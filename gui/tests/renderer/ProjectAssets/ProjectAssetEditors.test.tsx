@@ -268,7 +268,7 @@ describe('project asset editors', () => {
     )
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByText('This tilemap needs a tileset before you can edit it.')).toBeInTheDocument()
+    expect(screen.getByText('Choose a tileset to edit this tilemap.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'MainMain.rgbtileset.json' }))
 

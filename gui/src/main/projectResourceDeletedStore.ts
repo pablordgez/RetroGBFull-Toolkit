@@ -32,7 +32,8 @@ const isTrackedAssetKind = (value: string): value is ProjectAssetKind => {
     value === 'tilemap' ||
     value === 'window' ||
     value === 'scene' ||
-    value === 'actor'
+    value === 'actor' ||
+    value === 'music'
   )
 }
 

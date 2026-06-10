@@ -1,11 +1,16 @@
 import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { basename, dirname } from 'path'
-import { loadProjectStartingScenePath, readProjectTrackedResourceBanks } from './projectMetadata'
+import {
+  loadProjectStartingScenePath,
+  loadProjectTagState,
+  readProjectTrackedResourceBanks
+} from './projectMetadata'
 import { ProjectLauncherError } from './projectLauncher'
 import { normalizeCodeIdentifierStem } from '../shared/codeIdentifiers'
 import type { BuildProjectCodeResult } from '../shared/projectCodeWorkspace'
 import {
   type SceneAssetDocument,
+  type SpriteAssetDocument,
   type TilemapAssetDocument,
   type WindowAssetDocument,
   getProjectAssetDisplayName,
@@ -13,7 +18,7 @@ import {
   parseProjectAssetDocument
 } from '../shared/projectAssets'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
-import { ensureBundledGbdkAvailableForProject } from './projectEngineBundle'
+import { copyBundledEngineCore, ensureBundledGbdkAvailableForProject } from './projectEngineBundle'
 import {
   CORE_PLACEHOLDER_SCENE_FILE_MARKER,
   IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES,
@@ -29,6 +34,7 @@ import {
   buildManagedScriptedSceneFileContents,
   getProjectScriptHeaderPath,
   loadProjectScriptRecords,
+  readMaxTagSlots,
   removeLegacyGeneratedFiles,
   rewriteManagedProjectScriptSource,
   rewriteStartingSceneInMain,
@@ -42,6 +48,8 @@ import {
   buildMapRegistryFiles,
   buildMapResourceFiles,
   buildSceneRegistryHeader,
+  buildMusicResourceFiles,
+  buildSongRegistryFiles,
   buildSpriteResourceFiles,
   buildTilesetResourceFiles,
   canReuseSharedTilesetForMap
@@ -347,14 +355,17 @@ const writeManagedTextFile = async (
 }
 
 export const buildProjectCode = async (projectPath: string): Promise<BuildProjectCodeResult> => {
-  // normalize project path and ensure GBDK is available
+  // normalize project path and refresh the bundled engine/toolchain files
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
+  await copyBundledEngineCore(normalizedProjectPath)
   await ensureBundledGbdkAvailableForProject(normalizedProjectPath)
 
-  // load all project resources and scripts
-  const [assets, scripts] = await Promise.all([
+  // load all project resources, scripts and tags
+  const [assets, scripts, projectTagState, maxTagSlots] = await Promise.all([
     loadProjectAssetRecords(normalizedProjectPath),
-    loadProjectScriptRecords(normalizedProjectPath)
+    loadProjectScriptRecords(normalizedProjectPath),
+    loadProjectTagState(normalizedProjectPath),
+    readMaxTagSlots(normalizedProjectPath)
   ])
 
   // stop if names/identifiers would collide in generated code
@@ -362,9 +373,13 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
 
   // split by kind and build maps for each one
   const spriteAssets = assets.filter((asset) => asset.kind === 'sprite')
+  const use8x16SpriteMode = spriteAssets.some(
+    (asset) => (asset.document as SpriteAssetDocument).is8x16Mode
+  )
   const tilesetAssets = assets.filter((asset) => asset.kind === 'tileset')
   const tilemapAssets = assets.filter((asset) => asset.kind === 'tilemap')
   const windowAssets = assets.filter((asset) => asset.kind === 'window')
+  const musicAssets = assets.filter((asset) => asset.kind === 'music')
   const sceneAssets = assets.filter((asset) => asset.kind === 'scene')
   const actorScripts = scripts.filter((script) => script.kind === 'actor')
   const sceneScripts = scripts.filter((script) => script.kind === 'scene')
@@ -384,7 +399,10 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
   // create a scene node emitter and shared accumulators for generated output
   const emitSceneNode = createNodeEmitter(
     spriteAssetsByPath,
-    new Map(actorScripts.map((script) => [script.path, script]))
+    new Map(actorScripts.map((script) => [script.path, script])),
+    projectTagState.entries,
+    maxTagSlots,
+    new Map(scripts.map((script) => [script.path, script]))
   )
   const writtenFiles: string[] = []
   const managedResourceDirectories = new Set<string>()
@@ -423,7 +441,9 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
       sceneRecord.asset,
       tilemapAssetsByPath,
       windowAssetsByPath,
-      emitSceneNode
+      emitSceneNode,
+      spriteAssetsByPath,
+      tilesetAssetsByPath
     )
     const managedSceneFiles = sceneRecord.sceneScript
       ? buildManagedScriptedSceneFileContents(
@@ -470,7 +490,7 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
 
   // generate sprite resource headers/sources
   for (const sprite of spriteAssets) {
-    const files = buildSpriteResourceFiles(sprite)
+    const files = buildSpriteResourceFiles(sprite, use8x16SpriteMode)
     managedResourceDirectories.add(dirname(files.headerPath).replace(/\\/g, '/'))
     writtenFiles.push(
       await writeManagedTextFile(normalizedProjectPath, files.headerPath, files.headerContent)
@@ -558,8 +578,20 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
     )
   }
 
+  // generate music resources using the engine-native Song/Pattern/Instrument structures
+  for (const music of musicAssets) {
+    const files = buildMusicResourceFiles(music)
+    managedResourceDirectories.add(dirname(files.headerPath).replace(/\\/g, '/'))
+    writtenFiles.push(
+      await writeManagedTextFile(normalizedProjectPath, files.headerPath, files.headerContent)
+    )
+    writtenFiles.push(
+      await writeManagedTextFile(normalizedProjectPath, files.sourcePath, files.sourceContent)
+    )
+  }
+
   // regenerate registries used by runtime lookups
-  const animationRegistryFiles = buildAnimationRegistryFiles(spriteAssets)
+  const animationRegistryFiles = buildAnimationRegistryFiles(spriteAssets, use8x16SpriteMode)
   writtenFiles.push(
     await writeManagedTextFile(
       normalizedProjectPath,
@@ -593,7 +625,7 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
     await writeManagedTextFile(
       normalizedProjectPath,
       'src/Actor/ActorRegistry.h',
-      buildActorRegistryHeader(actorScripts)
+      buildActorRegistryHeader(actorScripts, projectTagState.entries)
     )
   )
   writtenFiles.push(
@@ -601,6 +633,21 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
       normalizedProjectPath,
       'src/Scene/SceneRegistry.h',
       buildSceneRegistryHeader(sceneRecords.map((scene) => scene.identifier))
+    )
+  )
+  const songRegistryFiles = buildSongRegistryFiles(musicAssets)
+  writtenFiles.push(
+    await writeManagedTextFile(
+      normalizedProjectPath,
+      'src/Assets/Music/SongRegistry.h',
+      songRegistryFiles.headerContent
+    )
+  )
+  writtenFiles.push(
+    await writeManagedTextFile(
+      normalizedProjectPath,
+      'src/Assets/Music/SongRegistry.c',
+      songRegistryFiles.sourceContent
     )
   )
 
@@ -617,6 +664,7 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
     tilesetCount: tilesetAssets.length,
     tilemapCount: tilemapAssets.length,
     windowCount: windowAssets.length,
+    musicCount: musicAssets.length,
     sceneCount: sceneAssets.length,
     actorScriptCount: actorScripts.length,
     sceneScriptCount: sceneScripts.length

@@ -111,7 +111,7 @@ describe('<SaveDataEditor />', () => {
     fireEvent.change(nameInputs[0], { target: { value: 'coins' } })
     fireEvent.change(nameInputs[1], { target: { value: 'lives' } })
 
-    expect(screen.getByText('All rows are structurally valid.')).toBeInTheDocument()
+    expect(screen.getByText('Valid.')).toBeInTheDocument()
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Down' })[0])
     expect(getInputsBySelector('.save-data-editor__field--name input').map((input) => input.value)).toEqual([

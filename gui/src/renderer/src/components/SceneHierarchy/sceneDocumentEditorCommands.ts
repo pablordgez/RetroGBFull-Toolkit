@@ -280,7 +280,12 @@ export const buildSceneRenameChange = (
 export const buildActorUpdateChange = (
   nodes: SceneAssetNode[],
   nodeId: string,
-  nextValues: Partial<Pick<SceneAssetActorNode, 'x' | 'y' | 'spritePath' | 'scriptPath'>>
+  nextValues: Partial<
+    Pick<
+      SceneAssetActorNode,
+      'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode' | 'spritePaletteIndex'
+    >
+  >
 ): SceneNodeChange | null => {
   const actor = findSceneNodeById(nodes, nodeId)
 
@@ -297,7 +302,9 @@ export const buildActorUpdateChange = (
     nextActor.x === actor.x &&
     nextActor.y === actor.y &&
     nextActor.spritePath === actor.spritePath &&
-    nextActor.scriptPath === actor.scriptPath
+    nextActor.scriptPath === actor.scriptPath &&
+    nextActor.physicsMode === actor.physicsMode &&
+    nextActor.spritePaletteIndex === actor.spritePaletteIndex
   ) {
     return null
   }
@@ -321,9 +328,45 @@ export const buildActorUpdateChange = (
         ...(translatedNode as SceneAssetActorNode),
         spritePath: nextActor.spritePath,
         scriptPath: nextActor.scriptPath,
+        physicsMode: nextActor.physicsMode,
+        spritePaletteIndex: nextActor.spritePaletteIndex,
         followCamera: nextActor.followCamera
       }
     }),
+    selectedNodeId: nodeId
+  }
+}
+
+export const buildSceneNodeTagsChange = (
+  nodes: SceneAssetNode[],
+  nodeId: string,
+  tags: string[]
+): SceneNodeChange | null => {
+  const node = findSceneNodeById(nodes, nodeId)
+
+  if (!node || (!isSceneActorNode(node) && !isSceneCollisionNode(node))) {
+    return null
+  }
+
+  const nextTags = [...new Set(tags)]
+  const currentTags = node.tags ?? []
+  const didChange =
+    nextTags.length !== currentTags.length ||
+    nextTags.some((tagId, index) => currentTags[index] !== tagId)
+
+  if (!didChange) {
+    return null
+  }
+
+  return {
+    nodes: updateSceneNodeById(nodes, nodeId, (currentNode) =>
+      isSceneActorNode(currentNode) || isSceneCollisionNode(currentNode)
+        ? {
+            ...currentNode,
+            tags: nextTags.length > 0 ? nextTags : undefined
+          }
+        : currentNode
+    ),
     selectedNodeId: nodeId
   }
 }
@@ -487,6 +530,19 @@ export const buildCollisionCallbacksChange = (
   nodes: SceneAssetNode[],
   nodeId: string,
   callbacks: SceneAssetCollisionCallback[]
+): SceneNodeChange | null => buildCollisionCallbackListChange(nodes, nodeId, callbacks, 'callbacks')
+
+export const buildCollisionExitCallbacksChange = (
+  nodes: SceneAssetNode[],
+  nodeId: string,
+  callbacks: SceneAssetCollisionCallback[]
+): SceneNodeChange | null => buildCollisionCallbackListChange(nodes, nodeId, callbacks, 'exitCallbacks')
+
+const buildCollisionCallbackListChange = (
+  nodes: SceneAssetNode[],
+  nodeId: string,
+  callbacks: SceneAssetCollisionCallback[],
+  callbackField: 'callbacks' | 'exitCallbacks'
 ): SceneNodeChange | null => {
   const collision = findSceneNodeById(nodes, nodeId)
 
@@ -495,10 +551,11 @@ export const buildCollisionCallbacksChange = (
   }
 
   const nextCallbacks = callbacks.map((callback) => ({ ...callback }))
+  const currentCallbacks = collision[callbackField]
   const didChange =
-    nextCallbacks.length !== collision.callbacks.length ||
+    nextCallbacks.length !== currentCallbacks.length ||
     nextCallbacks.some((callback, index) => {
-      const currentCallback = collision.callbacks[index]
+      const currentCallback = currentCallbacks[index]
       return (
         !currentCallback ||
         currentCallback.scriptPath !== callback.scriptPath ||
@@ -515,7 +572,7 @@ export const buildCollisionCallbacksChange = (
       isSceneCollisionNode(node)
         ? {
             ...node,
-            callbacks: nextCallbacks
+            [callbackField]: nextCallbacks
           }
         : node
     ),

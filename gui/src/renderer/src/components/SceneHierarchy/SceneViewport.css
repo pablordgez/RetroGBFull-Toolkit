@@ -114,8 +114,8 @@
 
 .scene-viewport__screen-outline {
   position: absolute;
-  top: 16px;
-  left: 8px;
+  top: 0;
+  left: 0;
   width: 160px;
   height: 144px;
   box-sizing: border-box;

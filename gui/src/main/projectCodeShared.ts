@@ -2,8 +2,11 @@ import { cp, mkdir, readdir, rm, stat } from 'fs/promises'
 import { dirname, join, resolve } from 'path'
 import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
 import { resolvePathWithinProject as resolveProjectResourcePath } from './projectResourcePaths'
+import type { GbdkToolchainSource } from '../shared/projectGbdk'
+import type { MakeToolchainSource } from '../shared/projectMake'
 
 export const IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES = new Set(['deleted-resources'])
+export const IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES = new Set(['docs', 'obj'])
 export const INTERNAL_GENERATION_DIRECTORY = '.retrogbfull'
 export const RESOURCE_GENERATION_MANIFEST_PATH = `${INTERNAL_GENERATION_DIRECTORY}/resource-generation-manifest.json`
 export const SCRIPT_ENVIRONMENT_PATH = 'src/ScriptEnvironment.h'
@@ -37,8 +40,44 @@ export const getBundledCorePath = (): string => {
   return resolve(__dirname, '../../../core')
 }
 
+export const getBundledGbdkSource = (): GbdkToolchainSource => {
+  if (process.env['RETROGBFULL_BUNDLED_GBDK_PATH']) {
+    return 'override'
+  }
+
+  if (process.env['RETROGBFULL_RUNTIME_GBDK_PATH']) {
+    return 'runtime-managed'
+  }
+
+  return 'development-root'
+}
+
 export const getBundledGbdkPath = (): string => {
-  return process.env['RETROGBFULL_BUNDLED_GBDK_PATH'] ?? resolve(__dirname, '../../../gbdk')
+  return (
+    process.env['RETROGBFULL_BUNDLED_GBDK_PATH'] ??
+    process.env['RETROGBFULL_RUNTIME_GBDK_PATH'] ??
+    resolve(__dirname, '../../../gbdk')
+  )
+}
+
+export const getBundledMakeSource = (): MakeToolchainSource => {
+  if (process.env['RETROGBFULL_BUNDLED_MAKE_PATH']) {
+    return 'override'
+  }
+
+  if (process.env['RETROGBFULL_RUNTIME_MAKE_PATH']) {
+    return 'runtime-managed'
+  }
+
+  return 'development-root'
+}
+
+export const getBundledMakePath = (): string => {
+  return (
+    process.env['RETROGBFULL_BUNDLED_MAKE_PATH'] ??
+    process.env['RETROGBFULL_RUNTIME_MAKE_PATH'] ??
+    resolve(__dirname, '../../../make')
+  )
 }
 
 // recursively walks through a directory and returns relative paths of all files and directories inside
@@ -76,9 +115,10 @@ export const walkRelativePaths = async (
 // cleans up files in the target directory that are in the source directory
 export const cleanupBundledDirectoryInTarget = async (
   sourceBasePath: string,
-  targetBasePath: string
+  targetBasePath: string,
+  ignoredRootDirectories = new Set<string>()
 ): Promise<void> => {
-  const relativePaths = await walkRelativePaths(sourceBasePath)
+  const relativePaths = await walkRelativePaths(sourceBasePath, '', ignoredRootDirectories)
 
   for (const relativePath of relativePaths) {
     const sourcePath = join(sourceBasePath, relativePath)
@@ -97,12 +137,14 @@ export const cleanupBundledDirectoryInTarget = async (
   }
 }
 
-// copies files from a directory into the project, skipping files that already exist in the target location
+// copies files from a directory into the project, optionally overwriting existing target files
 export const copyBundledDirectoryIntoTarget = async (
   sourceBasePath: string,
-  targetBasePath: string
+  targetBasePath: string,
+  ignoredRootDirectories = new Set<string>(),
+  options: { overwriteExisting?: boolean } = {}
 ): Promise<{ copiedPaths: string[]; skippedPaths: string[] }> => {
-  const relativePaths = await walkRelativePaths(sourceBasePath)
+  const relativePaths = await walkRelativePaths(sourceBasePath, '', ignoredRootDirectories)
   const copiedPaths: string[] = []
   const skippedPaths: string[] = []
 
@@ -116,15 +158,23 @@ export const copyBundledDirectoryIntoTarget = async (
       continue
     }
 
-    try {
-      await stat(targetPath)
-      skippedPaths.push(relativePath.replace(/\\/g, '/'))
-      continue
-    } catch {
-      await mkdir(dirname(targetPath), { recursive: true })
-      await cp(sourcePath, targetPath, { recursive: false, errorOnExist: true })
-      copiedPaths.push(relativePath.replace(/\\/g, '/'))
+    if (!options.overwriteExisting) {
+      try {
+        await stat(targetPath)
+        skippedPaths.push(relativePath.replace(/\\/g, '/'))
+        continue
+      } catch {
+        // Missing files are copied below.
+      }
     }
+
+    await mkdir(dirname(targetPath), { recursive: true })
+    await cp(sourcePath, targetPath, {
+      recursive: false,
+      force: options.overwriteExisting ?? false,
+      errorOnExist: !options.overwriteExisting
+    })
+    copiedPaths.push(relativePath.replace(/\\/g, '/'))
   }
 
   return {

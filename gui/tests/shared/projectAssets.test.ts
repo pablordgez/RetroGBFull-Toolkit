@@ -1,18 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildProjectAssetFileName,
+  clearProjectAssetDocumentReferences,
   createDefaultProjectAssetDocument,
   parseProjectAssetDocument,
+  remapProjectAssetDocumentReferences,
   serializeProjectAssetDocument,
   getProjectAssetDisplayName,
   getProjectAssetKindFromFileName,
   normalizeWindowSplitSettings,
   type ActorAssetDocument,
+  type MusicAssetDocument,
   type SceneAssetDocument
 } from '../../src/shared/projectAssets'
 
 describe('projectAssets scene parsing', () => {
-  it('parses an older scene actor without followCamera', () => {
+  it('parses an older scene actor without followCamera or physicsMode', () => {
     const document = parseProjectAssetDocument({
       kind: 'scene',
       version: 1,
@@ -34,6 +37,7 @@ describe('projectAssets scene parsing', () => {
 
     expect(document.nodes[0]).toMatchObject({
       type: 'actor',
+      physicsMode: 'balanced',
       followCamera: false
     })
   })
@@ -55,6 +59,18 @@ describe('projectAssets scene parsing', () => {
           width: 128,
           height: 64,
           isBlocking: true,
+          callbacks: [
+            {
+              scriptPath: 'src/CustomActors/Hero.c',
+              functionName: 'OnCollision'
+            }
+          ],
+          exitCallbacks: [
+            {
+              scriptPath: 'src/CustomActors/Hero.c',
+              functionName: 'OnCollisionExit'
+            }
+          ],
           children: []
         }
       ]
@@ -64,8 +80,15 @@ describe('projectAssets scene parsing', () => {
       type: 'collision',
       width: 128,
       height: 64,
-      isBlocking: true
+      isBlocking: true,
+      exitCallbacks: [
+        {
+          scriptPath: 'src/CustomActors/Hero.c',
+          functionName: 'OnCollisionExit'
+        }
+      ]
     })
+    expect(serializeProjectAssetDocument(document)).toContain('"exitCallbacks"')
     expect(serializeProjectAssetDocument(document)).toContain('"type": "collision"')
   })
 
@@ -103,6 +126,60 @@ describe('projectAssets scene parsing', () => {
       type: 'collision',
       isBlocking: true
     })
+  })
+
+  it('round-trips actor and collision tags in scene and actor resources', () => {
+    const sceneDocument = parseProjectAssetDocument({
+      kind: 'scene',
+      version: 1,
+      tilemapPath: null,
+      windowPath: null,
+      scriptPath: null,
+      nodes: [
+        {
+          id: 'hero',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          spritePath: null,
+          tags: ['player', 'spawn'],
+          x: 0,
+          y: 0,
+          physicsMode: 'highFidelity',
+          followCamera: false,
+          children: [
+            {
+              id: 'hero-collision',
+              type: 'collision',
+              name: 'Hitbox',
+              isCollapsed: false,
+              x: 0,
+              y: 0,
+              width: 128,
+              height: 128,
+              isBlocking: true,
+              tags: ['hurtbox'],
+              children: []
+            }
+          ]
+        }
+      ]
+    }) as SceneAssetDocument
+    const actorDocument = parseProjectAssetDocument({
+      kind: 'actor',
+      version: 1,
+      root: sceneDocument.nodes[0]
+    }) as ActorAssetDocument
+
+    expect(sceneDocument.nodes[0]).toMatchObject({ type: 'actor', tags: ['player', 'spawn'] })
+    expect(sceneDocument.nodes[0]).toMatchObject({ type: 'actor', physicsMode: 'highFidelity' })
+    expect(actorDocument.root.children[0]).toMatchObject({
+      type: 'collision',
+      tags: ['hurtbox']
+    })
+    expect(serializeProjectAssetDocument(sceneDocument)).toContain('"tags"')
+    expect(serializeProjectAssetDocument(sceneDocument)).toContain('"physicsMode": "highFidelity"')
+    expect(serializeProjectAssetDocument(actorDocument)).toContain('"tags"')
   })
 
   it('round-trips scene and actor script properties without breaking older assets', () => {
@@ -199,6 +276,170 @@ describe('projectAssets scene parsing', () => {
     expect(serializeProjectAssetDocument(actorDocument)).not.toContain('"resourcePath"')
   })
 
+  it('remaps asset references across documents with exact and folder-prefix matches only', () => {
+    const tilemapDocument = parseProjectAssetDocument({
+      kind: 'tilemap',
+      version: 1,
+      width: 20,
+      height: 18,
+      grid: new Array(20 * 18).fill(0),
+      tilesetPath: 'Assets/Tilesets/Main.rgbtileset.json',
+      selectedTileIndex: 0,
+      tool: 'brush'
+    })
+    const sceneDocument = parseProjectAssetDocument({
+      kind: 'scene',
+      version: 1,
+      tilemapPath: 'Assets/Maps/Room.rgbtilemap.json',
+      windowPath: 'Assets2/Windows/HUD.rgbwindow.json',
+      scriptPath: 'src/CustomScenes/Room.c',
+      scriptProperties: {
+        map: 'Assets/Maps/Room.rgbtilemap.json'
+      },
+      nodes: [
+        {
+          id: 'hero',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          resourcePath: 'Assets/Actors/Hero.rgbactor.json',
+          spritePath: 'Assets/Sprites/Hero.rgbsprite.json',
+          scriptPath: 'src/CustomActors/Hero.c',
+          scriptProperties: {
+            idle_animation: 'Assets/Sprites/Hero.rgbsprite.json'
+          },
+          x: 0,
+          y: 0,
+          followCamera: false,
+          children: [
+            {
+              id: 'hitbox',
+              type: 'collision',
+              name: 'Hitbox',
+              isCollapsed: false,
+              x: 0,
+              y: 0,
+              width: 8,
+              height: 8,
+              isBlocking: true,
+              callbacks: [{ scriptPath: 'Assets/Scripts/Shared.c', functionName: 'OnEnter' }],
+              exitCallbacks: [],
+              children: []
+            }
+          ]
+        }
+      ]
+    }) as SceneAssetDocument
+
+    const remappedTilemap = remapProjectAssetDocumentReferences(
+      tilemapDocument,
+      'Assets',
+      'Archive/Assets'
+    )
+    const remappedScene = remapProjectAssetDocumentReferences(
+      sceneDocument,
+      'Assets',
+      'Archive/Assets'
+    )
+
+    expect(remappedTilemap.changed).toBe(true)
+    expect(remappedTilemap.document).toMatchObject({
+      tilesetPath: 'Archive/Assets/Tilesets/Main.rgbtileset.json'
+    })
+    expect(remappedScene.changed).toBe(true)
+    expect(remappedScene.document).toMatchObject({
+      tilemapPath: 'Archive/Assets/Maps/Room.rgbtilemap.json',
+      windowPath: 'Assets2/Windows/HUD.rgbwindow.json',
+      scriptProperties: {
+        map: 'Archive/Assets/Maps/Room.rgbtilemap.json'
+      }
+    })
+    expect((remappedScene.document as SceneAssetDocument).nodes[0]).toMatchObject({
+      resourcePath: 'Archive/Assets/Actors/Hero.rgbactor.json',
+      spritePath: 'Archive/Assets/Sprites/Hero.rgbsprite.json',
+      scriptProperties: {
+        idle_animation: 'Archive/Assets/Sprites/Hero.rgbsprite.json'
+      }
+    })
+    expect((remappedScene.document as SceneAssetDocument).nodes[0].children[0]).toMatchObject({
+      callbacks: [{ scriptPath: 'Archive/Assets/Scripts/Shared.c', functionName: 'OnEnter' }]
+    })
+  })
+
+  it('clears deleted asset references and keeps dependent documents valid', () => {
+    const sceneDocument = parseProjectAssetDocument({
+      kind: 'scene',
+      version: 1,
+      tilemapPath: 'Assets/Maps/Room.rgbtilemap.json',
+      windowPath: 'Assets/Windows/HUD.rgbwindow.json',
+      scriptPath: 'Assets/Scripts/Room.c',
+      scriptProperties: {
+        map: 'Assets/Maps/Room.rgbtilemap.json',
+        enabled: true
+      },
+      nodes: [
+        {
+          id: 'hero',
+          type: 'actor',
+          name: 'Hero',
+          isCollapsed: false,
+          resourcePath: 'Assets/Actors/Hero.rgbactor.json',
+          spritePath: 'Assets/Sprites/Hero.rgbsprite.json',
+          scriptPath: 'Assets/Scripts/Hero.c',
+          scriptProperties: {
+            idle_animation: 'Assets/Sprites/Hero.rgbsprite.json'
+          },
+          x: 0,
+          y: 0,
+          followCamera: false,
+          children: [
+            {
+              id: 'hitbox',
+              type: 'collision',
+              name: 'Hitbox',
+              isCollapsed: false,
+              x: 0,
+              y: 0,
+              width: 8,
+              height: 8,
+              isBlocking: true,
+              callbacks: [{ scriptPath: 'Assets/Scripts/Hero.c', functionName: 'OnEnter' }],
+              exitCallbacks: [{ scriptPath: 'Other/Scripts/Hero.c', functionName: 'OnExit' }],
+              children: []
+            }
+          ]
+        }
+      ]
+    }) as SceneAssetDocument
+
+    const cleared = clearProjectAssetDocumentReferences(sceneDocument, 'Assets')
+
+    expect(cleared.changed).toBe(true)
+    expect(cleared.document).toMatchObject({
+      tilemapPath: null,
+      windowPath: null,
+      scriptPath: null,
+      scriptProperties: {
+        map: null,
+        enabled: true
+      }
+    })
+    expect((cleared.document as SceneAssetDocument).nodes[0]).toMatchObject({
+      type: 'actor',
+      spritePath: null,
+      scriptProperties: {
+        idle_animation: null
+      }
+    })
+    expect((cleared.document as SceneAssetDocument).nodes[0]).not.toHaveProperty('resourcePath')
+    expect((cleared.document as SceneAssetDocument).nodes[0]).not.toHaveProperty('scriptPath')
+    expect((cleared.document as SceneAssetDocument).nodes[0].children[0]).toMatchObject({
+      callbacks: [],
+      exitCallbacks: [{ scriptPath: 'Other/Scripts/Hero.c', functionName: 'OnExit' }]
+    })
+    expect(() => parseProjectAssetDocument(cleared.document)).not.toThrow()
+  })
+
   it('normalizes multiple followed actors down to one in a scene document', () => {
     const document = parseProjectAssetDocument({
       kind: 'scene',
@@ -290,8 +531,10 @@ describe('projectAssets scene parsing', () => {
   it('builds file names and resolves asset kinds and display names case-insensitively', () => {
     expect(buildProjectAssetFileName('sprite', 'Hero')).toBe('Hero.rgbsprite.json')
     expect(getProjectAssetKindFromFileName('HERO.RGBWINDOW.JSON')).toBe('window')
+    expect(getProjectAssetKindFromFileName('BATTLE.RGBMUSIC.JSON')).toBe('music')
     expect(getProjectAssetKindFromFileName('README.md')).toBeNull()
     expect(getProjectAssetDisplayName('HUD.rgbwindow.json')).toBe('HUD')
+    expect(getProjectAssetDisplayName('Battle.rgbmusic.json')).toBe('Battle')
     expect(getProjectAssetDisplayName('plain.txt')).toBe('plain.txt')
   })
 
@@ -323,9 +566,53 @@ describe('projectAssets scene parsing', () => {
       kind: 'actor',
       root: {
         type: 'actor',
+        physicsMode: 'balanced',
         followCamera: false
       }
     })
+    expect(createDefaultProjectAssetDocument('music')).toMatchObject({
+      kind: 'music',
+      speed: 8,
+      loop: true,
+      instruments: [],
+      patterns: [],
+      sequence: {
+        ch1: [null],
+        ch2: [null],
+        ch4: [null]
+      }
+    })
+  })
+
+  it('parses and serializes music assets with engine-native patterns and sequences', () => {
+    const document = parseProjectAssetDocument({
+      kind: 'music',
+      version: 1,
+      speed: 6,
+      loop: false,
+      instruments: [
+        { name: 'Lead', reg1: 0x80, reg2: 0xf2, reg3: 0x20 },
+        { name: 'Kick', reg1: 0x3f, reg2: 0xf1, reg3: 0x23 }
+      ],
+      patterns: [
+        {
+          id: 'intro',
+          name: 'Intro',
+          steps: [
+            { noteIndex: 12, instrument: 1 },
+            ...Array.from({ length: 15 }, () => ({ noteIndex: 0xff, instrument: 0 }))
+          ]
+        }
+      ],
+      sequence: {
+        ch1: ['intro'],
+        ch2: [null],
+        ch4: ['intro']
+      }
+    }) as MusicAssetDocument
+
+    expect(document.patterns[0].steps[0]).toEqual({ noteIndex: 12, instrument: 1 })
+    expect(serializeProjectAssetDocument(document)).toContain('"kind": "music"')
   })
 
   it('parses tilemap and window assets and normalizes optional fields', () => {
@@ -366,7 +653,7 @@ describe('projectAssets scene parsing', () => {
     })
   })
 
-  it('rejects malformed sprite, tileset, tilemap, window, actor, and unsupported assets', () => {
+  it('rejects malformed sprite, tileset, tilemap, window, actor, music, and unsupported assets', () => {
     expect(() =>
       parseProjectAssetDocument({
         kind: 'sprite',
@@ -436,6 +723,35 @@ describe('projectAssets scene parsing', () => {
     expect(() =>
       parseProjectAssetDocument({
         kind: 'music',
+        version: 1
+      })
+    ).toThrow('The music asset file is invalid.')
+
+    expect(() =>
+      parseProjectAssetDocument({
+        kind: 'music',
+        version: 1,
+        speed: 6,
+        loop: true,
+        instruments: [{ reg1: 0x100, reg2: 0xf2, reg3: 0x20 }],
+        patterns: [
+          {
+            id: 'bad',
+            name: 'Bad',
+            steps: Array.from({ length: 16 }, () => ({ noteIndex: 0xff, instrument: 0 }))
+          }
+        ],
+        sequence: {
+          ch1: ['bad'],
+          ch2: [null],
+          ch4: [null]
+        }
+      })
+    ).toThrow('The music asset file is invalid.')
+
+    expect(() =>
+      parseProjectAssetDocument({
+        kind: 'shader',
         version: 1
       })
     ).toThrow('The asset type is not supported.')

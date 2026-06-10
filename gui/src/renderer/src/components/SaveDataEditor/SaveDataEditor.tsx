@@ -224,7 +224,6 @@ export const SaveDataEditor = (): ReactElement => {
         <div className="save-data-editor__summary">
           <span className="save-data-editor__eyebrow">Project Save State</span>
           <h1>Save Data Editor</h1>
-          <p>Edit the generated `SaveData` fields and their default values.</p>
         </div>
 
         <div className="save-data-editor__actions">
@@ -260,7 +259,7 @@ export const SaveDataEditor = (): ReactElement => {
         <section className="save-data-editor__panel">
           <div className="save-data-editor__panel-header">
             <h2>Entries</h2>
-            <p>Rows are written in order.</p>
+            <p>Written in order.</p>
           </div>
 
           {!isLoaded && <div className="save-data-editor__empty">Loading save data...</div>}
@@ -365,13 +364,12 @@ export const SaveDataEditor = (): ReactElement => {
         <aside className="save-data-editor__sidebar">
           <div className="save-data-editor__sidebar-header">
             <h2>Validation</h2>
-            <p>Names and row structure are checked here.</p>
           </div>
 
           <div className="save-data-editor__validation">
             {validationIssues.length === 0 ? (
               <div className="save-data-editor__status save-data-editor__status--info">
-                All rows are structurally valid.
+                Valid.
               </div>
             ) : (
               <div className="save-data-editor__status save-data-editor__status--error">
@@ -393,7 +391,7 @@ export const SaveDataEditor = (): ReactElement => {
             <h2>Notes</h2>
             <ul>
               <li>`signature` is reserved.</li>
-              <li>Defaults can be raw C expressions.</li>
+              <li>Defaults accept C expressions.</li>
             </ul>
           </div>
         </aside>

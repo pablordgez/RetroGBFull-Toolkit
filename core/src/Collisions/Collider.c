@@ -9,9 +9,13 @@ uint8_t check_collision(void){
         if(OTHER_COLLIDER->type == BOX_COLLIDER){
             BoxCollider* a = (BoxCollider*) THIS_COLLIDER;
             BoxCollider* b = (BoxCollider*) OTHER_COLLIDER;
+            int16_t ax = (int16_t)a->base.x;
+            int16_t ay = (int16_t)a->base.y;
+            int16_t bx = (int16_t)b->base.x;
+            int16_t by = (int16_t)b->base.y;
 
-            if(a->base.x + a->base.width > b->base.x && a->base.x < b->base.x + b->base.width &&
-                a->base.y + a->base.height > b->base.y && a->base.y < b->base.y + b->base.height){
+            if(ax + (int16_t)a->base.width > bx && ax < bx + (int16_t)b->base.width &&
+                ay + (int16_t)a->base.height > by && ay < by + (int16_t)b->base.height){
                     return 1;
             }
         }

@@ -1,8 +1,11 @@
 #ifndef COLLIDER_H
 #define COLLIDER_H
 #include <stdint.h>
+#include <gbdk/far_ptr.h>
 #include "Actor/ActorRegistry.h"
 #include "ColliderRegistry.h"
+
+typedef FAR_PTR CollisionCallback;
 
 typedef struct {
     uint16_t x;
@@ -13,8 +16,10 @@ typedef struct {
     uint16_t width;
     uint16_t height;
     Tags tags[5];
-    RVoid_PVoid on_collision[MAX_COLLISION_CALLBACKS];
+    CollisionCallback on_collision[MAX_COLLISION_CALLBACKS];
+    CollisionCallback on_collision_exit[MAX_COLLISION_CALLBACKS];
     uint8_t num_collision_callbacks;
+    uint8_t num_collision_exit_callbacks;
 } Collider;
 
 extern Collider* THIS_COLLIDER;

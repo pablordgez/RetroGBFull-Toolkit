@@ -90,6 +90,7 @@ typedef int8_t BYTE;
 typedef uint16_t UWORD;
 typedef int16_t WORD;
 typedef uint8_t BOOLEAN;
+typedef uint32_t FAR_PTR;
 
 #define TRUE 1
 #define FALSE 0
@@ -97,9 +98,11 @@ typedef uint8_t BOOLEAN;
 #define BANKED
 #define NONBANKED
 #define CRITICAL
-#define BANKREF(name) extern const void* name
-#define BANKREF_EXTERN(name) extern const void* name
+#define BANKREF(name) extern const void* name;
+#define BANKREF_EXTERN(name) extern const void* name;
 #define BANK(name) 0
+#define TO_FAR_PTR(ofs, seg) ((FAR_PTR)0)
+#define FAR_CALL(ptr, typ, ...) ((typ)0)
 #define SWITCH_ROM(bank) ((void)(bank))
 
 #define DISPLAY_ON ((void)0)
@@ -136,6 +139,7 @@ typedef uint8_t BOOLEAN;
 
 extern volatile uint8_t IE_REG;
 extern volatile uint8_t IF_REG;
+extern uint8_t _current_bank;
 extern volatile uint8_t WY_REG;
 extern volatile uint8_t LYC_REG;
 extern volatile uint8_t STAT_REG;
@@ -181,8 +185,13 @@ void set_win_data(uint8_t first_tile, uint8_t nb_tiles, const void* data);
 void set_sprite_data(uint8_t first_tile, uint8_t nb_tiles, const void* data);
 void set_bkg_tiles(uint8_t x, uint8_t y, uint8_t width, uint8_t height, const void* tiles);
 void set_win_tiles(uint8_t x, uint8_t y, uint8_t width, uint8_t height, const void* tiles);
+void get_bkg_tiles(uint8_t x, uint8_t y, uint8_t width, uint8_t height, void* tiles);
+void get_win_tiles(uint8_t x, uint8_t y, uint8_t width, uint8_t height, void* tiles);
 void set_bkg_based_submap(uint8_t x, uint8_t y, uint8_t width, uint8_t height, const void* map, uint8_t map_width, const void* tileset, uint8_t tiles);
 void set_win_based_submap(uint8_t x, uint8_t y, uint8_t width, uint8_t height, const void* map, uint8_t map_width, const void* tileset, uint8_t tiles);
+void set_bkg_1bpp_data(uint8_t first_tile, uint8_t nb_tiles, const void* data);
+void set_1bpp_colors(uint8_t foreground, uint8_t background);
+void set_vram_byte(uint8_t* address, uint8_t value);
 void move_bkg(uint8_t x, uint8_t y);
 void move_win(uint8_t x, uint8_t y);
 void move_sprite(uint8_t index, uint8_t x, uint8_t y);
@@ -194,6 +203,12 @@ void set_sprite_prop(uint8_t index, uint8_t properties);
 }
 #endif
 #endif /* RETROGBFULL_STUB_GB_GB_H */
+`
+
+const buildGbdkFarPtrHeader = (): string => `#ifndef RETROGBFULL_STUB_GBDK_FAR_PTR_H
+#define RETROGBFULL_STUB_GBDK_FAR_PTR_H
+#include <gb/gb.h>
+#endif /* RETROGBFULL_STUB_GBDK_FAR_PTR_H */
 `
 
 const buildMetaspritesHeader = (): string => `#ifndef RETROGBFULL_STUB_GB_METASPRITES_H
@@ -239,6 +254,10 @@ const STUB_FILES = [
   {
     path: `${PROJECT_CODE_WORKSPACE_STUB_ROOT}/gb/gb.h`,
     content: buildGbHeader()
+  },
+  {
+    path: `${PROJECT_CODE_WORKSPACE_STUB_ROOT}/gbdk/far_ptr.h`,
+    content: buildGbdkFarPtrHeader()
   },
   {
     path: `${PROJECT_CODE_WORKSPACE_STUB_ROOT}/gb/metasprites.h`,
