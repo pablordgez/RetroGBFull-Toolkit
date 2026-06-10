@@ -114,7 +114,6 @@ export interface NoiseInstrumentState {
 }
 
 interface VoiceState {
-  instrumentIndex: number
   instrument: MusicInstrument
   active: boolean
   volume: number
@@ -182,7 +181,6 @@ const SILENT_INSTRUMENT: MusicInstrument = {
 
 const createVoiceState = (instrument: MusicInstrument): VoiceState => {
   return {
-    instrumentIndex: 0,
     instrument,
     active: false,
     volume: 0,
@@ -317,12 +315,8 @@ export const renderMusicPreviewSamples = (
           continue
         }
 
-        if (step.instrument !== 0) {
-          voices[channel].instrumentIndex = step.instrument
-        }
-
         const instrument =
-          document.instruments[voices[channel].instrumentIndex] ??
+          document.instruments[step.instrument] ??
           document.instruments[0] ??
           SILENT_INSTRUMENT
 

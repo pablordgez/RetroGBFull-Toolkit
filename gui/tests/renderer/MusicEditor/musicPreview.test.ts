@@ -71,6 +71,41 @@ describe('music preview audio helpers', () => {
     expect(firstRender.slice(0, 512)).toEqual(secondRender.slice(0, 512))
   })
 
+  it('treats instrument 0 as the first instrument instead of keeping the previous one', () => {
+    const document: MusicAssetDocument = {
+      ...createMusicDocument(),
+      speed: 1,
+      instruments: [
+        { name: 'Silent', reg1: 0x80, reg2: 0x00, reg3: 0x20 },
+        { name: 'Loud', reg1: 0x80, reg2: 0xf0, reg3: 0x20 }
+      ],
+      patterns: [
+        {
+          id: 'main',
+          name: 'Main',
+          steps: [
+            { noteIndex: 12, instrument: 1 },
+            { noteIndex: 12, instrument: 0 },
+            ...Array.from({ length: 14 }, () => ({ noteIndex: 0xff, instrument: 0 }))
+          ]
+        }
+      ]
+    }
+
+    const sampleRate = 8000
+    const samples = renderMusicPreviewSamples(document, sampleRate)
+    const stepSamples = Math.round(sampleRate / 60)
+    const firstStepEnergy = samples
+      .slice(0, stepSamples)
+      .reduce((total, sample) => total + Math.abs(sample), 0)
+    const secondStepEnergy = samples
+      .slice(stepSamples, stepSamples * 2)
+      .reduce((total, sample) => total + Math.abs(sample), 0)
+
+    expect(firstStepEnergy).toBeGreaterThan(0)
+    expect(secondStepEnergy).toBe(0)
+  })
+
   it('renders rests, missing patterns, silence, noise, and envelope changes without clipping', () => {
     const document: MusicAssetDocument = {
       ...createMusicDocument(),
