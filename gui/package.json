@@ -1,6 +1,6 @@
 {
   "name": "retrogbfull-toolkit",
-  "version": "b1.0.0",
+  "version": "1.0.0-beta.1",
   "description": "Toolkit for building RetroGBFull projects",
   "main": "./out/main/index.js",
   "author": "Pablo Rodríguez García",
