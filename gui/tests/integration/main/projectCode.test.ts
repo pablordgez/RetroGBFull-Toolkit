@@ -1053,6 +1053,20 @@ describe('projectCode integration', () => {
     expect((await stat(join(siblingGbdkPath, 'bin', 'lcc'))).isFile()).toBe(true)
   })
 
+  it('rewrites the copied Makefile to use a ROM-safe project output name', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'My Cool Project!')
+    const makefilePath = join(project.path, 'Makefile')
+
+    expect(await readFile(makefilePath, 'utf-8')).toContain('PROJECTNAME    = My_Cool_Project')
+
+    await writeFile(makefilePath, 'PROJECTNAME    = Example\n', 'utf-8')
+    await copyBundledEngineCore(project.path)
+
+    expect(await readFile(makefilePath, 'utf-8')).toContain('PROJECTNAME    = My_Cool_Project')
+  })
+
   it('refreshes existing core files when copying the bundled engine core again', async () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
