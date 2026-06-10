@@ -1,6 +1,7 @@
 gbdk/
 core/obj/
 .tmp/
+.vscode/
 core/docs/node_modules/
 core/docs/.docusaurus/
 core/docs/build/
