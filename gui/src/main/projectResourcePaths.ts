@@ -23,8 +23,12 @@ export const resolvePathWithinProject = (
   errorMessage = 'The selected path is outside the project directory.',
   normalizePath = true
 ): string => {
-  const normalizedPath = normalizePath ? normalizeResourcePath(resourcePath) : resourcePath
-  const targetPath = resolve(projectPath, normalizedPath || '.')
+  // Check if the raw path is absolute before normalizing — normalizeResourcePath
+  // strips leading '/' on POSIX, which would turn an absolute outside-project path
+  // into a relative one that resolves *inside* the project tree.
+  const targetPath = isAbsolute(resourcePath)
+    ? resolve(resourcePath)
+    : resolve(projectPath, normalizePath ? normalizeResourcePath(resourcePath) : resourcePath || '.')
   const relativePath = relative(projectPath, targetPath)
 
   if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
