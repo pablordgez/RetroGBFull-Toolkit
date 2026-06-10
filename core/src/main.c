@@ -8,6 +8,7 @@
 #include "Window/WindowVisibility.h"
 #include "Assets/Text/Text.h"
 #include "Scene/SceneRegistry.h"
+#include "EngineSignature.h"
 // BEGIN STARTING SCENE INCLUDE
 #include "CustomScenes/SampleScene.h"
 // END STARTING SCENE INCLUDE
@@ -19,6 +20,7 @@ static void engine_idle_vblank_isr(void) NONBANKED{
 
 void main(void)
 {
+    retrogbfull_retain_engine_signature();
     init_actor_functions();
     init_scene_functions();
     init_animation_system();
