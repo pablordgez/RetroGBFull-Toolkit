@@ -1,5 +1,9 @@
 appId: com.retrogbfull.toolkit
 productName: RetroGBFull Toolkit
+publish:
+  provider: github
+  owner: pablordgez
+  repo: RetroGBFull-Toolkit
 directories:
   buildResources: build
 files:

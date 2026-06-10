@@ -85,7 +85,7 @@ jobs:
         run: npm ci
 
       - name: Build distributable
-        run: npm run ${{ matrix.build_script }} -- --publish never
+        run: npm run ${{ matrix.build_script }} -- --publish=never
         env:
           GH_TOKEN: ${{ github.token }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
