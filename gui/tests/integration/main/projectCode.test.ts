@@ -11,6 +11,7 @@ import {
   copyBundledEngineCore,
   listProjectScriptCallbackCandidates,
   loadProjectScriptResource,
+  readMaxCollisionCallbacks,
   saveProjectScriptResource
 } from '../../../src/main/projectCode'
 import {
@@ -1086,6 +1087,15 @@ describe('projectCode integration', () => {
     const refreshedAnimationSource = await readFile(animationSourcePath, 'utf-8')
     expect(refreshedAnimationSource).toContain('void init_animation_system(void) BANKED')
     expect(refreshedAnimationSource).not.toContain('stale engine core file')
+  })
+
+  it('uses the default max collision callback count when the core header is temporarily unavailable', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await rm(join(project.path, 'src', 'Collisions', 'ColliderRegistry.h'), { force: true })
+
+    await expect(readMaxCollisionCallbacks(project.path)).resolves.toBe(4)
   })
 
   it('emits non-default banks into generated resources and managed script preambles', async () => {

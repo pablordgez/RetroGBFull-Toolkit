@@ -3,7 +3,6 @@ import { dirname, join } from 'path'
 import { ProjectLauncherError } from './projectLauncher'
 import type { CopyEngineCoreResult } from '../shared/projectCodeWorkspace'
 import {
-  cleanupBundledDirectoryInTarget,
   copyBundledDirectoryIntoTarget,
   ensureProjectDirectory,
   getBundledCorePath,
@@ -11,29 +10,27 @@ import {
   IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES
 } from './projectCodeShared'
 import { writeGeneratedScriptEnvironment } from './projectCodeScripts'
+import { withProjectCoreFileOperation } from './projectCoreFileOperations'
 
 export const copyBundledEngineCore = async (projectPath: string): Promise<CopyEngineCoreResult> => {
-  const normalizedProjectPath = await ensureProjectDirectory(projectPath)
-  const bundledCorePath = getBundledCorePath()
+  return withProjectCoreFileOperation(projectPath, async () => {
+    const normalizedProjectPath = await ensureProjectDirectory(projectPath)
+    const bundledCorePath = getBundledCorePath()
 
-  await cleanupBundledDirectoryInTarget(
-    bundledCorePath,
-    normalizedProjectPath,
-    IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES
-  )
+    const { copiedPaths, skippedPaths } = await copyBundledDirectoryIntoTarget(
+      bundledCorePath,
+      normalizedProjectPath,
+      IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES,
+      { overwriteExisting: true }
+    )
 
-  const { copiedPaths, skippedPaths } = await copyBundledDirectoryIntoTarget(
-    bundledCorePath,
-    normalizedProjectPath,
-    IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES
-  )
+    await writeGeneratedScriptEnvironment(normalizedProjectPath)
 
-  await writeGeneratedScriptEnvironment(normalizedProjectPath)
-
-  return {
-    copiedPaths,
-    skippedPaths
-  }
+    return {
+      copiedPaths,
+      skippedPaths
+    }
+  })
 }
 
 // checks if the bundled GBDK is available and copies it into the project if it's not already there

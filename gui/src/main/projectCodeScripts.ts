@@ -46,6 +46,7 @@ import {
   resolvePathWithinProject,
   walkRelativePaths
 } from './projectCodeShared'
+import { withProjectCoreFileOperation } from './projectCoreFileOperations'
 
 export interface ProjectScriptRecordLike {
   path: string
@@ -62,6 +63,15 @@ export interface ProjectScriptRecordResolved {
 }
 
 const RESERVED_CALLBACK_NAMES = new Set(['AINIT', 'AUPDATE', 'SINIT', 'SUPDATE'])
+
+const isMissingFileError = (error: unknown): boolean => {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  )
+}
 
 const writeManagedTextFile = async (
   projectPath: string,
@@ -997,33 +1007,57 @@ export const listProjectScriptCallbackCandidates = async (
 
 // looks for the MAX_COLLISION_CALLBACKS define in ColliderRegistry.h and returns its value or a default of 4
 export const readMaxCollisionCallbacks = async (projectPath: string): Promise<number> => {
-  const normalizedProjectPath = await ensureProjectDirectory(projectPath)
-  const headerPath = resolvePathWithinProject(
-    normalizedProjectPath,
-    'src/Collisions/ColliderRegistry.h'
-  )
-  const headerContent = await readFile(headerPath, 'utf-8')
-  const match = headerContent.match(/#define\s+MAX_COLLISION_CALLBACKS\s+(\d+)/)
-  return match ? Number(match[1]) : 4
+  return withProjectCoreFileOperation(projectPath, async () => {
+    const normalizedProjectPath = await ensureProjectDirectory(projectPath)
+    const headerPath = resolvePathWithinProject(
+      normalizedProjectPath,
+      'src/Collisions/ColliderRegistry.h'
+    )
+
+    try {
+      const headerContent = await readFile(headerPath, 'utf-8')
+      const match = headerContent.match(/#define\s+MAX_COLLISION_CALLBACKS\s+(\d+)/)
+      return match ? Number(match[1]) : 4
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        return 4
+      }
+
+      throw error
+    }
+  })
 }
 
 // looks for the tags array in Actor.h and Collider.h and returns the smallest size found or a default of 5
 export const readMaxTagSlots = async (projectPath: string): Promise<number> => {
-  const normalizedProjectPath = await ensureProjectDirectory(projectPath)
-  const headerPaths = ['src/Actor/Actor.h', 'src/Collisions/Collider.h']
-  const slotCounts: number[] = []
+  return withProjectCoreFileOperation(projectPath, async () => {
+    const normalizedProjectPath = await ensureProjectDirectory(projectPath)
+    const headerPaths = ['src/Actor/Actor.h', 'src/Collisions/Collider.h']
+    const slotCounts: number[] = []
 
-  for (const headerPath of headerPaths) {
-    const absolutePath = resolvePathWithinProject(normalizedProjectPath, headerPath)
-    const headerContent = await readFile(absolutePath, 'utf-8')
-    const match = headerContent.match(/Tags\s+tags\[(\d+)\]/)
+    for (const headerPath of headerPaths) {
+      const absolutePath = resolvePathWithinProject(normalizedProjectPath, headerPath)
+      let headerContent = ''
 
-    if (match) {
-      slotCounts.push(Number(match[1]))
+      try {
+        headerContent = await readFile(absolutePath, 'utf-8')
+      } catch (error) {
+        if (isMissingFileError(error)) {
+          continue
+        }
+
+        throw error
+      }
+
+      const match = headerContent.match(/Tags\s+tags\[(\d+)\]/)
+
+      if (match) {
+        slotCounts.push(Number(match[1]))
+      }
     }
-  }
 
-  return slotCounts.length > 0 ? Math.min(...slotCounts) : 5
+    return slotCounts.length > 0 ? Math.min(...slotCounts) : 5
+  })
 }
 
 const isCanonicalProjectScriptPath = (resourcePath: string): boolean => {

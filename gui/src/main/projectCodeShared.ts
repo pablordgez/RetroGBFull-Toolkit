@@ -137,11 +137,12 @@ export const cleanupBundledDirectoryInTarget = async (
   }
 }
 
-// copies files from a directory into the project, skipping files that already exist in the target location
+// copies files from a directory into the project, optionally overwriting existing target files
 export const copyBundledDirectoryIntoTarget = async (
   sourceBasePath: string,
   targetBasePath: string,
-  ignoredRootDirectories = new Set<string>()
+  ignoredRootDirectories = new Set<string>(),
+  options: { overwriteExisting?: boolean } = {}
 ): Promise<{ copiedPaths: string[]; skippedPaths: string[] }> => {
   const relativePaths = await walkRelativePaths(sourceBasePath, '', ignoredRootDirectories)
   const copiedPaths: string[] = []
@@ -157,15 +158,23 @@ export const copyBundledDirectoryIntoTarget = async (
       continue
     }
 
-    try {
-      await stat(targetPath)
-      skippedPaths.push(relativePath.replace(/\\/g, '/'))
-      continue
-    } catch {
-      await mkdir(dirname(targetPath), { recursive: true })
-      await cp(sourcePath, targetPath, { recursive: false, errorOnExist: true })
-      copiedPaths.push(relativePath.replace(/\\/g, '/'))
+    if (!options.overwriteExisting) {
+      try {
+        await stat(targetPath)
+        skippedPaths.push(relativePath.replace(/\\/g, '/'))
+        continue
+      } catch {
+        // Missing files are copied below.
+      }
     }
+
+    await mkdir(dirname(targetPath), { recursive: true })
+    await cp(sourcePath, targetPath, {
+      recursive: false,
+      force: options.overwriteExisting ?? false,
+      errorOnExist: !options.overwriteExisting
+    })
+    copiedPaths.push(relativePath.replace(/\\/g, '/'))
   }
 
   return {

@@ -30,6 +30,7 @@ export default defineConfig(mergeConfig(sharedConfig, {
         'src/shared/runtimePlatform.ts',
         'src/main/projectCCodeEmitters.ts',
         'src/main/projectCodeLanguageService.ts',
+        'src/main/projectCoreFileOperations.ts',
         'src/main/projectGbdk.ts',
         'src/main/projectMake.ts',
         'src/main/projectResourceErrors.ts',

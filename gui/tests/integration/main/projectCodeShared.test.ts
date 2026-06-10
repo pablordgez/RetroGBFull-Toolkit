@@ -68,6 +68,28 @@ describe('projectCodeShared integration', () => {
     await expect(stat(join(targetDirectory, 'obj'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('can overwrite existing bundled files without pre-deleting them', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const sourceDirectory = join(workspaceDirectory, 'source')
+    const targetDirectory = join(workspaceDirectory, 'target')
+    await prepareBundledDirectoryFixture(sourceDirectory)
+    await mkdir(join(targetDirectory, 'include'), { recursive: true })
+    await writeFile(join(targetDirectory, 'include', 'existing.h'), '// stale bundled header\n', 'utf-8')
+
+    const result = await copyBundledDirectoryIntoTarget(
+      sourceDirectory,
+      targetDirectory,
+      new Set(['docs', 'obj']),
+      { overwriteExisting: true }
+    )
+
+    expect(result.copiedPaths).toEqual(expect.arrayContaining(['include/existing.h', 'src/main.c']))
+    expect(result.skippedPaths).not.toContain('include/existing.h')
+    expect(await readFile(join(targetDirectory, 'include', 'existing.h'), 'utf-8')).toBe(
+      '#pragma once\n'
+    )
+  })
+
   it('cleans target files represented by bundled sources without deleting ignored roots', async () => {
     const workspaceDirectory = await createTempWorkspace()
     const sourceDirectory = join(workspaceDirectory, 'source')
