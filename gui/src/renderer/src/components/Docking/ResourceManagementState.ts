@@ -30,6 +30,7 @@ export interface ResourceClipboardState {
   resourcePath: string
   resourceName: string
   resourceType: ProjectResourceKind
+  scriptKind?: ProjectScriptKind | null
   parentPath: string
 }
 

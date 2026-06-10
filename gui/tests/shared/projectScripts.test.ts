@@ -4,6 +4,7 @@ import {
   buildProjectScriptHeaderFileName,
   getProjectScriptDisplayName,
   getProjectScriptKindFromPath,
+  isProjectScriptPathWithinKindRoot,
   isProjectScriptSourcePath
 } from '../../src/shared/projectScripts'
 
@@ -27,5 +28,14 @@ describe('projectScripts', () => {
     expect(getProjectScriptKindFromPath('src/Other/Boot.c')).toBeNull()
     expect(isProjectScriptSourcePath('src/Scripts/Boot.C')).toBe(true)
     expect(isProjectScriptSourcePath('src/Scripts/Boot.h')).toBe(false)
+  })
+
+  it('checks whether a path is within the intended script kind root', () => {
+    expect(isProjectScriptPathWithinKindRoot('actor', 'src/CustomActors')).toBe(true)
+    expect(isProjectScriptPathWithinKindRoot('actor', 'src/CustomActors/Enemies')).toBe(true)
+    expect(isProjectScriptPathWithinKindRoot('actor', 'src\\CustomActors\\Enemies')).toBe(true)
+    expect(isProjectScriptPathWithinKindRoot('actor', 'src/CustomScenes')).toBe(false)
+    expect(isProjectScriptPathWithinKindRoot('actor', 'src/Scripts')).toBe(false)
+    expect(isProjectScriptPathWithinKindRoot('actor', '')).toBe(false)
   })
 })

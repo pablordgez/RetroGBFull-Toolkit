@@ -282,6 +282,49 @@ describe('<ResourceManagementPane /> integration', () => {
     })
   })
 
+  it('only enables pasting a cut script inside its intended script root', async () => {
+    const actorScript = fileResource('Hero Actor Script', 'src/CustomActors/HeroActor.c', null, {
+      resourceType: null,
+      extension: 'c',
+      scriptKind: 'actor'
+    })
+    const nestedActorFolder = folderResource(
+      'Enemies',
+      'src/CustomActors/Enemies',
+      'src/CustomActors'
+    )
+
+    vi.mocked(window.api.getProjectResources)
+      .mockResolvedValueOnce(createView([actorScript, nestedActorFolder]))
+      .mockResolvedValueOnce(createView([], 'src/CustomActors/Enemies'))
+
+    renderPane()
+
+    fireEvent.click(await getResourceButton('Hero Actor Script'))
+    fireEvent.keyDown(window, { key: 'x', ctrlKey: true })
+
+    fireEvent.contextMenu(screen.getByTestId('resource-management-pane'), {
+      clientX: 80,
+      clientY: 120
+    })
+    expect(screen.getByRole('menuitem', { name: 'Paste' })).toBeDisabled()
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    fireEvent.doubleClick(await getResourceButton('Enemies'))
+    await waitFor(() => {
+      expect(window.api.getProjectResources).toHaveBeenCalledWith(
+        PROJECT_PATH,
+        'src/CustomActors/Enemies'
+      )
+    })
+
+    fireEvent.contextMenu(screen.getByTestId('resource-management-pane'), {
+      clientX: 80,
+      clientY: 120
+    })
+    expect(screen.getByRole('menuitem', { name: 'Paste' })).not.toBeDisabled()
+  })
+
   it('copies, pastes, undoes, and redoes a resource transfer with hidden deletion restore', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue(
       createView([fileResource('Hero', 'Hero.rgbsprite.json', 'sprite')])

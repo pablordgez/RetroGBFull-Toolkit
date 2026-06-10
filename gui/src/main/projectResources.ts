@@ -8,7 +8,8 @@ import {
   ProjectScriptKind,
   PROJECT_SCRIPT_DIRECTORY_BY_KIND,
   PROJECT_SCRIPT_LABELS,
-  buildProjectScriptFileName
+  buildProjectScriptFileName,
+  isProjectScriptPathWithinKindRoot
 } from '../shared/projectScripts'
 import {
   normalizeParentPath,
@@ -816,6 +817,15 @@ export const transferProjectResource = async (
 
   if (mode === 'move' && sourceParentPath === normalizedDestinationParentPath) {
     throw new ProjectLauncherError('The selected resource is already in this folder.')
+  }
+
+  if (
+    mode === 'move' &&
+    trackedResource.type === 'file' &&
+    trackedResource.resourceType === 'script' &&
+    !isProjectScriptPathWithinKindRoot(trackedResource.scriptKind, normalizedDestinationParentPath)
+  ) {
+    throw new ProjectLauncherError('Scripts can only be moved inside their matching script folder.')
   }
 
   const resourceTypeStrategy = getProjectResourceTypeStrategy(resourceType)

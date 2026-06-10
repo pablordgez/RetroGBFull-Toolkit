@@ -12,7 +12,10 @@ import { ContextMenuOption, ContextMenuRegion } from '../ContextMenu/ContextMenu
 import { useHistory } from '../hooks/history/useHistory'
 import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts'
 import { getCommandShortcutLabelPrefix, isEditableElementTarget } from '../utils/keyboardShortcuts'
-import type { ProjectScriptKind } from '../../../../shared/projectScripts'
+import {
+  isProjectScriptPathWithinKindRoot,
+  type ProjectScriptKind
+} from '../../../../shared/projectScripts'
 import type {
   ProjectDeletedResourceResult,
   ProjectResourceItem,
@@ -303,6 +306,15 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
       return false
     }
 
+    if (
+      clipboardResource.operation === 'cut' &&
+      clipboardResource.resourceType === 'script' &&
+      clipboardResource.scriptKind &&
+      !isProjectScriptPathWithinKindRoot(clipboardResource.scriptKind, currentResourcePath)
+    ) {
+      return false
+    }
+
     return !(
       clipboardResource.operation === 'cut' && clipboardResource.parentPath === currentResourcePath
     )
@@ -329,6 +341,7 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
         resourcePath: resource.path,
         resourceName: resource.name,
         resourceType,
+        scriptKind: resource.type === 'file' ? (resource.scriptKind ?? null) : null,
         parentPath: getParentResourcePath(resource.path)
       })
       showInfoStatus(

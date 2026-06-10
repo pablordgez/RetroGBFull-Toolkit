@@ -51,6 +51,16 @@ export const getProjectScriptKindFromPath = (resourcePath: string): ProjectScrip
   return null
 }
 
+export const isProjectScriptPathWithinKindRoot = (
+  scriptKind: ProjectScriptKind,
+  resourcePath: string
+): boolean => {
+  const normalizedPath = resourcePath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  const rootPath = PROJECT_SCRIPT_DIRECTORY_BY_KIND[scriptKind].toLowerCase()
+
+  return normalizedPath === rootPath || normalizedPath.startsWith(`${rootPath}/`)
+}
+
 export const isProjectScriptSourcePath = (resourcePath: string): boolean => {
   return resourcePath.toLowerCase().endsWith(PROJECT_SCRIPT_SOURCE_EXTENSION)
 }
