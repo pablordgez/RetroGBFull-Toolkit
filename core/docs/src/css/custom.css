@@ -1,0 +1,47 @@
+:root {
+  --ifm-color-primary: #2563eb;
+  --ifm-color-primary-dark: #1d4ed8;
+  --ifm-color-primary-darker: #1e40af;
+  --ifm-color-primary-light: #3b82f6;
+  --ifm-color-primary-lighter: #60a5fa;
+  --ifm-code-font-size: 95%;
+}
+
+html[data-theme="dark"] {
+  --ifm-color-primary: #60a5fa;
+  --ifm-color-primary-dark: #3b82f6;
+  --ifm-color-primary-darker: #2563eb;
+  --ifm-color-primary-light: #93c5fd;
+  --ifm-color-primary-lighter: #bfdbfe;
+}
+
+.theme-doc-markdown table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.theme-doc-markdown table th,
+.theme-doc-markdown table td {
+  vertical-align: top;
+}
+
+.theme-doc-markdown table:not(:has(th:nth-child(3))) th:first-child,
+.theme-doc-markdown table:not(:has(th:nth-child(3))) td:first-child {
+  width: 42%;
+}
+
+.theme-doc-markdown table:has(th:nth-child(3)) th:nth-child(1),
+.theme-doc-markdown table:has(th:nth-child(3)) td:nth-child(1) {
+  width: 22%;
+}
+
+.theme-doc-markdown table:has(th:nth-child(3)) th:nth-child(2),
+.theme-doc-markdown table:has(th:nth-child(3)) td:nth-child(2) {
+  width: 18%;
+}
+
+.theme-doc-markdown table code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
