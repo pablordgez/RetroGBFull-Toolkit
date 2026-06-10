@@ -458,7 +458,7 @@ describe('SceneEditorWorkspace', () => {
       expect(screen.getByRole('dialog', { name: 'Select Animation' })).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Room Intro' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Room Intro' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('scene-animation-value')).toHaveTextContent(
@@ -473,7 +473,7 @@ describe('SceneEditorWorkspace', () => {
       expect(screen.getByRole('button', { name: 'Hero Idle' })).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Hero Idle' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Hero Idle' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('actor-animation-value')).toHaveTextContent(
