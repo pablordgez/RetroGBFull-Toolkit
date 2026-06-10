@@ -133,11 +133,16 @@ Linux:
 ```
 Note that it's not necessary to do this setup manually, as the engine can automatically download GBDK-2020 from the latest GitHub release and build GNU Make from source.
 
+## Documentation
+
+Documentation for the engine core API is available at https://gbdocs.aernus.com/
+
 ## Screenshots
 ![Main workspace with a scene open](./screenshots/mainworkspace.png)
 ![Music editor, showing a pattern](./screenshots/musiceditor.png)
 ![Sprite editor](./screenshots/spriteeditor.png)
 ![Script editor showing a basic actor script](./screenshots/scripteditor.png)
 ![Built ROM running on the SameBoy emulator](./screenshots/emulator.png)
+
 ## Note
 Developed as a Final Degree Project for the University of Oviedo by Pablo Rodríguez García
