@@ -239,7 +239,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Setup Guide' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Setup Guide' }))
 
     expect(await screen.findByRole('dialog', { name: 'GNU Make Setup Guide' })).toBeInTheDocument()
     expect(screen.getByText('sudo apt update && sudo apt install -y make')).toBeInTheDocument()
@@ -405,7 +405,10 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    fireEvent.contextMenu(screen.getByText('Hero'), { clientX: 120, clientY: 160 })
+    const resourcePane = screen.getByTestId('resource-management-pane')
+    const heroLabel = await within(resourcePane).findByText('Hero')
+
+    fireEvent.contextMenu(heroLabel, { clientX: 120, clientY: 160 })
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Show In File Explorer' }))
 
     await waitFor(() => {
@@ -1438,7 +1441,10 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    fireEvent.contextMenu(screen.getByText('Hero'), { clientX: 120, clientY: 160 })
+    const resourcePane = screen.getByTestId('resource-management-pane')
+    const heroLabel = await within(resourcePane).findByText('Hero')
+
+    fireEvent.contextMenu(heroLabel, { clientX: 120, clientY: 160 })
 
     expect(await screen.findByRole('menuitem', { name: 'Copy' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Cut' })).toBeInTheDocument()
@@ -1577,7 +1583,10 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    fireEvent.contextMenu(screen.getByText('Hero'), { clientX: 120, clientY: 160 })
+    const resourcePane = screen.getByTestId('resource-management-pane')
+    const heroLabel = await within(resourcePane).findByText('Hero')
+
+    fireEvent.contextMenu(heroLabel, { clientX: 120, clientY: 160 })
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Cut' }))
 
     fireEvent.doubleClick(screen.getByText('Archive').closest('button')!)
