@@ -5,6 +5,9 @@
 #include "Assets/SpaceManager.h"
 #include "MainDefinitions.h"
 #define TILE_SIZE_BYTES 16
+#ifndef MAX_CHANGED_MAP_TILES
+#define MAX_CHANGED_MAP_TILES 32
+#endif
 typedef struct {
     uint8_t id;
     uint16_t width;
@@ -25,4 +28,8 @@ void init_map_system(void) BANKED;
 void load_map(uint8_t window) NONBANKED;
 void unload_map(void) BANKED;
 void load_map_section(uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t window) NONBANKED;
+uint8_t register_changed_map_tile(uint8_t x, uint8_t y, uint8_t tile) BANKED;
+uint8_t change_changed_map_tile(uint8_t x, uint8_t y, uint8_t tile) BANKED;
+uint8_t delete_changed_map_tile(uint8_t x, uint8_t y) BANKED;
+void clear_changed_map_tiles(void) BANKED;
 #endif /* MAP_H */

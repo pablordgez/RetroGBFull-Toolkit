@@ -135,6 +135,8 @@ void set_scene_map(Map* map) BANKED{
     if(THIS_SCENE->map != NULL){
         unload_map();
     }
+    THIS_MAP = NULL;
+    clear_changed_map_tiles();
     THIS_SCENE->map = map;
     THIS_MAP = map;
     if(THIS_SCENE->map != NULL){
