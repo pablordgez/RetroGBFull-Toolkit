@@ -101,10 +101,11 @@ const actorScriptPayload: ProjectScriptResourcePayload = {
 
 describe('<ScriptEditor />', () => {
   beforeEach(() => {
-    window.localStorage.clear()
     vi.mocked(window.api.loadProjectScriptResource).mockReset()
     vi.mocked(window.api.saveProjectScriptResource).mockReset()
     vi.mocked(window.api.getProjectCodeWorkspaceSnapshot).mockReset()
+    vi.mocked(window.api.getAppPreferences).mockReset()
+    vi.mocked(window.api.saveAppPreferences).mockReset()
     vi.mocked(window.api.confirmEditorClose).mockClear()
     vi.mocked(window.api.onEditorCloseRequested).mockReset()
     createScriptEditorRuntimeMock.mockClear()
@@ -113,6 +114,10 @@ describe('<ScriptEditor />', () => {
     runtimeSessionMock.updateHeaderContent.mockClear()
     runtimeSessionMock.dispose.mockClear()
     createScriptEditorRuntimeMock.mockResolvedValue(runtimeSessionMock)
+    vi.mocked(window.api.getAppPreferences).mockResolvedValue({ scriptEditorTheme: 'light' })
+    vi.mocked(window.api.saveAppPreferences).mockImplementation(async (preferences) => ({
+      scriptEditorTheme: preferences.scriptEditorTheme ?? 'light'
+    }))
     vi.mocked(window.api.loadProjectScriptResource).mockResolvedValue(generalScriptPayload)
     vi.mocked(window.api.saveProjectScriptResource).mockResolvedValue({
       resourcePath: 'src/Scripts/Test.c',
@@ -368,6 +373,9 @@ describe('<ScriptEditor />', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dark Mode' }))
     expect(screen.getByRole('button', { name: 'Light Mode' })).toBeInTheDocument()
     expect(editor).toHaveAttribute('data-theme', 'vs-dark')
+    await waitFor(() => {
+      expect(window.api.saveAppPreferences).toHaveBeenLastCalledWith({ scriptEditorTheme: 'dark' })
+    })
 
     fireEvent.click(screen.getByRole('button', { name: 'Hero.c' }))
 

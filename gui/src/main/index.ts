@@ -3,13 +3,15 @@ import {
   shell,
   BrowserWindow,
   dialog,
+  ipcMain,
   IpcMainInvokeEvent,
-  net,
-  protocol,
   session
 } from 'electron'
-import { join, normalize, resolve } from 'path'
-import { pathToFileURL } from 'url'
+import { createReadStream } from 'fs'
+import { mkdir, readFile, stat, writeFile } from 'fs/promises'
+import { createServer, type Server, type ServerResponse } from 'http'
+import type { AddressInfo } from 'net'
+import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import {
@@ -43,16 +45,41 @@ interface AppWindowOptions {
   title?: string
 }
 
-const ELECTRON_APP_SCHEME = 'app'
+type ScriptEditorTheme = 'light' | 'dark'
+
+interface AppPreferences {
+  scriptEditorTheme: ScriptEditorTheme
+}
+
 const APP_DISPLAY_NAME = 'RetroGBFull-Toolkit'
 const APP_USER_DATA_DIRECTORY = 'retrogbfull-toolkit'
+const DEFAULT_APP_PREFERENCES: AppPreferences = {
+  scriptEditorTheme: 'light'
+}
 const CROSS_ORIGIN_RESPONSE_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp'
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Origin-Agent-Cluster': '?1'
 }
 const CROSS_ORIGIN_WEB_REQUEST_HEADERS = {
   'Cross-Origin-Opener-Policy': ['same-origin'],
-  'Cross-Origin-Embedder-Policy': ['require-corp']
+  'Cross-Origin-Embedder-Policy': ['require-corp'],
+  'Cross-Origin-Resource-Policy': ['same-origin'],
+  'Origin-Agent-Cluster': ['?1']
+}
+const RENDERER_CONTENT_TYPES: Record<string, string> = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml; charset=utf-8',
+  '.ttf': 'font/ttf',
+  '.wasm': 'application/wasm',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2'
 }
 const shouldDisableChromiumSandbox =
   process.platform === 'linux' &&
@@ -63,6 +90,8 @@ const editorWindowsWaitingForCloseConfirmation = new Set<number>()
 const projectWindowPaths = new Map<number, string>()
 const projectWindowsWaitingForCleanup = new Set<number>()
 const projectWindowsReadyToClose = new Set<number>()
+let packagedRendererServer: Server | null = null
+let packagedRendererServerOrigin: string | null = null
 let isQuittingAfterCleanup = false
 let hasHandledBeforeQuitCleanup = false
 
@@ -73,54 +102,100 @@ if (shouldDisableChromiumSandbox) {
 app.setName(APP_DISPLAY_NAME)
 app.setPath('userData', join(app.getPath('appData'), APP_USER_DATA_DIRECTORY))
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: ELECTRON_APP_SCHEME,
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      corsEnabled: true
-    }
-  }
-])
-
 const getPackagedRendererRoot = (): string => {
   return resolve(__dirname, '../renderer')
 }
 
 const buildRendererWindowUrl = (hash = ''): string => {
+  if (!packagedRendererServerOrigin) {
+    throw new Error('Packaged renderer server has not started.')
+  }
+
   const normalizedHash = hash.startsWith('/') ? hash : `/${hash}`
-  return `${ELECTRON_APP_SCHEME}://renderer/index.html#${normalizedHash}`
+  return `${packagedRendererServerOrigin}/index.html#${normalizedHash}`
 }
 
-const registerRendererProtocol = (): void => {
-  protocol.handle(ELECTRON_APP_SCHEME, async (request) => {
-    const requestUrl = new URL(request.url)
-    const rendererRoot = getPackagedRendererRoot()
-    const relativePath =
-      requestUrl.hostname === 'renderer' && requestUrl.pathname !== '/'
-        ? requestUrl.pathname
-        : '/index.html'
-    const normalizedPath = normalize(decodeURIComponent(relativePath)).replace(/^([\\/])+/, '')
-    const absolutePath = resolve(rendererRoot, normalizedPath)
+const resolvePackagedRendererFilePath = (pathname: string): string | null => {
+  let decodedPath: string
 
-    if (!absolutePath.startsWith(rendererRoot)) {
-      return new Response('Not found', {
-        status: 404,
-        headers: CROSS_ORIGIN_RESPONSE_HEADERS
-      })
+  try {
+    decodedPath = decodeURIComponent(pathname === '/' ? '/index.html' : pathname)
+  } catch {
+    return null
+  }
+
+  const rendererRoot = getPackagedRendererRoot()
+  const normalizedPath = normalize(decodedPath).replace(/^([\\/])+/, '')
+  const absolutePath = resolve(rendererRoot, normalizedPath)
+  const relativePath = relative(rendererRoot, absolutePath)
+
+  if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    return null
+  }
+
+  return absolutePath
+}
+
+const sendPackagedRendererFile = async (
+  response: ServerResponse,
+  filePath: string | null
+): Promise<void> => {
+  if (!filePath) {
+    response.writeHead(404, CROSS_ORIGIN_RESPONSE_HEADERS)
+    response.end('Not found')
+    return
+  }
+
+  try {
+    const fileStats = await stat(filePath)
+
+    if (!fileStats.isFile()) {
+      throw new Error('Renderer asset path is not a file.')
     }
 
-    const fileResponse = await net.fetch(pathToFileURL(absolutePath).toString())
+    response.writeHead(200, {
+      ...CROSS_ORIGIN_RESPONSE_HEADERS,
+      'Content-Length': fileStats.size,
+      'Content-Type': RENDERER_CONTENT_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+    })
 
-    return new Response(fileResponse.body, {
-      status: fileResponse.status,
-      statusText: fileResponse.statusText,
-      headers: {
-        ...Object.fromEntries(fileResponse.headers.entries()),
-        ...CROSS_ORIGIN_RESPONSE_HEADERS
-      }
+    createReadStream(filePath)
+      .on('error', () => {
+        if (!response.headersSent) {
+          response.writeHead(500, CROSS_ORIGIN_RESPONSE_HEADERS)
+        }
+
+        response.end('Failed to read renderer asset.')
+      })
+      .pipe(response)
+  } catch {
+    response.writeHead(404, CROSS_ORIGIN_RESPONSE_HEADERS)
+    response.end('Not found')
+  }
+}
+
+const startPackagedRendererServer = async (): Promise<void> => {
+  if (packagedRendererServerOrigin) {
+    return
+  }
+
+  const server = createServer((request, response) => {
+    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1')
+    void sendPackagedRendererFile(response, resolvePackagedRendererFilePath(requestUrl.pathname))
+  })
+
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const handleError = (error: Error): void => {
+      rejectPromise(error)
+    }
+
+    server.once('error', handleError)
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', handleError)
+      const address = server.address() as AddressInfo
+      packagedRendererServerOrigin = `http://127.0.0.1:${address.port}`
+      packagedRendererServer = server
+      resolvePromise()
     })
   })
 }
@@ -133,6 +208,22 @@ const enableCrossOriginIsolationHeaders = (): void => {
         ...CROSS_ORIGIN_WEB_REQUEST_HEADERS
       }
     })
+  })
+}
+
+const enableDevToolsShortcuts = (window: BrowserWindow): void => {
+  window.webContents.on('before-input-event', (event, input) => {
+    const isToggleDevToolsShortcut =
+      input.type === 'keyDown' &&
+      (input.key === 'F12' ||
+        ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i'))
+
+    if (!isToggleDevToolsShortcut) {
+      return
+    }
+
+    event.preventDefault()
+    window.webContents.toggleDevTools()
   })
 }
 
@@ -191,6 +282,50 @@ const registerProjectWindow = (projectWindow: BrowserWindow, projectPath: string
 
 const getRecentProjectsStorePath = (): string => {
   return join(app.getPath('userData'), 'recent-projects.json')
+}
+
+const getAppPreferencesStorePath = (): string => {
+  return join(app.getPath('userData'), 'app-preferences.json')
+}
+
+const isScriptEditorTheme = (value: unknown): value is ScriptEditorTheme => {
+  return value === 'light' || value === 'dark'
+}
+
+const readAppPreferences = async (): Promise<AppPreferences> => {
+  try {
+    const rawContent = await readFile(getAppPreferencesStorePath(), 'utf-8')
+    const parsedPreferences = JSON.parse(rawContent) as Partial<AppPreferences>
+
+    return {
+      scriptEditorTheme: isScriptEditorTheme(parsedPreferences.scriptEditorTheme)
+        ? parsedPreferences.scriptEditorTheme
+        : DEFAULT_APP_PREFERENCES.scriptEditorTheme
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[app-preferences] failed to read preferences, using defaults', error)
+    }
+
+    return DEFAULT_APP_PREFERENCES
+  }
+}
+
+const saveAppPreferences = async (
+  preferences: Partial<AppPreferences>
+): Promise<AppPreferences> => {
+  const currentPreferences = await readAppPreferences()
+  const nextPreferences: AppPreferences = {
+    ...currentPreferences,
+    scriptEditorTheme: isScriptEditorTheme(preferences.scriptEditorTheme)
+      ? preferences.scriptEditorTheme
+      : currentPreferences.scriptEditorTheme
+  }
+  const storePath = getAppPreferencesStorePath()
+
+  await mkdir(dirname(storePath), { recursive: true })
+  await writeFile(storePath, `${JSON.stringify(nextPreferences, null, 2)}\n`, 'utf-8')
+  return nextPreferences
 }
 
 const buildProjectActionErrorResponse = (
@@ -386,6 +521,14 @@ const confirmEditorClose = async (event: IpcMainInvokeEvent): Promise<boolean> =
 }
 
 const registerIpcHandlers = (): void => {
+  ipcMain.handle('app:preferences:get', async () => {
+    return readAppPreferences()
+  })
+
+  ipcMain.handle('app:preferences:save', async (_, preferences: Partial<AppPreferences>) => {
+    return saveAppPreferences(preferences)
+  })
+
   registerProjectIpcHandlers({
     getRecentProjectsStorePath,
     showProjectDialog,
@@ -410,7 +553,7 @@ registerIpcHandlers()
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (!is.dev && !process.env['RETROGBFULL_RUNTIME_GBDK_PATH']) {
     process.env['RETROGBFULL_RUNTIME_GBDK_PATH'] = join(app.getPath('userData'), 'gbdk')
   }
@@ -427,12 +570,13 @@ app.whenReady().then(() => {
   // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+    enableDevToolsShortcuts(window)
   })
 
   enableCrossOriginIsolationHeaders()
 
   if (!is.dev) {
-    registerRendererProtocol()
+    await startPackagedRendererServer()
   }
 
   createWindow()
@@ -455,6 +599,7 @@ app.on('before-quit', (event) => {
   void clearDeletedResourcesForOpenProjects()
     .finally(() => {
       isQuittingAfterCleanup = true
+      packagedRendererServer?.close()
       app.quit()
     })
 })

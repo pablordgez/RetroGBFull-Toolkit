@@ -41,6 +41,10 @@ interface ProjectActionResponse {
   project?: RecentProject
 }
 
+interface AppPreferences {
+  scriptEditorTheme: 'light' | 'dark'
+}
+
 interface ProjectAssetFilePayload {
   assetKind: ProjectAssetKind
   resourcePath: string
@@ -98,6 +102,9 @@ const api = {
       resourcePath
     ) as Promise<boolean>,
   getRecentProjects: () => ipcRenderer.invoke('project:list-recent') as Promise<RecentProject[]>,
+  getAppPreferences: () => ipcRenderer.invoke('app:preferences:get') as Promise<AppPreferences>,
+  saveAppPreferences: (preferences: Partial<AppPreferences>) =>
+    ipcRenderer.invoke('app:preferences:save', preferences) as Promise<AppPreferences>,
   getRuntimePlatform: () => ipcRenderer.invoke('app:runtime-platform') as Promise<RuntimePlatform>,
   getGbdkToolchainStatus: () => ipcRenderer.invoke('gbdk:status') as Promise<GbdkToolchainStatus>,
   installLatestGbdkToolchain: () =>

@@ -11,6 +11,9 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
+    build: {
+      assetsInlineLimit: 0
+    },
     worker: {
       format: 'es'
     },

@@ -40,6 +40,10 @@ interface ProjectActionResponse {
   project?: RecentProject
 }
 
+interface AppPreferences {
+  scriptEditorTheme: 'light' | 'dark'
+}
+
 interface ProjectAssetFilePayload {
   assetKind: ProjectAssetKind
   resourcePath: string
@@ -89,6 +93,8 @@ declare global {
         resourcePath: string
       ) => Promise<boolean>
       getRecentProjects: () => Promise<RecentProject[]>
+      getAppPreferences: () => Promise<AppPreferences>
+      saveAppPreferences: (preferences: Partial<AppPreferences>) => Promise<AppPreferences>
       getRuntimePlatform: () => Promise<RuntimePlatform>
       getGbdkToolchainStatus: () => Promise<GbdkToolchainStatus>
       installLatestGbdkToolchain: () => Promise<GbdkInstallResult>

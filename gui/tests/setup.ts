@@ -35,6 +35,8 @@ Object.defineProperty(window, 'api', {
     openProjectInFileExplorer: vi.fn().mockResolvedValue(true),
     showProjectResourceInFileExplorer: vi.fn().mockResolvedValue(true),
     getRecentProjects: vi.fn().mockResolvedValue([]),
+    getAppPreferences: vi.fn().mockResolvedValue({ scriptEditorTheme: 'light' }),
+    saveAppPreferences: vi.fn().mockResolvedValue({ scriptEditorTheme: 'light' }),
     getRuntimePlatform: vi.fn().mockResolvedValue('win32'),
     getGbdkToolchainStatus: vi.fn().mockResolvedValue({
       installed: true,
