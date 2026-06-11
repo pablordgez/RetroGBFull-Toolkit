@@ -146,4 +146,14 @@ describe('SceneHierarchyPane', () => {
 
     expect(onRequestActorLoad).toHaveBeenCalledWith(null)
   })
+
+  it('opens the root new submenu from the Add button', async () => {
+    renderPane()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Folder' }))
+
+    expect(screen.getAllByRole('treeitem', { name: /Folder/i })).toHaveLength(2)
+  })
 })

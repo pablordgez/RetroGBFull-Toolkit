@@ -130,6 +130,18 @@
   outline: none;
 }
 
+.scene-hierarchy-pane__tree-actions {
+  flex: 0 0 auto;
+  padding: 8px 10px 10px;
+  border-top: 2px solid rgba(15, 56, 15, 0.2);
+  background-color: rgba(196, 190, 187, 0.4);
+}
+
+.scene-hierarchy-pane__add-button {
+  width: 100%;
+  min-height: 36px;
+}
+
 .scene-hierarchy-pane__footer {
   display: flex;
   align-items: center;

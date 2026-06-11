@@ -111,30 +111,32 @@ export const SceneHierarchyPane = ({
   }, [editor, isPaneFocused])
 
   const rootMenuOptions = useMemo((): ContextMenuOption[] => {
+    const rootNewOptions: ContextMenuOption[] = [
+      {
+        id: 'scene-new-actor',
+        label: 'Actor',
+        disabled: !editor.canCreateNode('actor', null),
+        onSelect: () => editor.createNode('actor', null)
+      },
+      {
+        id: 'scene-new-collision',
+        label: 'Collision',
+        disabled: !editor.canCreateNode('collision', null),
+        onSelect: () => editor.createNode('collision', null)
+      },
+      {
+        id: 'scene-new-folder',
+        label: 'Folder',
+        disabled: !editor.canCreateNode('folder', null),
+        onSelect: () => editor.createNode('folder', null)
+      }
+    ]
+
     return [
       {
         id: 'scene-new',
         label: 'New...',
-        children: [
-          {
-            id: 'scene-new-actor',
-            label: 'Actor',
-            disabled: !editor.canCreateNode('actor', null),
-            onSelect: () => editor.createNode('actor', null)
-          },
-          {
-            id: 'scene-new-collision',
-            label: 'Collision',
-            disabled: !editor.canCreateNode('collision', null),
-            onSelect: () => editor.createNode('collision', null)
-          },
-          {
-            id: 'scene-new-folder',
-            label: 'Folder',
-            disabled: !editor.canCreateNode('folder', null),
-            onSelect: () => editor.createNode('folder', null)
-          }
-        ]
+        children: rootNewOptions
       },
       {
         id: 'scene-load',
@@ -423,6 +425,23 @@ export const SceneHierarchyPane = ({
             </div>
           )}
         </div>
+
+        {editor.canEdit && (
+          <div className="scene-hierarchy-pane__tree-actions">
+            <ContextMenuRegion options={rootMenuOptions[0]?.children ?? []} openOnClick>
+              <button
+                type="button"
+                className="scene-hierarchy-pane__add-button"
+                onClick={() => {
+                  editor.selectNode(null)
+                  paneRef.current?.focus()
+                }}
+              >
+                Add
+              </button>
+            </ContextMenuRegion>
+          </div>
+        )}
 
         <div className="scene-hierarchy-pane__footer">
           <div className="scene-hierarchy-pane__footer-copy">

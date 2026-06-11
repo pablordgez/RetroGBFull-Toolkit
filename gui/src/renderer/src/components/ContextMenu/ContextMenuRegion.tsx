@@ -24,6 +24,7 @@ interface ContextMenuRegionProps {
   options: ContextMenuOption[]
   children: ReactNode
   className?: string
+  openOnClick?: boolean
 }
 
 interface MenuPosition {
@@ -166,7 +167,8 @@ const ContextMenuList = ({ options, onOptionSelect }: ContextMenuListProps) => {
 export const ContextMenuRegion = ({
   options,
   children,
-  className
+  className,
+  openOnClick = false
 }: ContextMenuRegionProps) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -270,10 +272,26 @@ export const ContextMenuRegion = ({
     })
   }
 
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!openOnClick) {
+      return
+    }
+
+    const containerBounds = event.currentTarget.getBoundingClientRect()
+
+    setMenuPosition({
+      anchorLeft: containerBounds.left,
+      anchorTop: containerBounds.bottom,
+      left: containerBounds.left,
+      top: containerBounds.bottom
+    })
+  }
+
   return (
     <div
       ref={containerRef}
       className={buildClassName('context-menu-region', className)}
+      onClick={handleClick}
       onContextMenu={handleContextMenu}
     >
       {children}
