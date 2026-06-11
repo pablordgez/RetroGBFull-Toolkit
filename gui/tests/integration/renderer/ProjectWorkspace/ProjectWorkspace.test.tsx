@@ -34,8 +34,16 @@ const openProjectMenu = () => {
   fireEvent.click(screen.getByRole('menuitem', { name: 'Project' }))
 }
 
-const openCodeMenu = () => {
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Code' }))
+const openDataMenu = () => {
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Data' }))
+}
+
+const openBuildMenu = () => {
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Build' }))
+}
+
+const getOpenMenu = () => {
+  return screen.getByRole('menu')
 }
 
 const openCreateMenu = () => {
@@ -972,15 +980,15 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    openCodeMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit Save Data...' }))
+    openDataMenu()
+    fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Edit Save Data...' }))
 
     await waitFor(() => {
       expect(window.api.openProjectSaveDataEditor).toHaveBeenCalledWith('/projects/Alpha')
     })
 
-    openCodeMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Build' }))
+    openBuildMenu()
+    fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Build' }))
 
     await waitFor(() => {
       expect(window.api.buildProjectCode).toHaveBeenCalledWith('/projects/Alpha')
@@ -995,7 +1003,7 @@ describe('<ProjectWorkspace />', () => {
     expect(screen.getByRole('button', { name: 'Dismiss message' })).toBeInTheDocument()
   })
 
-  it('builds and compiles the project from the code menu', async () => {
+  it('builds and compiles the project from the build menu', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
       projectPath: '/projects/Alpha',
@@ -1026,8 +1034,8 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    openCodeMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Build + Compile' }))
+    openBuildMenu()
+    fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Build + Compile' }))
 
     await waitFor(() => {
       expect(window.api.buildAndCompileProject).toHaveBeenCalledWith('/projects/Alpha')
@@ -1068,8 +1076,8 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    openCodeMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Build + Compile' }))
+    openBuildMenu()
+    fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Build + Compile' }))
 
     await waitFor(() => {
       expect(window.api.buildAndCompileProject).toHaveBeenCalledWith('/projects/Alpha')
@@ -1126,8 +1134,8 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    openCodeMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Build' }))
+    openBuildMenu()
+    fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Build' }))
 
     expect(await screen.findByText('Build failed on purpose.')).toBeInTheDocument()
 

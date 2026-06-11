@@ -520,8 +520,8 @@ export const ProjectWorkspace = (): ReactElement => {
         items: createMenuItems
       },
       {
-        id: 'code-menu',
-        label: 'Code',
+        id: 'data-menu',
+        label: 'Data',
         items: [
           {
             id: 'edit-save-data',
@@ -534,7 +534,13 @@ export const ProjectWorkspace = (): ReactElement => {
             label: 'Edit Tags...',
             disabled: isBusy || !projectPath,
             onSelect: () => void handleOpenTagEditor()
-          },
+          }
+        ]
+      },
+      {
+        id: 'build-menu',
+        label: 'Build',
+        items: [
           {
             id: 'build-project',
             label: 'Build',
