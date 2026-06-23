@@ -416,7 +416,13 @@ export const SceneHierarchyPane = ({
               </div>
 
               <div className="scene-hierarchy-pane__children" role="group">
-                {editor.nodes.map((node) => renderNode(node, 1))}
+                {editor.nodes.length > 0 ? (
+                  editor.nodes.map((node) => renderNode(node, 1))
+                ) : (
+                  <div className="scene-hierarchy-pane__empty scene-hierarchy-pane__empty--nested">
+                    Use the "Add" button below to add new nodes to the scene
+                  </div>
+                )}
               </div>
             </>
           ) : (

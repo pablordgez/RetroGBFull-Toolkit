@@ -24,6 +24,10 @@
   font-weight: bold;
 }
 
+.scene-hierarchy-pane__empty--nested {
+  padding-left: 28px;
+}
+
 .scene-hierarchy-pane__item-menu {
   display: block;
   width: 100%;
