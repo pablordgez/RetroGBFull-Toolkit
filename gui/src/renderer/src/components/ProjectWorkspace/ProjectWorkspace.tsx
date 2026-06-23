@@ -590,7 +590,20 @@ export const ProjectWorkspace = (): ReactElement => {
 
         <div className="project-workspace__project-summary">
           <strong>{projectName}</strong>
-          <span>{projectPath}</span>
+          {projectPath ? (
+            <button
+              type="button"
+              className="project-workspace__project-path-button"
+              onClick={() => void handleOpenProjectInExplorer()}
+              disabled={isBusy}
+              title="Open project in file explorer"
+              aria-label={`Open ${projectPath} in file explorer`}
+            >
+              {projectPath}
+            </button>
+          ) : (
+            <span>{projectPath}</span>
+          )}
         </div>
       </div>
 

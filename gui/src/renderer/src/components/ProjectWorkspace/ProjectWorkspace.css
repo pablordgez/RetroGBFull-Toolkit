@@ -39,7 +39,8 @@
 }
 
 .project-workspace__project-summary strong,
-.project-workspace__project-summary span {
+.project-workspace__project-summary span,
+.project-workspace__project-path-button {
   max-width: 48ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -49,6 +50,31 @@
 .project-workspace__project-summary span {
   font-size: 0.92rem;
   opacity: 0.82;
+}
+
+.project-workspace__project-path-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.92rem;
+  opacity: 0.82;
+  cursor: pointer;
+  appearance: none;
+  outline: none;
+  box-shadow: none;
+  text-decoration: none;
+}
+
+.project-workspace__project-path-button:hover:not(:disabled),
+.project-workspace__project-path-button:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.project-workspace__project-path-button:disabled {
+  cursor: default;
 }
 
 .project-workspace__status {
@@ -266,7 +292,8 @@
   }
 
   .project-workspace__project-summary strong,
-  .project-workspace__project-summary span {
+  .project-workspace__project-summary span,
+  .project-workspace__project-path-button {
     max-width: none;
   }
 }

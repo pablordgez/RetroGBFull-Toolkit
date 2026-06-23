@@ -384,6 +384,26 @@ describe('<ProjectWorkspace />', () => {
     expect(await screen.findByText('Sprites')).toBeInTheDocument()
   })
 
+  it('opens the project folder when the project path summary is clicked', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: []
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open /projects/Alpha in file explorer' }))
+
+    await waitFor(() => {
+      expect(window.api.openProjectInFileExplorer).toHaveBeenCalledWith('/projects/Alpha')
+    })
+  })
+
   it('shows a file explorer action in the resource context menu and opens the selected resource', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
