@@ -18,7 +18,6 @@ extraResources:
     to: core
     filter:
       - '**/*'
-      - '!docs/**'
       - '!obj/**'
 asarUnpack:
   - resources/**

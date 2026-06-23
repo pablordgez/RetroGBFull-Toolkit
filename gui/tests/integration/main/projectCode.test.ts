@@ -121,6 +121,153 @@ describe('projectCode integration', () => {
     expect(candidates.some((candidate) => candidate.functionName === 'SharedNeedsArgs')).toBe(false)
   }, 60_000)
 
+  it('saves unqualified script function definitions and matching prototypes as banked', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const script = await createProjectScriptResource(project.path, 'general', 'Shared')
+
+    const savedScript = await saveProjectScriptResource(
+      project.path,
+      script.resourcePath,
+      'general',
+      [
+        '#define SHARED_BLOCK(value) { value; }',
+        '',
+        '/*',
+        'uint8_t CommentedOut(uint8_t value){',
+        '}',
+        '*/',
+        '',
+        'uint8_t SharedNeedsArgs(uint8_t value){',
+        '    return value;',
+        '}',
+        '',
+        'uint8_t *GetSharedBuffer(void){',
+        '    return NULL;',
+        '}',
+        '',
+        'uint8_t',
+        'MultilineFunction(',
+        '    uint8_t value',
+        '){',
+        '    return value;',
+        '}',
+        '',
+        'static uint8_t HiddenShared(uint8_t value){',
+        '    return value;',
+        '}',
+        '',
+        'void UsesControlFlow(void){',
+        '    if(joypad() & J_LEFT){',
+        '    }',
+        '    else if(joypad() & J_RIGHT){',
+        '    }',
+        '    while(joypad() & J_UP){',
+        '        break;',
+        '    }',
+        '}',
+        '',
+        'void AlreadyBanked(uint8_t value) BANKED{',
+        '    value = value;',
+        '}',
+        '',
+        'void AlreadyNonbanked(void) NONBANKED{',
+        '}',
+        ''
+      ].join('\n'),
+      [
+        '#ifndef SHARED_H',
+        '#define SHARED_H',
+        '',
+        'uint8_t SharedNeedsArgs(uint8_t value);',
+        'uint8_t *GetSharedBuffer(void);',
+        'uint8_t MultilineFunction(uint8_t value);',
+        'void AlreadyBanked(uint8_t value);',
+        'void AlreadyNonbanked(void) NONBANKED;',
+        '',
+        '#endif // SHARED_H',
+        ''
+      ].join('\n')
+    )
+
+    expect(savedScript.sourceContent).toContain('#define SHARED_BLOCK(value) { value; }')
+    expect(savedScript.sourceContent).toContain('uint8_t CommentedOut(uint8_t value){')
+    expect(savedScript.sourceContent).not.toContain('uint8_t CommentedOut(uint8_t value) BANKED{')
+    expect(savedScript.sourceContent).toContain('uint8_t SharedNeedsArgs(uint8_t value) BANKED{')
+    expect(savedScript.sourceContent).toContain('uint8_t *GetSharedBuffer(void) BANKED{')
+    expect(savedScript.sourceContent).toContain(
+      ['uint8_t', 'MultilineFunction(', '    uint8_t value', ') BANKED{'].join('\n')
+    )
+    expect(savedScript.sourceContent).toContain(
+      'static uint8_t HiddenShared(uint8_t value) BANKED{'
+    )
+    expect(savedScript.sourceContent).toContain('void UsesControlFlow(void) BANKED{')
+    expect(savedScript.sourceContent).toContain('    if(joypad() & J_LEFT){')
+    expect(savedScript.sourceContent).toContain('    else if(joypad() & J_RIGHT){')
+    expect(savedScript.sourceContent).toContain('    while(joypad() & J_UP){')
+    expect(savedScript.sourceContent).not.toContain('if(joypad() & J_LEFT) BANKED{')
+    expect(savedScript.sourceContent).not.toContain('else if(joypad() & J_RIGHT) BANKED{')
+    expect(savedScript.sourceContent).not.toContain('while(joypad() & J_UP) BANKED{')
+    expect(savedScript.sourceContent).toContain('void AlreadyBanked(uint8_t value) BANKED{')
+    expect(savedScript.sourceContent).toContain('void AlreadyNonbanked(void) NONBANKED{')
+    expect(savedScript.headerContent).toContain('uint8_t SharedNeedsArgs(uint8_t value) BANKED;')
+    expect(savedScript.headerContent).toContain('uint8_t *GetSharedBuffer(void) BANKED;')
+    expect(savedScript.headerContent).toContain('uint8_t MultilineFunction(uint8_t value) BANKED;')
+    expect(savedScript.headerContent).toContain('void AlreadyBanked(uint8_t value) BANKED;')
+    expect(savedScript.headerContent).toContain('void AlreadyNonbanked(void) NONBANKED;')
+    expect(savedScript.headerContent).toContain('#include "MainDefinitions.h"')
+  })
+
+  it('leaves unqualified script functions untouched when automatic banking is disabled', async () => {
+    const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
+    tempDirectories.push(workspaceDirectory)
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    await prepareBundledGbdkFixture(workspaceDirectory)
+    const script = await createProjectScriptResource(project.path, 'general', 'Shared')
+    const scriptSourcePath = join(project.path, script.resourcePath)
+    const scriptHeaderPath = join(project.path, script.resourcePath.replace(/\.c$/, '.h'))
+    const editableSourceContent = [
+      'void Helper(uint8_t value){',
+      '    value = value;',
+      '}',
+      ''
+    ].join('\n')
+    const headerContent = [
+      '#ifndef SHARED_H',
+      '#define SHARED_H',
+      '',
+      'void Helper(uint8_t value);',
+      '',
+      '#endif // SHARED_H',
+      ''
+    ].join('\n')
+
+    const savedScript = await saveProjectScriptResource(
+      project.path,
+      script.resourcePath,
+      'general',
+      editableSourceContent,
+      headerContent,
+      { autoBankScriptFunctions: false }
+    )
+
+    expect(savedScript.editableSourceContent).toBe(editableSourceContent)
+    expect(savedScript.sourceContent).toContain('void Helper(uint8_t value){')
+    expect(savedScript.sourceContent).not.toContain('void Helper(uint8_t value) BANKED{')
+    expect(savedScript.headerContent).toContain('void Helper(uint8_t value);')
+    expect(savedScript.headerContent).not.toContain('void Helper(uint8_t value) BANKED;')
+
+    await buildProjectCode(project.path, { autoBankScriptFunctions: false })
+
+    const sourceContent = await readFile(scriptSourcePath, 'utf-8')
+    const nextHeaderContent = await readFile(scriptHeaderPath, 'utf-8')
+    expect(sourceContent).toContain('void Helper(uint8_t value){')
+    expect(sourceContent).not.toContain('void Helper(uint8_t value) BANKED{')
+    expect(nextHeaderContent).toContain('void Helper(uint8_t value);')
+    expect(nextHeaderContent).not.toContain('void Helper(uint8_t value) BANKED;')
+  })
+
   it('removes stale generated resource directories and registry entries after deleting a tracked asset', async () => {
     const workspaceDirectory = await mkdtemp(join(tmpdir(), 'retrogb-code-'))
     tempDirectories.push(workspaceDirectory)
@@ -198,7 +345,6 @@ describe('projectCode integration', () => {
     await buildProjectCode(project.path)
 
     const initialSpriteSource = await readFile(spriteSourcePath, 'utf-8')
-    const initialAnimationRegistry = await readFile(animationRegistryPath, 'utf-8')
     const initialAnimationRegistrySource = await readFile(animationRegistrySourcePath, 'utf-8')
     const loadedSprite = await loadProjectAssetFile(project.path, sprite.resourcePath)
 
@@ -305,13 +451,6 @@ describe('projectCode integration', () => {
     const sprite = await createProjectResource(project.path, 'sprite', '', 'Hero')
     const spriteIdentifier = normalizeCodeIdentifierStem('Hero')
     const spriteSourcePath = join(project.path, 'res', spriteIdentifier, `${spriteIdentifier}.c`)
-    const animationRegistryHeaderPath = join(
-      project.path,
-      'src',
-      'Assets',
-      'Animations',
-      'AnimationRegistry.h'
-    )
     const animationRegistrySourcePath = join(
       project.path,
       'src',

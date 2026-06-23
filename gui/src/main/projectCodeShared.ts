@@ -6,7 +6,7 @@ import type { GbdkToolchainSource } from '../shared/projectGbdk'
 import type { MakeToolchainSource } from '../shared/projectMake'
 
 export const IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES = new Set(['deleted-resources'])
-export const IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES = new Set(['docs', 'obj'])
+export const IGNORED_BUNDLED_CORE_ROOT_DIRECTORIES = new Set(['obj'])
 export const INTERNAL_GENERATION_DIRECTORY = '.retrogbfull'
 export const RESOURCE_GENERATION_MANIFEST_PATH = `${INTERNAL_GENERATION_DIRECTORY}/resource-generation-manifest.json`
 export const SCRIPT_ENVIRONMENT_PATH = 'src/ScriptEnvironment.h'

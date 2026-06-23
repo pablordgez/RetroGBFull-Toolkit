@@ -1,11 +1,29 @@
 import React from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  type RenderResult,
+  waitFor,
+  within
+} from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PROJECT_ASSET_DRAG_MIME } from '../../../../src/renderer/src/components/ProjectAssets/projectAssetDrag'
 import { ProjectWorkspace } from '../../../../src/renderer/src/components/ProjectWorkspace/ProjectWorkspace'
 
-const renderWorkspace = (entry: string, { strictMode = false }: { strictMode?: boolean } = {}) => {
+interface MockDataTransfer {
+  dropEffect: string
+  effectAllowed: string
+  readonly types: string[]
+  setData: (type: string, value: string) => void
+  getData: (type: string) => string
+}
+
+const renderWorkspace = (
+  entry: string,
+  { strictMode = false }: { strictMode?: boolean } = {}
+): RenderResult => {
   const workspace = (
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
@@ -20,7 +38,7 @@ const renderWorkspace = (entry: string, { strictMode = false }: { strictMode?: b
 const renderWorkspaceAndWait = async (
   entry: string,
   options?: { strictMode?: boolean }
-) => {
+): Promise<RenderResult> => {
   const renderedWorkspace = renderWorkspace(entry, options)
 
   await waitFor(() => {
@@ -30,31 +48,35 @@ const renderWorkspaceAndWait = async (
   return renderedWorkspace
 }
 
-const openProjectMenu = () => {
+const openProjectMenu = (): void => {
   fireEvent.click(screen.getByRole('menuitem', { name: 'Project' }))
 }
 
-const openDataMenu = () => {
+const openDataMenu = (): void => {
   fireEvent.click(screen.getByRole('menuitem', { name: 'Data' }))
 }
 
-const openBuildMenu = () => {
+const openPreferencesMenu = (): void => {
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Preferences' }))
+}
+
+const openBuildMenu = (): void => {
   fireEvent.click(screen.getByRole('menuitem', { name: 'Build' }))
 }
 
-const getOpenMenu = () => {
+const getOpenMenu = (): HTMLElement => {
   return screen.getByRole('menu')
 }
 
-const openCreateMenu = () => {
+const openCreateMenu = (): void => {
   fireEvent.click(screen.getByRole('menuitem', { name: 'Create' }))
 }
 
-const getShortcutLabel = (key: string) => {
+const getShortcutLabel = (key: string): string => {
   return /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? `\u2318${key}` : `Ctrl+${key}`
 }
 
-const createMockDataTransfer = () => {
+const createMockDataTransfer = (): MockDataTransfer => {
   const data = new Map<string, string>()
 
   return {
@@ -70,7 +92,7 @@ const createMockDataTransfer = () => {
   }
 }
 
-const openResourceFromPane = async (name: string) => {
+const openResourceFromPane = async (name: string): Promise<HTMLElement> => {
   const resourcePane = screen.getByTestId('resource-management-pane')
   const resourceLabel = await within(resourcePane).findByText(name)
   const resourceButton = resourceLabel.closest('button')
@@ -83,11 +105,38 @@ const openResourceFromPane = async (name: string) => {
   return resourcePane
 }
 
+const resetWorkspaceApiMocks = (): void => {
+  vi.mocked(window.api.openProjectAssetEditor).mockReset()
+  vi.mocked(window.api.getRecentProjects).mockReset()
+  vi.mocked(window.api.getAppPreferences).mockReset()
+  vi.mocked(window.api.saveAppPreferences).mockReset()
+  vi.mocked(window.api.getRuntimePlatform).mockReset()
+  vi.mocked(window.api.getGbdkToolchainStatus).mockReset()
+  vi.mocked(window.api.installLatestGbdkToolchain).mockReset()
+  vi.mocked(window.api.getMakeToolchainStatus).mockReset()
+  vi.mocked(window.api.installLatestMakeToolchain).mockReset()
+  vi.mocked(window.api.getProjectResources).mockReset()
+  vi.mocked(window.api.scanProjectDirectory).mockReset()
+}
+
 describe('<ProjectWorkspace />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetWorkspaceApiMocks()
     vi.mocked(window.api.openProjectAssetEditor).mockResolvedValue(true)
     vi.mocked(window.api.getRecentProjects).mockResolvedValue([])
+    vi.mocked(window.api.getAppPreferences).mockResolvedValue({
+      scriptEditorTheme: 'light',
+      coordinateUnit: 'gui',
+      childCoordinateOrigin: 'relative',
+      autoBankScriptFunctions: true
+    })
+    vi.mocked(window.api.saveAppPreferences).mockResolvedValue({
+      scriptEditorTheme: 'light',
+      coordinateUnit: 'gui',
+      childCoordinateOrigin: 'relative',
+      autoBankScriptFunctions: true
+    })
     vi.mocked(window.api.getRuntimePlatform).mockResolvedValue('linux')
     vi.mocked(window.api.getGbdkToolchainStatus).mockResolvedValue({
       installed: true,
@@ -404,6 +453,88 @@ describe('<ProjectWorkspace />', () => {
     })
   })
 
+  it('loads and saves workspace preferences through app preferences', async () => {
+    vi.mocked(window.api.getAppPreferences).mockResolvedValue({
+      scriptEditorTheme: 'dark',
+      coordinateUnit: 'core',
+      childCoordinateOrigin: 'absolute',
+      autoBankScriptFunctions: true
+    })
+    vi.mocked(window.api.saveAppPreferences).mockImplementation(async (preferences) => ({
+      scriptEditorTheme: preferences.scriptEditorTheme ?? 'dark',
+      coordinateUnit: preferences.coordinateUnit ?? 'core',
+      childCoordinateOrigin: preferences.childCoordinateOrigin ?? 'absolute',
+      autoBankScriptFunctions: preferences.autoBankScriptFunctions ?? true
+    }))
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    await waitFor(() => {
+      expect(window.api.getAppPreferences).toHaveBeenCalled()
+    })
+
+    openPreferencesMenu()
+    expect(
+      within(getOpenMenu()).getByRole('menuitemcheckbox', {
+        name: 'Display GUI pixel coordinates'
+      })
+    ).toHaveAttribute('aria-checked', 'false')
+    expect(
+      within(getOpenMenu()).getByRole('menuitemcheckbox', {
+        name: 'Display child coordinates as absolute'
+      })
+    ).toHaveAttribute('aria-checked', 'true')
+    expect(
+      within(getOpenMenu()).getByRole('menuitemcheckbox', {
+        name: 'Auto-add BANKED to script functions'
+      })
+    ).toHaveAttribute('aria-checked', 'true')
+
+    fireEvent.click(
+      within(getOpenMenu()).getByRole('menuitemcheckbox', {
+        name: 'Display GUI pixel coordinates'
+      })
+    )
+
+    await waitFor(() => {
+      expect(window.api.saveAppPreferences).toHaveBeenCalledWith({
+        coordinateUnit: 'gui',
+        childCoordinateOrigin: 'absolute',
+        autoBankScriptFunctions: true
+      })
+    })
+
+    fireEvent.click(
+      within(getOpenMenu()).getByRole('menuitemcheckbox', {
+        name: 'Display child coordinates as absolute'
+      })
+    )
+
+    await waitFor(() => {
+      expect(window.api.saveAppPreferences).toHaveBeenCalledWith({
+        coordinateUnit: 'gui',
+        childCoordinateOrigin: 'relative',
+        autoBankScriptFunctions: true
+      })
+    })
+
+    fireEvent.click(
+      within(getOpenMenu()).getByRole('menuitemcheckbox', {
+        name: 'Auto-add BANKED to script functions'
+      })
+    )
+
+    await waitFor(() => {
+      expect(window.api.saveAppPreferences).toHaveBeenCalledWith({
+        coordinateUnit: 'gui',
+        childCoordinateOrigin: 'relative',
+        autoBankScriptFunctions: false
+      })
+    })
+  })
+
   it('shows a file explorer action in the resource context menu and opens the selected resource', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
@@ -518,33 +649,35 @@ describe('<ProjectWorkspace />', () => {
   })
 
   it('creates a folder from the Create menu in the current resource path', async () => {
-    vi.mocked(window.api.getProjectResources).mockImplementation(async (_projectPath, currentPath = '') => {
-      if (currentPath === 'Sprites') {
+    vi.mocked(window.api.getProjectResources).mockImplementation(
+      async (_projectPath, currentPath = '') => {
+        if (currentPath === 'Sprites') {
+          return {
+            projectName: 'Alpha',
+            projectPath: '/projects/Alpha',
+            currentPath: 'Sprites',
+            parentPath: '',
+            items: []
+          }
+        }
+
         return {
           projectName: 'Alpha',
           projectPath: '/projects/Alpha',
-          currentPath: 'Sprites',
-          parentPath: '',
-          items: []
+          currentPath: '',
+          parentPath: null,
+          items: [
+            {
+              type: 'folder',
+              id: 'folder-1',
+              name: 'Sprites',
+              path: 'Sprites',
+              parentPath: null
+            }
+          ]
         }
       }
-
-      return {
-        projectName: 'Alpha',
-        projectPath: '/projects/Alpha',
-        currentPath: '',
-        parentPath: null,
-        items: [
-          {
-            type: 'folder',
-            id: 'folder-1',
-            name: 'Sprites',
-            path: 'Sprites',
-            parentPath: null
-          }
-        ]
-      }
-    })
+    )
     vi.mocked(window.api.createProjectResource).mockResolvedValue({
       resourceType: 'folder',
       resourcePath: 'Sprites/New Folder',
@@ -799,9 +932,11 @@ describe('<ProjectWorkspace />', () => {
     await waitFor(() => {
       expect(window.api.getProjectResources).toHaveBeenCalledWith('/projects/Alpha', 'Sprites')
     })
-    expect(await screen.findByRole('button', { name: 'Back' })).toBeInTheDocument()
+    const backLabel = await screen.findByText('Back')
+    const backButton = backLabel.closest('button')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(backButton).toBeInTheDocument()
+    fireEvent.click(backButton!)
 
     await waitFor(() => {
       expect(window.api.getProjectResources).toHaveBeenLastCalledWith('/projects/Alpha', '')
@@ -1011,7 +1146,9 @@ describe('<ProjectWorkspace />', () => {
     fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Build' }))
 
     await waitFor(() => {
-      expect(window.api.buildProjectCode).toHaveBeenCalledWith('/projects/Alpha')
+      expect(window.api.buildProjectCode).toHaveBeenCalledWith('/projects/Alpha', {
+        autoBankScriptFunctions: true
+      })
     })
 
     expect(
@@ -1058,7 +1195,9 @@ describe('<ProjectWorkspace />', () => {
     fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Build + Compile' }))
 
     await waitFor(() => {
-      expect(window.api.buildAndCompileProject).toHaveBeenCalledWith('/projects/Alpha')
+      expect(window.api.buildAndCompileProject).toHaveBeenCalledWith('/projects/Alpha', {
+        autoBankScriptFunctions: true
+      })
     })
 
     expect(
@@ -1076,15 +1215,20 @@ describe('<ProjectWorkspace />', () => {
     })
 
     let progressListener:
-      | ((payload: { projectPath: string; stage: 'build' | 'clean' | 'compile'; message: string }) => void)
+      | ((payload: {
+          projectPath: string
+          stage: 'build' | 'clean' | 'compile'
+          message: string
+        }) => void)
       | undefined
     vi.mocked(window.api.onProjectBuildProgress).mockImplementation((listener) => {
       progressListener = listener
       return () => undefined
     })
 
-    let resolveBuildAndCompile: ((value: Awaited<ReturnType<typeof window.api.buildAndCompileProject>>) => void) | null =
-      null
+    let resolveBuildAndCompile:
+      | ((value: Awaited<ReturnType<typeof window.api.buildAndCompileProject>>) => void)
+      | null = null
     vi.mocked(window.api.buildAndCompileProject).mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -1100,7 +1244,9 @@ describe('<ProjectWorkspace />', () => {
     fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Build + Compile' }))
 
     await waitFor(() => {
-      expect(window.api.buildAndCompileProject).toHaveBeenCalledWith('/projects/Alpha')
+      expect(window.api.buildAndCompileProject).toHaveBeenCalledWith('/projects/Alpha', {
+        autoBankScriptFunctions: true
+      })
     })
 
     expect(await screen.findByText('Building project code...')).toBeInTheDocument()
@@ -1534,9 +1680,9 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const heroButton = (await within(screen.getByTestId('resource-management-pane')).findByText(
-      'Hero'
-    )).closest('button')
+    const heroButton = (
+      await within(screen.getByTestId('resource-management-pane')).findByText('Hero')
+    ).closest('button')
 
     if (!heroButton) {
       throw new Error('Expected Hero resource button.')
@@ -2472,7 +2618,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const resourcePane = await openResourceFromPane('Room Scene')
+    await openResourceFromPane('Room Scene')
 
     await screen.findByText('Hero')
     fireEvent.click(within(screen.getByTestId('project-workspace-scene-sidebar')).getByText('Hero'))
@@ -2538,7 +2684,7 @@ describe('<ProjectWorkspace />', () => {
       '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
     )
 
-    const resourcePane = await openResourceFromPane('Room Scene')
+    await openResourceFromPane('Room Scene')
 
     await waitFor(() => {
       expect(document.querySelector('.scene-viewport__actor')).not.toBeNull()
@@ -2569,7 +2715,9 @@ describe('<ProjectWorkspace />', () => {
       fireEvent.pointerUp(window)
 
       await waitFor(() => {
-        const movedActorButton = document.querySelector('.scene-viewport__actor') as HTMLButtonElement
+        const movedActorButton = document.querySelector(
+          '.scene-viewport__actor'
+        ) as HTMLButtonElement
         expect(movedActorButton.style.left !== '0px' || movedActorButton.style.top !== '0px').toBe(
           true
         )
@@ -2583,14 +2731,8 @@ describe('<ProjectWorkspace />', () => {
       }
     }
 
-    const firstPosition = await dragActorTo(
-      { x: 16, y: 16 },
-      { x: 24, y: 24 }
-    )
-    const secondPosition = await dragActorTo(
-      { x: 24, y: 24 },
-      { x: 40, y: 32 }
-    )
+    const firstPosition = await dragActorTo({ x: 16, y: 16 }, { x: 24, y: 24 })
+    const secondPosition = await dragActorTo({ x: 24, y: 24 }, { x: 40, y: 32 })
 
     expect(secondPosition).not.toEqual(firstPosition)
 
@@ -2665,7 +2807,7 @@ describe('<ProjectWorkspace />', () => {
       { strictMode: true }
     )
 
-    const resourcePane = await openResourceFromPane('Room Scene')
+    await openResourceFromPane('Room Scene')
 
     await waitFor(() => {
       expect(document.querySelector('.scene-viewport__actor')).not.toBeNull()
@@ -2696,7 +2838,9 @@ describe('<ProjectWorkspace />', () => {
       fireEvent.pointerUp(window)
 
       await waitFor(() => {
-        const movedActorButton = document.querySelector('.scene-viewport__actor') as HTMLButtonElement
+        const movedActorButton = document.querySelector(
+          '.scene-viewport__actor'
+        ) as HTMLButtonElement
         expect(movedActorButton.style.left !== '0px' || movedActorButton.style.top !== '0px').toBe(
           true
         )
@@ -2710,14 +2854,8 @@ describe('<ProjectWorkspace />', () => {
       }
     }
 
-    const firstPosition = await dragActorTo(
-      { x: 16, y: 16 },
-      { x: 24, y: 24 }
-    )
-    const secondPosition = await dragActorTo(
-      { x: 24, y: 24 },
-      { x: 40, y: 32 }
-    )
+    const firstPosition = await dragActorTo({ x: 16, y: 16 }, { x: 24, y: 24 })
+    const secondPosition = await dragActorTo({ x: 24, y: 24 }, { x: 40, y: 32 })
 
     expect(secondPosition).not.toEqual(firstPosition)
 
@@ -2739,41 +2877,43 @@ describe('<ProjectWorkspace />', () => {
   })
 
   it('saves actor resources into the current resource folder and strips followCamera', async () => {
-    vi.mocked(window.api.getProjectResources).mockImplementation(async (_projectPath, currentPath = '') => {
-      if (currentPath === 'Actors') {
+    vi.mocked(window.api.getProjectResources).mockImplementation(
+      async (_projectPath, currentPath = '') => {
+        if (currentPath === 'Actors') {
+          return {
+            projectName: 'Alpha',
+            projectPath: '/projects/Alpha',
+            currentPath: 'Actors',
+            parentPath: '',
+            items: []
+          }
+        }
+
         return {
           projectName: 'Alpha',
           projectPath: '/projects/Alpha',
-          currentPath: 'Actors',
-          parentPath: '',
-          items: []
+          currentPath: '',
+          parentPath: null,
+          items: [
+            {
+              type: 'folder',
+              id: 'actors-folder',
+              name: 'Actors',
+              path: 'Actors',
+              parentPath: null
+            },
+            {
+              type: 'file',
+              name: 'Room Scene',
+              fileName: 'Room Scene.rgbscene.json',
+              path: 'Scenes/Room Scene.rgbscene.json',
+              extension: 'json',
+              resourceType: 'scene'
+            }
+          ]
         }
       }
-
-      return {
-        projectName: 'Alpha',
-        projectPath: '/projects/Alpha',
-        currentPath: '',
-        parentPath: null,
-        items: [
-          {
-            type: 'folder',
-            id: 'actors-folder',
-            name: 'Actors',
-            path: 'Actors',
-            parentPath: null
-          },
-          {
-            type: 'file',
-            name: 'Room Scene',
-            fileName: 'Room Scene.rgbscene.json',
-            path: 'Scenes/Room Scene.rgbscene.json',
-            extension: 'json',
-            resourceType: 'scene'
-          }
-        ]
-      }
-    })
+    )
     vi.mocked(window.api.loadProjectAssetFile).mockImplementation(
       async (_projectPath, assetPath) => {
         if (assetPath === 'Scenes/Room Scene.rgbscene.json') {
@@ -2906,47 +3046,52 @@ describe('<ProjectWorkspace />', () => {
       'Actors/Hero.rgbactor.json'
     )
     expect(
-      (vi.mocked(window.api.saveProjectAssetFile).mock.calls[0][2] as { root: Record<string, unknown> })
-        .root
+      (
+        vi.mocked(window.api.saveProjectAssetFile).mock.calls[0][2] as {
+          root: Record<string, unknown>
+        }
+      ).root
     ).toHaveProperty('resourcePath', undefined)
   })
 
   it('prompts to overwrite or save new when saving a linked actor resource', async () => {
-    vi.mocked(window.api.getProjectResources).mockImplementation(async (_projectPath, currentPath = '') => {
-      if (currentPath === 'Archive') {
+    vi.mocked(window.api.getProjectResources).mockImplementation(
+      async (_projectPath, currentPath = '') => {
+        if (currentPath === 'Archive') {
+          return {
+            projectName: 'Alpha',
+            projectPath: '/projects/Alpha',
+            currentPath: 'Archive',
+            parentPath: '',
+            items: []
+          }
+        }
+
         return {
           projectName: 'Alpha',
           projectPath: '/projects/Alpha',
-          currentPath: 'Archive',
-          parentPath: '',
-          items: []
+          currentPath: '',
+          parentPath: null,
+          items: [
+            {
+              type: 'folder',
+              id: 'archive-folder',
+              name: 'Archive',
+              path: 'Archive',
+              parentPath: null
+            },
+            {
+              type: 'file',
+              name: 'Room Scene',
+              fileName: 'Room Scene.rgbscene.json',
+              path: 'Scenes/Room Scene.rgbscene.json',
+              extension: 'json',
+              resourceType: 'scene'
+            }
+          ]
         }
       }
-
-      return {
-        projectName: 'Alpha',
-        projectPath: '/projects/Alpha',
-        currentPath: '',
-        parentPath: null,
-        items: [
-          {
-            type: 'folder',
-            id: 'archive-folder',
-            name: 'Archive',
-            path: 'Archive',
-            parentPath: null
-          },
-          {
-            type: 'file',
-            name: 'Room Scene',
-            fileName: 'Room Scene.rgbscene.json',
-            path: 'Scenes/Room Scene.rgbscene.json',
-            extension: 'json',
-            resourceType: 'scene'
-          }
-        ]
-      }
-    })
+    )
     vi.mocked(window.api.loadProjectAssetFile).mockImplementation(
       async (_projectPath, assetPath) => {
         if (assetPath === 'Scenes/Room Scene.rgbscene.json') {

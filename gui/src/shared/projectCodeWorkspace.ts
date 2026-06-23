@@ -35,7 +35,12 @@ export interface ProjectScriptSavePayload {
   resourcePath: string
   scriptKind: ProjectScriptKind
   sourceContent: string
+  editableSourceContent: string
   headerContent: string
+}
+
+export interface ProjectScriptBankingOptions {
+  autoBankScriptFunctions?: boolean
 }
 
 export interface ProjectScriptCallbackCandidate {

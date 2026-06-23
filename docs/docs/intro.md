@@ -1,11 +1,14 @@
 ---
 sidebar_position: 1
 slug: /
-title: RetroGBFull Toolkit engine core documentation
+title: RetroGBFull Toolkit Documentation
 ---
 
 ## Documentation map
 
+- [Concepts](./concepts) explains scenes, actors, sprites, tilemaps, colliders, tags, and other common game terms.
+- [Script basics](./scripting/script-basics) explains actor scripts, scene scripts, general scripts, and the main script functions.
+- [Common script examples](./scripting/common-examples) shows small examples for movement, input, resources, music, text, and collisions.
 - [Architecture and conventions](./architecture) explains the runtime model, including implicit context globals and generated registries.
 - [Game manager and scenes](./runtime/game-manager-and-scenes) covers scene lifetime, scene switching, and scene dispatch.
 - [Actors and collisions](./runtime/actors-and-collisions) covers actor state, movement, hierarchy, tags, colliders, and collision callbacks.

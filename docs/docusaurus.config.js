@@ -1,8 +1,8 @@
 // @ts-check
 
 const config = {
-  title: "RetroGBFull Engine Core",
-  tagline: "Public API reference for the reusable Game Boy runtime",
+  title: "RetroGBFull Toolkit Docs",
+  tagline: "Guides and runtime reference for building Game Boy games",
   url: "http://localhost",
   baseUrl: "/",
   onBrokenLinks: "throw",
@@ -12,7 +12,7 @@ const config = {
     }
   },
   organizationName: "retrogbfull",
-  projectName: "engine-core-docs",
+  projectName: "retrogbfull-docs",
   trailingSlash: false,
   presets: [
     [
@@ -32,13 +32,13 @@ const config = {
   ],
   themeConfig: {
     navbar: {
-      title: "Engine Core Docs",
+      title: "RetroGBFull Docs",
       items: [
         {
           type: "docSidebar",
-          sidebarId: "engineCoreSidebar",
+          sidebarId: "toolkitSidebar",
           position: "left",
-          label: "API Reference"
+          label: "Docs"
         }
       ]
     },

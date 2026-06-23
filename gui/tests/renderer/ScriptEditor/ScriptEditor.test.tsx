@@ -114,9 +114,17 @@ describe('<ScriptEditor />', () => {
     runtimeSessionMock.updateHeaderContent.mockClear()
     runtimeSessionMock.dispose.mockClear()
     createScriptEditorRuntimeMock.mockResolvedValue(runtimeSessionMock)
-    vi.mocked(window.api.getAppPreferences).mockResolvedValue({ scriptEditorTheme: 'light' })
+    vi.mocked(window.api.getAppPreferences).mockResolvedValue({
+      scriptEditorTheme: 'light',
+      coordinateUnit: 'gui',
+      childCoordinateOrigin: 'relative',
+      autoBankScriptFunctions: true
+    })
     vi.mocked(window.api.saveAppPreferences).mockImplementation(async (preferences) => ({
-      scriptEditorTheme: preferences.scriptEditorTheme ?? 'light'
+      scriptEditorTheme: preferences.scriptEditorTheme ?? 'light',
+      coordinateUnit: preferences.coordinateUnit ?? 'gui',
+      childCoordinateOrigin: preferences.childCoordinateOrigin ?? 'relative',
+      autoBankScriptFunctions: preferences.autoBankScriptFunctions ?? true
     }))
     vi.mocked(window.api.loadProjectScriptResource).mockResolvedValue(generalScriptPayload)
     vi.mocked(window.api.saveProjectScriptResource).mockResolvedValue({
@@ -124,6 +132,7 @@ describe('<ScriptEditor />', () => {
       scriptKind: 'general',
       sourceContent:
         '#pragma bank 255\n#include "Test.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Test_bankref)\n\n',
+      editableSourceContent: '',
       headerContent: '#ifndef TEST_H\n#define TEST_H\n\n#endif // TEST_H\n'
     })
     vi.mocked(window.api.getProjectCodeWorkspaceSnapshot).mockResolvedValue({
@@ -161,7 +170,8 @@ describe('<ScriptEditor />', () => {
         'src/Scripts/Test.c',
         'general',
         '',
-        '#ifndef TEST_H\n#define TEST_H\n\n#endif // TEST_H\n'
+        '#ifndef TEST_H\n#define TEST_H\n\n#endif // TEST_H\n',
+        { autoBankScriptFunctions: true }
       )
     })
 
@@ -257,6 +267,73 @@ describe('<ScriptEditor />', () => {
     })
   })
 
+  it('shows saved BANKED rewrites immediately in the open editor', async () => {
+    vi.mocked(window.api.loadProjectScriptResource).mockResolvedValue(actorScriptPayload)
+    vi.mocked(window.api.saveProjectScriptResource).mockResolvedValue({
+      resourcePath: 'src/CustomActors/Hero.c',
+      scriptKind: 'actor',
+      sourceContent:
+        '#pragma bank 255\n#include "Hero.h"\n#include "ScriptEnvironment.h"\n\nBANKREF(Hero_bankref)\n\nvoid AINIT(void) BANKED{\n}\n',
+      editableSourceContent: 'void AINIT(void) BANKED{\n}\n',
+      headerContent:
+        '#ifndef HERO_H\n#define HERO_H\n#include "Actor/Actor.h"\n\n#endif // HERO_H\n'
+    })
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          '/script-editor?projectPath=/projects/Test&resourcePath=src%2FCustomActors%2FHero.c&scriptKind=actor'
+        ]}
+      >
+        <ScriptEditor />
+      </MemoryRouter>
+    )
+
+    const editor = await screen.findByLabelText('script editor')
+    expect(editor).toHaveValue('void AINIT(void){\n}\n')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(editor).toHaveValue('void AINIT(void) BANKED{\n}\n')
+      expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    })
+  })
+
+  it('passes the disabled auto BANKED preference when saving scripts', async () => {
+    vi.mocked(window.api.getAppPreferences).mockResolvedValue({
+      scriptEditorTheme: 'light',
+      coordinateUnit: 'gui',
+      childCoordinateOrigin: 'relative',
+      autoBankScriptFunctions: false
+    })
+    vi.mocked(window.api.loadProjectScriptResource).mockResolvedValue(actorScriptPayload)
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          '/script-editor?projectPath=/projects/Test&resourcePath=src%2FCustomActors%2FHero.c&scriptKind=actor'
+        ]}
+      >
+        <ScriptEditor />
+      </MemoryRouter>
+    )
+
+    await screen.findByLabelText('script editor')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(window.api.saveProjectScriptResource).toHaveBeenCalledWith(
+        '/projects/Test',
+        'src/CustomActors/Hero.c',
+        'actor',
+        'void AINIT(void){\n}\n',
+        '#ifndef HERO_H\n#define HERO_H\n#include "Actor/Actor.h"\n\n#endif // HERO_H\n',
+        { autoBankScriptFunctions: false }
+      )
+    })
+  })
+
   it('handles clean close requests, save shortcuts, and canceling the close prompt', async () => {
     let closeListener: (() => void) | undefined
 
@@ -298,7 +375,8 @@ describe('<ScriptEditor />', () => {
         'src/CustomActors/Hero.c',
         'actor',
         'void AINIT(void){\n}\n',
-        '#ifndef HERO_H\n#define HERO_H\n#include "Actor/Actor.h"\n\n#endif // HERO_H\n'
+        '#ifndef HERO_H\n#define HERO_H\n#include "Actor/Actor.h"\n\n#endif // HERO_H\n',
+        { autoBankScriptFunctions: true }
       )
     })
 
@@ -447,7 +525,8 @@ describe('<ScriptEditor />', () => {
         'src/CustomActors/Hero.c',
         'actor',
         'void AINIT(void){\n  hero_update();\n}\n',
-        '#ifndef HERO_H\n#define HERO_H\n#include "Actor/Actor.h"\n\n#endif // HERO_H\n'
+        '#ifndef HERO_H\n#define HERO_H\n#include "Actor/Actor.h"\n\n#endif // HERO_H\n',
+        { autoBankScriptFunctions: true }
       )
     })
     expect(await screen.findByText('Save failed')).toBeInTheDocument()

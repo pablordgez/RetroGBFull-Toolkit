@@ -7,7 +7,10 @@ import {
 } from './projectMetadata'
 import { ProjectLauncherError } from './projectLauncher'
 import { normalizeCodeIdentifierStem } from '../shared/codeIdentifiers'
-import type { BuildProjectCodeResult } from '../shared/projectCodeWorkspace'
+import type {
+  BuildProjectCodeResult,
+  ProjectScriptBankingOptions
+} from '../shared/projectCodeWorkspace'
 import {
   type SceneAssetDocument,
   type SpriteAssetDocument,
@@ -354,7 +357,10 @@ const writeManagedTextFile = async (
   return resourcePath
 }
 
-export const buildProjectCode = async (projectPath: string): Promise<BuildProjectCodeResult> => {
+export const buildProjectCode = async (
+  projectPath: string,
+  options?: ProjectScriptBankingOptions
+): Promise<BuildProjectCodeResult> => {
   // normalize project path and refresh the bundled engine/toolchain files
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
   await copyBundledEngineCore(normalizedProjectPath)
@@ -412,7 +418,9 @@ export const buildProjectCode = async (projectPath: string): Promise<BuildProjec
 
   // rewrite managed regions in user scripts
   for (const script of scripts) {
-    writtenFiles.push(await rewriteManagedProjectScriptSource(normalizedProjectPath, script))
+    writtenFiles.push(
+      await rewriteManagedProjectScriptSource(normalizedProjectPath, script, options)
+    )
   }
 
   // always generate the fallback actor used by actors without scripts or collisions without a parent actor

@@ -17,6 +17,7 @@ import {
 import { getProjectCodeWorkspaceSnapshot } from './projectCodeLanguageService'
 import { getProjectCodeSymbolIndex } from './projectCodeIntelligence'
 import { ProjectScriptKind } from '../shared/projectScripts'
+import type { ProjectScriptBankingOptions } from '../shared/projectCodeWorkspace'
 
 interface ProjectScriptSavedEventPayload {
   projectPath: string
@@ -59,14 +60,16 @@ export const registerCodeIpcHandlers = (): void => {
       resourcePath: string,
       scriptKind: ProjectScriptKind,
       editableSourceContent: string,
-      headerContent: string
+      headerContent: string,
+      options?: ProjectScriptBankingOptions
     ) => {
       const payload = await saveProjectScriptResource(
         projectPath,
         resourcePath,
         scriptKind,
         editableSourceContent,
-        headerContent
+        headerContent,
+        options
       )
 
       broadcastToAllWindows('project:script-saved', {
@@ -108,17 +111,27 @@ export const registerCodeIpcHandlers = (): void => {
     return readMaxTagSlots(projectPath)
   })
 
-  ipcMain.handle('project:code:build', async (_, projectPath: string) => {
-    return buildProjectCode(projectPath)
-  })
+  ipcMain.handle(
+    'project:code:build',
+    async (_, projectPath: string, options?: ProjectScriptBankingOptions) => {
+      return buildProjectCode(projectPath, options)
+    }
+  )
 
-  ipcMain.handle('project:code:build-and-compile', async (event, projectPath: string) => {
-    return buildAndCompileProject(projectPath, (payload) => {
-      if (!event.sender.isDestroyed()) {
-        event.sender.send('project:build-progress', payload)
-      }
-    })
-  })
+  ipcMain.handle(
+    'project:code:build-and-compile',
+    async (event, projectPath: string, options?: ProjectScriptBankingOptions) => {
+      return buildAndCompileProject(
+        projectPath,
+        (payload) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('project:build-progress', payload)
+          }
+        },
+        options
+      )
+    }
+  )
 
   ipcMain.handle('project:code:symbol-index', async (_, projectPath: string) => {
     return getProjectCodeSymbolIndex(projectPath)

@@ -13,6 +13,7 @@ import type {
   ProjectBuildProgressPayload,
   ProjectCodeSymbolIndex,
   ProjectCodeWorkspaceSnapshot,
+  ProjectScriptBankingOptions,
   ProjectScriptCallbackCandidate,
   ProjectScriptResourcePayload,
   ProjectScriptSavePayload
@@ -43,6 +44,9 @@ interface ProjectActionResponse {
 
 interface AppPreferences {
   scriptEditorTheme: 'light' | 'dark'
+  coordinateUnit: 'gui' | 'core'
+  childCoordinateOrigin: 'absolute' | 'relative'
+  autoBankScriptFunctions: boolean
 }
 
 interface ProjectAssetFilePayload {
@@ -74,7 +78,12 @@ const api = {
   openProjectTagEditor: (projectPath: string) =>
     ipcRenderer.invoke('project:tags:open-editor', projectPath) as Promise<boolean>,
   openProjectAssetEditor: (assetType: ProjectAssetKind, projectPath: string, assetPath: string) =>
-    ipcRenderer.invoke('project:assets:open-editor', assetType, projectPath, assetPath) as Promise<boolean>,
+    ipcRenderer.invoke(
+      'project:assets:open-editor',
+      assetType,
+      projectPath,
+      assetPath
+    ) as Promise<boolean>,
   openProjectScriptEditor: (
     projectPath: string,
     resourcePath: string,
@@ -86,10 +95,16 @@ const api = {
       resourcePath,
       scriptKind
     ) as Promise<boolean>,
-  pickProjectParentDirectory: () => ipcRenderer.invoke('project:pick-create-location') as Promise<string | null>,
+  pickProjectParentDirectory: () =>
+    ipcRenderer.invoke('project:pick-create-location') as Promise<string | null>,
   createProject: (parentDirectory: string, projectName: string) =>
-    ipcRenderer.invoke('project:create', parentDirectory, projectName) as Promise<ProjectActionResponse>,
-  openProjectFromDialog: () => ipcRenderer.invoke('project:open-dialog') as Promise<ProjectActionResponse>,
+    ipcRenderer.invoke(
+      'project:create',
+      parentDirectory,
+      projectName
+    ) as Promise<ProjectActionResponse>,
+  openProjectFromDialog: () =>
+    ipcRenderer.invoke('project:open-dialog') as Promise<ProjectActionResponse>,
   loadRecentProject: (projectPath: string) =>
     ipcRenderer.invoke('project:open-recent', projectPath) as Promise<ProjectActionResponse>,
   closeCurrentProject: () => ipcRenderer.invoke('project:close-current') as Promise<boolean>,
@@ -125,9 +140,18 @@ const api = {
   saveProjectTags: (projectPath: string, tagState: ProjectTagState) =>
     ipcRenderer.invoke('project:tags:save', projectPath, tagState) as Promise<ProjectTagState>,
   loadProjectAssetFile: (projectPath: string, assetPath: string) =>
-    ipcRenderer.invoke('project:assets:load', projectPath, assetPath) as Promise<ProjectAssetFilePayload>,
+    ipcRenderer.invoke(
+      'project:assets:load',
+      projectPath,
+      assetPath
+    ) as Promise<ProjectAssetFilePayload>,
   saveProjectAssetFile: (projectPath: string, assetPath: string, document: ProjectAssetDocument) =>
-    ipcRenderer.invoke('project:assets:save', projectPath, assetPath, document) as Promise<ProjectAssetFilePayload>,
+    ipcRenderer.invoke(
+      'project:assets:save',
+      projectPath,
+      assetPath,
+      document
+    ) as Promise<ProjectAssetFilePayload>,
   createProjectScriptResource: (
     projectPath: string,
     scriptKind: ProjectScriptKind,
@@ -155,7 +179,8 @@ const api = {
     resourcePath: string,
     scriptKind: ProjectScriptKind,
     editableSourceContent: string,
-    headerContent: string
+    headerContent: string,
+    options?: ProjectScriptBankingOptions
   ) =>
     ipcRenderer.invoke(
       'project:scripts:save',
@@ -163,14 +188,13 @@ const api = {
       resourcePath,
       scriptKind,
       editableSourceContent,
-      headerContent
+      headerContent,
+      options
     ) as Promise<ProjectScriptSavePayload>,
   listProjectScriptResources: (projectPath: string, scriptKind?: ProjectScriptKind) =>
-    ipcRenderer.invoke(
-      'project:scripts:list',
-      projectPath,
-      scriptKind
-    ) as Promise<ProjectScriptResourceListItem[]>,
+    ipcRenderer.invoke('project:scripts:list', projectPath, scriptKind) as Promise<
+      ProjectScriptResourceListItem[]
+    >,
   listProjectScriptCallbackCandidates: (projectPath: string, scriptKind?: ProjectScriptKind) =>
     ipcRenderer.invoke(
       'project:scripts:list-callback-candidates',
@@ -178,7 +202,11 @@ const api = {
       scriptKind
     ) as Promise<ProjectScriptCallbackCandidate[]>,
   getProjectResources: (projectPath: string, currentPath = '') =>
-    ipcRenderer.invoke('project:resources:list', projectPath, currentPath) as Promise<ProjectResourceView>,
+    ipcRenderer.invoke(
+      'project:resources:list',
+      projectPath,
+      currentPath
+    ) as Promise<ProjectResourceView>,
   createProjectResource: (
     projectPath: string,
     resourceType: ProjectResourceKind,
@@ -253,17 +281,31 @@ const api = {
       scenePath
     ) as Promise<ProjectResourceView>,
   scanProjectDirectory: (projectPath: string) =>
-    ipcRenderer.invoke('project:resources:scan', projectPath) as Promise<ProjectDirectoryScanResult>,
+    ipcRenderer.invoke(
+      'project:resources:scan',
+      projectPath
+    ) as Promise<ProjectDirectoryScanResult>,
   copyProjectEngineCore: (projectPath: string) =>
-    ipcRenderer.invoke('project:code:copy-engine-core', projectPath) as Promise<CopyEngineCoreResult>,
+    ipcRenderer.invoke(
+      'project:code:copy-engine-core',
+      projectPath
+    ) as Promise<CopyEngineCoreResult>,
   readMaxCollisionCallbacks: (projectPath: string) =>
     ipcRenderer.invoke('project:code:read-max-collision-callbacks', projectPath) as Promise<number>,
   readMaxTagSlots: (projectPath: string) =>
     ipcRenderer.invoke('project:code:read-max-tag-slots', projectPath) as Promise<number>,
-  buildProjectCode: (projectPath: string) =>
-    ipcRenderer.invoke('project:code:build', projectPath) as Promise<BuildProjectCodeResult>,
-  buildAndCompileProject: (projectPath: string) =>
-    ipcRenderer.invoke('project:code:build-and-compile', projectPath) as Promise<BuildAndCompileProjectResult>,
+  buildProjectCode: (projectPath: string, options?: ProjectScriptBankingOptions) =>
+    ipcRenderer.invoke(
+      'project:code:build',
+      projectPath,
+      options
+    ) as Promise<BuildProjectCodeResult>,
+  buildAndCompileProject: (projectPath: string, options?: ProjectScriptBankingOptions) =>
+    ipcRenderer.invoke(
+      'project:code:build-and-compile',
+      projectPath,
+      options
+    ) as Promise<BuildAndCompileProjectResult>,
   getProjectCodeSymbolIndex: (projectPath: string) =>
     ipcRenderer.invoke('project:code:symbol-index', projectPath) as Promise<ProjectCodeSymbolIndex>,
   getProjectCodeWorkspaceSnapshot: (projectPath: string) =>
@@ -278,7 +320,11 @@ const api = {
       deletionId
     ) as Promise<ProjectResourceMutationResult>,
   finalizeDeletedProjectResource: (projectPath: string, deletionId: string) =>
-    ipcRenderer.invoke('project:resources:finalize-deleted', projectPath, deletionId) as Promise<boolean>,
+    ipcRenderer.invoke(
+      'project:resources:finalize-deleted',
+      projectPath,
+      deletionId
+    ) as Promise<boolean>,
   createProjectFolder: (projectPath: string, parentPath = '') =>
     ipcRenderer.invoke(
       'project:resources:create-folder',
@@ -293,7 +339,11 @@ const api = {
       nextName
     ) as Promise<ProjectResourceMutationResult>,
   deleteProjectFolder: (projectPath: string, folderPath: string) =>
-    ipcRenderer.invoke('project:resources:delete-folder', projectPath, folderPath) as Promise<ProjectDeletedResourceResult>,
+    ipcRenderer.invoke(
+      'project:resources:delete-folder',
+      projectPath,
+      folderPath
+    ) as Promise<ProjectDeletedResourceResult>,
   onEditorCloseRequested: (listener: () => void): (() => void) => {
     const wrappedListener = (): void => listener()
     ipcRenderer.on('editor:close-requested', wrappedListener)
@@ -319,9 +369,7 @@ const api = {
     ipcRenderer.on('project:script-saved', wrappedListener)
     return () => ipcRenderer.removeListener('project:script-saved', wrappedListener)
   },
-  onProjectTagsSaved: (
-    listener: (payload: ProjectTagsSavedEventPayload) => void
-  ): (() => void) => {
+  onProjectTagsSaved: (listener: (payload: ProjectTagsSavedEventPayload) => void): (() => void) => {
     const wrappedListener = (
       _event: Electron.IpcRendererEvent,
       payload: ProjectTagsSavedEventPayload

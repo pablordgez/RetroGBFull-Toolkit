@@ -135,7 +135,7 @@ Note that it's not necessary to do this setup manually, as the engine can automa
 
 ## Documentation
 
-Documentation for the engine core API is available at https://gbdocs.aernus.com/
+Documentation for concepts, scripting, and the engine runtime API is available at https://gbdocs.aernus.com/
 
 ## Screenshots
 ![Main workspace with a scene open](./screenshots/mainworkspace.png)

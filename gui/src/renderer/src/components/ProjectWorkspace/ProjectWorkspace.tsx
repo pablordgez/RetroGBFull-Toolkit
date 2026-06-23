@@ -8,6 +8,11 @@ import {
 import { buildResourceCreationMenuItems } from '../Docking/resourceCreationMenu'
 import { ResizablePaneLayout } from '../Layout/ResizablePaneLayout'
 import { AppMenuBar, AppMenuDefinition, AppMenuItem } from '../MenuBar/AppMenuBar'
+import {
+  DEFAULT_COORDINATE_MODEL_PREFERENCES,
+  type CoordinateModelPreferences,
+  normalizeCoordinateModelPreferences
+} from '../Preferences/coordinatePreferences'
 import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt'
 import { SceneEditorWorkspace } from './SceneEditorWorkspace'
 import { MakeSetupGuideModal } from '../Toolchains/MakeSetupGuideModal'
@@ -110,7 +115,9 @@ export const ProjectWorkspace = (): ReactElement => {
   const [refreshVersion, setRefreshVersion] = useState(0)
   const [resourceManagerCurrentPath, setResourceManagerCurrentPath] = useState('')
   const [statusMessage, setStatusMessage] = useState<WorkspaceStatus | null>(null)
-  const [activeBuildOperation, setActiveBuildOperation] = useState<'build' | 'build-and-compile' | null>(null)
+  const [activeBuildOperation, setActiveBuildOperation] = useState<
+    'build' | 'build-and-compile' | null
+  >(null)
   const [isBusy, setIsBusy] = useState(false)
   const [gbdkStatus, setGbdkStatus] = useState<GbdkToolchainStatus | null>(null)
   const [isInstallingGbdk, setIsInstallingGbdk] = useState(false)
@@ -119,6 +126,11 @@ export const ProjectWorkspace = (): ReactElement => {
   const [isRefreshingMakeStatus, setIsRefreshingMakeStatus] = useState(false)
   const [runtimePlatform, setRuntimePlatform] = useState<RuntimePlatform>('unknown')
   const [isMakeGuideOpen, setIsMakeGuideOpen] = useState(false)
+  const [coordinatePreferences, setCoordinatePreferences] = useState<CoordinateModelPreferences>(
+    DEFAULT_COORDINATE_MODEL_PREFERENCES
+  )
+  const [autoBankScriptFunctions, setAutoBankScriptFunctions] = useState(true)
+  const [hasLoadedCoordinatePreferences, setHasLoadedCoordinatePreferences] = useState(false)
 
   const showStatus = (tone: WorkspaceStatusTone, text: string): void => {
     setStatusMessage({ tone, text })
@@ -127,6 +139,48 @@ export const ProjectWorkspace = (): ReactElement => {
   const dismissStatus = useCallback((): void => {
     setStatusMessage(null)
   }, [])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadCoordinatePreferences = async (): Promise<void> => {
+      try {
+        const preferences = await window.api.getAppPreferences()
+
+        if (!isCancelled) {
+          setCoordinatePreferences(normalizeCoordinateModelPreferences(preferences))
+          setAutoBankScriptFunctions(preferences.autoBankScriptFunctions)
+        }
+      } catch (error) {
+        console.warn('[project-workspace] failed to load coordinate preferences', error)
+      } finally {
+        if (!isCancelled) {
+          setHasLoadedCoordinatePreferences(true)
+        }
+      }
+    }
+
+    void loadCoordinatePreferences()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hasLoadedCoordinatePreferences) {
+      return
+    }
+
+    void window.api
+      .saveAppPreferences({
+        ...coordinatePreferences,
+        autoBankScriptFunctions
+      })
+      .catch((error) => {
+        console.warn('[project-workspace] failed to save coordinate preferences', error)
+      })
+  }, [autoBankScriptFunctions, coordinatePreferences, hasLoadedCoordinatePreferences])
 
   const {
     activeScenePath,
@@ -184,7 +238,7 @@ export const ProjectWorkspace = (): ReactElement => {
   }, [loadRecentProjects])
 
   useEffect(() => {
-    const loadToolchainStatuses = async () => {
+    const loadToolchainStatuses = async (): Promise<void> => {
       try {
         setRuntimePlatform(await window.api.getRuntimePlatform())
       } catch (error) {
@@ -310,7 +364,9 @@ export const ProjectWorkspace = (): ReactElement => {
     showStatus('info', 'Building project code...')
 
     try {
-      const result = await window.api.buildProjectCode(projectPath)
+      const result = await window.api.buildProjectCode(projectPath, {
+        autoBankScriptFunctions
+      })
       showStatus('info', formatBuildStatusMessage(result))
       setRefreshVersion((currentVersion) => currentVersion + 1)
     } catch (error) {
@@ -323,7 +379,7 @@ export const ProjectWorkspace = (): ReactElement => {
       setActiveBuildOperation(null)
       setIsBusy(false)
     }
-  }, [projectPath])
+  }, [autoBankScriptFunctions, projectPath])
 
   const handleOpenSaveDataEditor = useCallback(async () => {
     if (!projectPath) {
@@ -383,9 +439,8 @@ export const ProjectWorkspace = (): ReactElement => {
   }, [])
 
   const isInstallingToolchain = isInstallingGbdk || isInstallingMake
-  const isBuildDisabled =
-    isBusy || isInstallingToolchain || !projectPath || !Boolean(gbdkStatus?.installed)
-  const isBuildAndCompileDisabled = isBuildDisabled || !Boolean(makeStatus?.installed)
+  const isBuildDisabled = isBusy || isInstallingToolchain || !projectPath || !gbdkStatus?.installed
+  const isBuildAndCompileDisabled = isBuildDisabled || !makeStatus?.installed
 
   const handleOpenTagEditor = useCallback(async () => {
     if (!projectPath) {
@@ -398,7 +453,10 @@ export const ProjectWorkspace = (): ReactElement => {
       await window.api.openProjectTagEditor(projectPath)
     } catch (error) {
       console.error('[project-workspace] openProjectTagEditor failed', error)
-      showStatus('error', error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openTags)
+      showStatus(
+        'error',
+        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openTags
+      )
     } finally {
       setIsBusy(false)
     }
@@ -414,8 +472,13 @@ export const ProjectWorkspace = (): ReactElement => {
     showStatus('info', 'Building project code...')
 
     try {
-      const result = await window.api.buildAndCompileProject(projectPath)
-      showStatus('info', `Built project code and compiled ${result.compileResult.romPath ?? 'the ROM output'}.`)
+      const result = await window.api.buildAndCompileProject(projectPath, {
+        autoBankScriptFunctions
+      })
+      showStatus(
+        'info',
+        `Built project code and compiled ${result.compileResult.romPath ?? 'the ROM output'}.`
+      )
       setRefreshVersion((currentVersion) => currentVersion + 1)
     } catch (error) {
       console.error('[project-workspace] buildAndCompileProject failed', error)
@@ -427,7 +490,7 @@ export const ProjectWorkspace = (): ReactElement => {
       setActiveBuildOperation(null)
       setIsBusy(false)
     }
-  }, [projectPath])
+  }, [autoBankScriptFunctions, projectPath])
 
   useEffect(() => {
     if (!activeScenePath || !activeSceneDocument) {
@@ -538,6 +601,46 @@ export const ProjectWorkspace = (): ReactElement => {
         ]
       },
       {
+        id: 'preferences-menu',
+        label: 'Preferences',
+        items: [
+          {
+            id: 'display-gui-coordinate-units',
+            label: 'Display GUI pixel coordinates',
+            checked: coordinatePreferences.coordinateUnit === 'gui',
+            closeOnSelect: false,
+            onSelect: () => {
+              setCoordinatePreferences((currentPreferences) => ({
+                ...currentPreferences,
+                coordinateUnit: currentPreferences.coordinateUnit === 'gui' ? 'core' : 'gui'
+              }))
+            }
+          },
+          {
+            id: 'display-absolute-child-coordinates',
+            label: 'Display child coordinates as absolute',
+            checked: coordinatePreferences.childCoordinateOrigin === 'absolute',
+            closeOnSelect: false,
+            onSelect: () => {
+              setCoordinatePreferences((currentPreferences) => ({
+                ...currentPreferences,
+                childCoordinateOrigin:
+                  currentPreferences.childCoordinateOrigin === 'absolute' ? 'relative' : 'absolute'
+              }))
+            }
+          },
+          {
+            id: 'auto-bank-script-functions',
+            label: 'Auto-add BANKED to script functions',
+            checked: autoBankScriptFunctions,
+            closeOnSelect: false,
+            onSelect: () => {
+              setAutoBankScriptFunctions((currentValue) => !currentValue)
+            }
+          }
+        ]
+      },
+      {
         id: 'build-menu',
         label: 'Build',
         items: [
@@ -557,23 +660,19 @@ export const ProjectWorkspace = (): ReactElement => {
       }
     ]
   }, [
+    autoBankScriptFunctions,
+    coordinatePreferences.childCoordinateOrigin,
+    coordinatePreferences.coordinateUnit,
     createMenuItems,
     handleBuildAndCompileProject,
     handleBuildProject,
     handleCloseProject,
-    handleInstallGbdk,
-    handleInstallMake,
     handleOpenSaveDataEditor,
     handleOpenTagEditor,
     handleOpenProject,
     handleOpenProjectInExplorer,
     handleScanProjectDirectory,
-    gbdkStatus?.installed,
-    makeStatus?.installed,
     isBusy,
-    isInstallingGbdk,
-    isInstallingMake,
-    isInstallingToolchain,
     isBuildAndCompileDisabled,
     isBuildDisabled,
     loadRecentProjects,
@@ -614,10 +713,7 @@ export const ProjectWorkspace = (): ReactElement => {
         >
           <div className="project-workspace__status-main">
             {activeBuildOperation && statusMessage.tone === 'info' && (
-              <span
-                className="project-workspace__status-spinner"
-                aria-label="Build in progress"
-              />
+              <span className="project-workspace__status-spinner" aria-label="Build in progress" />
             )}
             <span className="project-workspace__status-text">{statusMessage.text}</span>
           </div>
@@ -641,7 +737,11 @@ export const ProjectWorkspace = (): ReactElement => {
             <strong>GBDK is missing</strong>
             <span>{gbdkStatus.installPath}</span>
           </div>
-          <button type="button" onClick={() => void handleInstallGbdk()} disabled={isBusy || isInstallingToolchain}>
+          <button
+            type="button"
+            onClick={() => void handleInstallGbdk()}
+            disabled={isBusy || isInstallingToolchain}
+          >
             {isInstallingGbdk ? 'Installing GBDK...' : 'Install GBDK'}
           </button>
         </div>
@@ -654,10 +754,18 @@ export const ProjectWorkspace = (): ReactElement => {
             <span>{makeStatus.installPath}</span>
           </div>
           <div className="project-workspace__toolchain-actions">
-            <button type="button" onClick={() => setIsMakeGuideOpen(true)} disabled={isBusy || isInstallingToolchain}>
+            <button
+              type="button"
+              onClick={() => setIsMakeGuideOpen(true)}
+              disabled={isBusy || isInstallingToolchain}
+            >
               Open Setup Guide
             </button>
-            <button type="button" onClick={() => void handleInstallMake()} disabled={isBusy || isInstallingToolchain}>
+            <button
+              type="button"
+              onClick={() => void handleInstallMake()}
+              disabled={isBusy || isInstallingToolchain}
+            >
               {isInstallingMake ? 'Installing GNU Make...' : 'Try Install Anyway'}
             </button>
           </div>
@@ -701,6 +809,7 @@ export const ProjectWorkspace = (): ReactElement => {
             onResourcesChanged={() => {
               setRefreshVersion((currentVersion) => currentVersion + 1)
             }}
+            coordinatePreferences={coordinatePreferences}
           />
         </ResizablePaneLayout>
       </div>

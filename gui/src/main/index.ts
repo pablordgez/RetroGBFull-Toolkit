@@ -1,12 +1,4 @@
-import {
-  app,
-  shell,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  IpcMainInvokeEvent,
-  session
-} from 'electron'
+import { app, shell, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, session } from 'electron'
 import { createReadStream } from 'fs'
 import { mkdir, readFile, stat, writeFile } from 'fs/promises'
 import { createServer, type Server, type ServerResponse } from 'http'
@@ -14,10 +6,7 @@ import type { AddressInfo } from 'net'
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import {
-  getProjectLauncherErrorMessage,
-  rememberRecentProject
-} from './projectLauncher'
+import { getProjectLauncherErrorMessage, rememberRecentProject } from './projectLauncher'
 import { clearDeletedProjectResources } from './projectResources'
 import { registerCodeIpcHandlers } from './ipcCodeHandlers'
 import { registerEditorIpcHandlers } from './ipcEditorHandlers'
@@ -46,15 +35,23 @@ interface AppWindowOptions {
 }
 
 type ScriptEditorTheme = 'light' | 'dark'
+type AppCoordinateUnit = 'gui' | 'core'
+type AppChildCoordinateOrigin = 'absolute' | 'relative'
 
 interface AppPreferences {
   scriptEditorTheme: ScriptEditorTheme
+  coordinateUnit: AppCoordinateUnit
+  childCoordinateOrigin: AppChildCoordinateOrigin
+  autoBankScriptFunctions: boolean
 }
 
 const APP_DISPLAY_NAME = 'RetroGBFull-Toolkit'
 const APP_USER_DATA_DIRECTORY = 'retrogbfull-toolkit'
 const DEFAULT_APP_PREFERENCES: AppPreferences = {
-  scriptEditorTheme: 'light'
+  scriptEditorTheme: 'light',
+  coordinateUnit: 'gui',
+  childCoordinateOrigin: 'relative',
+  autoBankScriptFunctions: true
 }
 const CROSS_ORIGIN_RESPONSE_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -156,7 +153,8 @@ const sendPackagedRendererFile = async (
     response.writeHead(200, {
       ...CROSS_ORIGIN_RESPONSE_HEADERS,
       'Content-Length': fileStats.size,
-      'Content-Type': RENDERER_CONTENT_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+      'Content-Type':
+        RENDERER_CONTENT_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream'
     })
 
     createReadStream(filePath)
@@ -227,7 +225,10 @@ const enableDevToolsShortcuts = (window: BrowserWindow): void => {
   })
 }
 
-const clearDeletedResourcesForProject = async (projectPath: string, reason: string): Promise<void> => {
+const clearDeletedResourcesForProject = async (
+  projectPath: string,
+  reason: string
+): Promise<void> => {
   try {
     await clearDeletedProjectResources(projectPath)
   } catch (error) {
@@ -237,7 +238,11 @@ const clearDeletedResourcesForProject = async (projectPath: string, reason: stri
 
 const clearDeletedResourcesForOpenProjects = async (): Promise<void> => {
   const projectPaths = [...new Set(projectWindowPaths.values())]
-  await Promise.all(projectPaths.map((projectPath) => clearDeletedResourcesForProject(projectPath, 'application shutdown')))
+  await Promise.all(
+    projectPaths.map((projectPath) =>
+      clearDeletedResourcesForProject(projectPath, 'application shutdown')
+    )
+  )
 }
 
 const registerProjectWindow = (projectWindow: BrowserWindow, projectPath: string): void => {
@@ -259,18 +264,17 @@ const registerProjectWindow = (projectWindow: BrowserWindow, projectPath: string
     event.preventDefault()
     projectWindowsWaitingForCleanup.add(windowId)
 
-    void clearDeletedResourcesForProject(projectPath, 'project window close')
-      .finally(() => {
-        projectWindowsWaitingForCleanup.delete(windowId)
-        projectWindowPaths.delete(windowId)
+    void clearDeletedResourcesForProject(projectPath, 'project window close').finally(() => {
+      projectWindowsWaitingForCleanup.delete(windowId)
+      projectWindowPaths.delete(windowId)
 
-        if (projectWindow.isDestroyed()) {
-          return
-        }
+      if (projectWindow.isDestroyed()) {
+        return
+      }
 
-        projectWindowsReadyToClose.add(windowId)
-        projectWindow.close()
-      })
+      projectWindowsReadyToClose.add(windowId)
+      projectWindow.close()
+    })
   })
 
   projectWindow.on('closed', () => {
@@ -292,6 +296,18 @@ const isScriptEditorTheme = (value: unknown): value is ScriptEditorTheme => {
   return value === 'light' || value === 'dark'
 }
 
+const isAppCoordinateUnit = (value: unknown): value is AppCoordinateUnit => {
+  return value === 'gui' || value === 'core'
+}
+
+const isAppChildCoordinateOrigin = (value: unknown): value is AppChildCoordinateOrigin => {
+  return value === 'absolute' || value === 'relative'
+}
+
+const isBooleanPreference = (value: unknown): value is boolean => {
+  return typeof value === 'boolean'
+}
+
 const readAppPreferences = async (): Promise<AppPreferences> => {
   try {
     const rawContent = await readFile(getAppPreferencesStorePath(), 'utf-8')
@@ -300,7 +316,16 @@ const readAppPreferences = async (): Promise<AppPreferences> => {
     return {
       scriptEditorTheme: isScriptEditorTheme(parsedPreferences.scriptEditorTheme)
         ? parsedPreferences.scriptEditorTheme
-        : DEFAULT_APP_PREFERENCES.scriptEditorTheme
+        : DEFAULT_APP_PREFERENCES.scriptEditorTheme,
+      coordinateUnit: isAppCoordinateUnit(parsedPreferences.coordinateUnit)
+        ? parsedPreferences.coordinateUnit
+        : DEFAULT_APP_PREFERENCES.coordinateUnit,
+      childCoordinateOrigin: isAppChildCoordinateOrigin(parsedPreferences.childCoordinateOrigin)
+        ? parsedPreferences.childCoordinateOrigin
+        : DEFAULT_APP_PREFERENCES.childCoordinateOrigin,
+      autoBankScriptFunctions: isBooleanPreference(parsedPreferences.autoBankScriptFunctions)
+        ? parsedPreferences.autoBankScriptFunctions
+        : DEFAULT_APP_PREFERENCES.autoBankScriptFunctions
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -319,7 +344,16 @@ const saveAppPreferences = async (
     ...currentPreferences,
     scriptEditorTheme: isScriptEditorTheme(preferences.scriptEditorTheme)
       ? preferences.scriptEditorTheme
-      : currentPreferences.scriptEditorTheme
+      : currentPreferences.scriptEditorTheme,
+    coordinateUnit: isAppCoordinateUnit(preferences.coordinateUnit)
+      ? preferences.coordinateUnit
+      : currentPreferences.coordinateUnit,
+    childCoordinateOrigin: isAppChildCoordinateOrigin(preferences.childCoordinateOrigin)
+      ? preferences.childCoordinateOrigin
+      : currentPreferences.childCoordinateOrigin,
+    autoBankScriptFunctions: isBooleanPreference(preferences.autoBankScriptFunctions)
+      ? preferences.autoBankScriptFunctions
+      : currentPreferences.autoBankScriptFunctions
   }
   const storePath = getAppPreferencesStorePath()
 
@@ -596,15 +630,12 @@ app.on('before-quit', (event) => {
   hasHandledBeforeQuitCleanup = true
   event.preventDefault()
 
-  void clearDeletedResourcesForOpenProjects()
-    .finally(() => {
-      isQuittingAfterCleanup = true
-      packagedRendererServer?.close()
-      app.quit()
-    })
+  void clearDeletedResourcesForOpenProjects().finally(() => {
+    isQuittingAfterCleanup = true
+    packagedRendererServer?.close()
+    app.quit()
+  })
 })
-
-
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
@@ -614,4 +645,3 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-

@@ -4,7 +4,10 @@ import type {
   SceneAssetDocument,
   SceneAssetNode
 } from '../../../../shared/projectAssets'
-import type { ScriptPropertyMap, ScriptPropertyValue } from '../../../../shared/projectScriptProperties'
+import type {
+  ScriptPropertyMap,
+  ScriptPropertyValue
+} from '../../../../shared/projectScriptProperties'
 import {
   type SceneSpritePalettes,
   normalizeProjectPalette,
@@ -69,6 +72,7 @@ const SCENE_COORD_SCALE = 16
 const SCENE_COORD_MAX = 0xffff
 const SCENE_COLLISION_MIN_SIZE = SCENE_COORD_SCALE
 export const DEFAULT_SCENE_COLLISION_SIZE = 8 * SCENE_COORD_SCALE
+export type SceneCoordinateUnit = 'gui' | 'core'
 
 export interface SceneActorAnchorOffset {
   x: number
@@ -615,15 +619,26 @@ export const pixelsToSceneCoord = (value: number): number => {
   return Math.round(value * SCENE_COORD_SCALE)
 }
 
-export const formatSceneCoord = (value: number): string => {
+export const formatSceneCoord = (value: number, unit: SceneCoordinateUnit = 'gui'): string => {
+  if (unit === 'core') {
+    return String(Math.round(value))
+  }
+
   return (value / SCENE_COORD_SCALE).toFixed(4).replace(/\.?0+$/, '')
 }
 
-export const parseSceneCoord = (value: string): number | null => {
+export const parseSceneCoord = (
+  value: string,
+  unit: SceneCoordinateUnit = 'gui'
+): number | null => {
   const parsedValue = Number(value)
 
   if (!Number.isFinite(parsedValue)) {
     return null
+  }
+
+  if (unit === 'core') {
+    return Number.isInteger(parsedValue) ? parsedValue : null
   }
 
   return pixelsToSceneCoord(parsedValue)

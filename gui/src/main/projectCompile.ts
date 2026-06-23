@@ -5,7 +5,8 @@ import { dirname, extname, join, relative } from 'path'
 import type {
   BuildAndCompileProjectResult,
   CompileProjectResult,
-  ProjectBuildProgressPayload
+  ProjectBuildProgressPayload,
+  ProjectScriptBankingOptions
 } from '../shared/projectCodeWorkspace'
 import { buildProjectCode } from './projectBuildCode'
 import { ensureProjectDirectory } from './projectCodeShared'
@@ -214,11 +215,12 @@ export const compileProject = async (
 
 export const buildAndCompileProject = async (
   projectPath: string,
-  onProgress?: BuildProgressReporter
+  onProgress?: BuildProgressReporter,
+  options?: ProjectScriptBankingOptions
 ): Promise<BuildAndCompileProjectResult> => {
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
   reportBuildProgress(normalizedProjectPath, 'build', 'Generating project code...', onProgress)
-  const buildResult = await buildProjectCode(normalizedProjectPath)
+  const buildResult = await buildProjectCode(normalizedProjectPath, options)
   const compileResult = await compileProject(normalizedProjectPath, onProgress)
   revealCompiledRomInFileExplorer(normalizedProjectPath, compileResult.romPath)
 

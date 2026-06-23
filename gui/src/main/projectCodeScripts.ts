@@ -8,6 +8,7 @@ import {
 import { ProjectLauncherError } from './projectLauncher'
 import { normalizeCodeIdentifier } from '../shared/codeIdentifiers'
 import type {
+  ProjectScriptBankingOptions,
   ProjectScriptCallbackCandidate,
   ProjectScriptResourcePayload,
   ProjectScriptSavePayload
@@ -120,6 +121,10 @@ const buildSceneSourceTemplate = (scriptIdentifier: string): string => {
 
 const buildGeneralSourceTemplate = (): string => {
   return ''
+}
+
+const shouldAutoBankScriptFunctions = (options?: ProjectScriptBankingOptions): boolean => {
+  return options?.autoBankScriptFunctions !== false
 }
 
 // builds the script template based on the type of script
@@ -594,7 +599,8 @@ export const rewriteStartingSceneInMain = async (
 // rewrites a file with a freshly generated prefix and the existsing editable content
 export const rewriteManagedProjectScriptSource = async (
   projectPath: string,
-  script: ProjectScriptRecordResolved
+  script: ProjectScriptRecordResolved,
+  options?: ProjectScriptBankingOptions
 ): Promise<string> => {
   const sourceAbsolutePath = resolvePathWithinProject(projectPath, script.path)
   const headerPath = getProjectScriptHeaderPath(script.path)
@@ -605,17 +611,20 @@ export const rewriteManagedProjectScriptSource = async (
     script.kind === 'scene'
       ? stripGeneratedSceneInitializationBlock(splitEditableSourceContent(existingSourceContent))
       : splitEditableSourceContent(existingSourceContent)
-  const bankedEditableSourceContent = ensureBankedScriptVoidDefinitions(editableSourceContent)
+  const nextEditableSourceContent = shouldAutoBankScriptFunctions(options)
+    ? ensureBankedScriptFunctionDefinitions(editableSourceContent)
+    : editableSourceContent
   const managedSourcePrefix = buildManagedSourcePrefix(script.name, script.bank)
-  const bankedFunctionNames = collectBankedScriptVoidFunctionNames(bankedEditableSourceContent)
-  const headerContent = ensureBankedScriptHeaderPrototypes(
-    existingHeaderContent,
-    bankedFunctionNames
-  )
+  const headerContent = shouldAutoBankScriptFunctions(options)
+    ? ensureBankedScriptHeaderPrototypes(
+        existingHeaderContent,
+        collectBankedScriptFunctionNames(nextEditableSourceContent)
+      )
+    : existingHeaderContent
 
   await writeFile(
     sourceAbsolutePath,
-    `${managedSourcePrefix}${bankedEditableSourceContent}`,
+    `${managedSourcePrefix}${nextEditableSourceContent}`,
     'utf-8'
   )
   await writeFile(headerAbsolutePath, headerContent, 'utf-8')
@@ -737,7 +746,8 @@ export const saveProjectScriptResource = async (
   resourcePath: string,
   scriptKind: ProjectScriptKind,
   editableSourceContent: string,
-  headerContent: string
+  headerContent: string,
+  options?: ProjectScriptBankingOptions
 ): Promise<ProjectScriptSavePayload> => {
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
   const scriptName = getProjectScriptDisplayName(basename(resourcePath))
@@ -746,10 +756,16 @@ export const saveProjectScriptResource = async (
   const headerAbsolutePath = resolvePathWithinProject(normalizedProjectPath, paths.headerPath)
   const bank = await readProjectTrackedResourceBank(normalizedProjectPath, paths.resourcePath)
   const { managedSourcePrefix } = buildScriptTemplates(scriptKind, scriptName, bank)
-  const bankedEditableSourceContent = ensureBankedScriptVoidDefinitions(editableSourceContent)
-  const bankedFunctionNames = collectBankedScriptVoidFunctionNames(bankedEditableSourceContent)
-  const nextHeaderContent = ensureBankedScriptHeaderPrototypes(headerContent, bankedFunctionNames)
-  const sourceContent = `${managedSourcePrefix}${bankedEditableSourceContent}`
+  const nextEditableSourceContent = shouldAutoBankScriptFunctions(options)
+    ? ensureBankedScriptFunctionDefinitions(editableSourceContent)
+    : editableSourceContent
+  const nextHeaderContent = shouldAutoBankScriptFunctions(options)
+    ? ensureBankedScriptHeaderPrototypes(
+        headerContent,
+        collectBankedScriptFunctionNames(nextEditableSourceContent)
+      )
+    : headerContent
+  const sourceContent = `${managedSourcePrefix}${nextEditableSourceContent}`
 
   await writeFile(sourceAbsolutePath, sourceContent, 'utf-8')
   await writeFile(headerAbsolutePath, nextHeaderContent, 'utf-8')
@@ -759,6 +775,7 @@ export const saveProjectScriptResource = async (
     resourcePath: paths.resourcePath,
     scriptKind,
     sourceContent,
+    editableSourceContent: nextEditableSourceContent,
     headerContent: nextHeaderContent
   }
 }
@@ -895,30 +912,202 @@ export const scriptFilesExist = async (
 const CALLBACK_FUNCTION_PATTERN =
   /(^|\n)\s*(?!static\b)void\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*void\s*\)\s*(?:BANKED|NONBANKED)?\s*\{/g
 
-const SCRIPT_PUBLIC_VOID_DEFINITION_PATTERN =
-  /(^|\n)([ \t]*(?!static\b)void\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*void\s*\))(\s*)(\{)/g
+type ScriptFunctionBankQualifier = 'BANKED' | 'NONBANKED'
 
-const SCRIPT_PUBLIC_VOID_FUNCTION_PATTERN =
-  /(^|\n)\s*(?!static\b)void\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*void\s*\)\s*(BANKED|NONBANKED)?\s*\{/g
-
-const ensureBankedScriptVoidDefinitions = (sourceContent: string): string => {
-  return sourceContent.replace(
-    SCRIPT_PUBLIC_VOID_DEFINITION_PATTERN,
-    (_match, prefix: string, declaration: string, _functionName: string, spacing: string) => {
-      return `${prefix}${declaration} BANKED${spacing}{`
-    }
-  )
+interface ScriptFunctionDefinitionMatch {
+  braceIndex: number
+  functionName: string
+  qualifier: ScriptFunctionBankQualifier | null
 }
 
-const collectBankedScriptVoidFunctionNames = (sourceContent: string): Set<string> => {
+const SCRIPT_FUNCTION_DECLARATION_TAIL_PATTERN =
+  /(^|\n)([ \t]*(?!(?:if|else|for|while|switch|return|sizeof|do|case|default|typedef|struct|union|enum)\b)([^;{}#]*?\b([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)))\s*$/m
+
+const parseTopLevelScriptFunctionDefinition = (
+  topLevelCandidate: string,
+  braceIndex: number
+): ScriptFunctionDefinitionMatch | null => {
+  const closingParenIndex = topLevelCandidate.lastIndexOf(')')
+
+  if (closingParenIndex === -1) {
+    return null
+  }
+
+  const declarationCandidate = topLevelCandidate.slice(0, closingParenIndex + 1)
+  const suffix = topLevelCandidate.slice(closingParenIndex + 1)
+  const declarationMatch = declarationCandidate.match(SCRIPT_FUNCTION_DECLARATION_TAIL_PATTERN)
+
+  if (!declarationMatch) {
+    return null
+  }
+
+  const declaration = declarationMatch[2]
+  const functionName = declarationMatch[4]
+
+  if (!functionName) {
+    return null
+  }
+
+  const nameIndex = declaration.lastIndexOf(functionName)
+  const declarationPrefix = declaration.slice(0, nameIndex).trim()
+
+  if (declarationPrefix.length === 0 || declarationPrefix.includes('=')) {
+    return null
+  }
+
+  const qualifierMatch = suffix.match(/\b(BANKED|NONBANKED)\b/)
+
+  return {
+    braceIndex,
+    functionName,
+    qualifier: (qualifierMatch?.[1] as ScriptFunctionBankQualifier | undefined) ?? null
+  }
+}
+
+const scanTopLevelScriptFunctionDefinitions = (
+  sourceContent: string
+): ScriptFunctionDefinitionMatch[] => {
+  const matches: ScriptFunctionDefinitionMatch[] = []
+  let depth = 0
+  let topLevelBoundary = 0
+  let mode: 'code' | 'line-comment' | 'block-comment' | 'string' | 'char' | 'preprocessor' = 'code'
+  let isEscaped = false
+  let lineHasOnlyWhitespace = true
+
+  for (let index = 0; index < sourceContent.length; index += 1) {
+    const character = sourceContent[index]
+    const nextCharacter = sourceContent[index + 1]
+
+    switch (mode) {
+      case 'line-comment':
+        if (character === '\n') {
+          mode = 'code'
+          lineHasOnlyWhitespace = true
+        }
+        continue
+      case 'block-comment':
+        if (character === '*' && nextCharacter === '/') {
+          index += 1
+          mode = 'code'
+        }
+        continue
+      case 'string':
+        if (isEscaped) {
+          isEscaped = false
+        } else if (character === '\\') {
+          isEscaped = true
+        } else if (character === '"') {
+          mode = 'code'
+        }
+        continue
+      case 'char':
+        if (isEscaped) {
+          isEscaped = false
+        } else if (character === '\\') {
+          isEscaped = true
+        } else if (character === "'") {
+          mode = 'code'
+        }
+        continue
+      case 'preprocessor':
+        if (character === '\n' && sourceContent[index - 1] !== '\\') {
+          mode = 'code'
+          lineHasOnlyWhitespace = true
+        }
+        continue
+      case 'code':
+        break
+    }
+
+    if (character === '/' && nextCharacter === '/') {
+      mode = 'line-comment'
+      index += 1
+      continue
+    }
+
+    if (character === '/' && nextCharacter === '*') {
+      mode = 'block-comment'
+      index += 1
+      continue
+    }
+
+    if (character === '"') {
+      mode = 'string'
+      isEscaped = false
+      lineHasOnlyWhitespace = false
+      continue
+    }
+
+    if (character === "'") {
+      mode = 'char'
+      isEscaped = false
+      lineHasOnlyWhitespace = false
+      continue
+    }
+
+    if (lineHasOnlyWhitespace && character === '#') {
+      mode = 'preprocessor'
+      continue
+    }
+
+    if (character === '\n') {
+      lineHasOnlyWhitespace = true
+      continue
+    }
+
+    if (!/\s/.test(character)) {
+      lineHasOnlyWhitespace = false
+    }
+
+    if (depth === 0 && character === ';') {
+      topLevelBoundary = index + 1
+      continue
+    }
+
+    if (character === '{') {
+      if (depth === 0) {
+        const match = parseTopLevelScriptFunctionDefinition(
+          sourceContent.slice(topLevelBoundary, index),
+          index
+        )
+
+        if (match) {
+          matches.push(match)
+        }
+      }
+
+      depth += 1
+      continue
+    }
+
+    if (character === '}') {
+      depth = Math.max(0, depth - 1)
+
+      if (depth === 0) {
+        topLevelBoundary = index + 1
+      }
+    }
+  }
+
+  return matches
+}
+
+const ensureBankedScriptFunctionDefinitions = (sourceContent: string): string => {
+  const matches = scanTopLevelScriptFunctionDefinitions(sourceContent)
+    .filter((match) => match.qualifier === null)
+    .sort((left, right) => right.braceIndex - left.braceIndex)
+
+  return matches.reduce((nextContent, match) => {
+    return `${nextContent.slice(0, match.braceIndex)} BANKED${nextContent.slice(match.braceIndex)}`
+  }, sourceContent)
+}
+
+const collectBankedScriptFunctionNames = (sourceContent: string): Set<string> => {
   const names = new Set<string>()
 
-  for (const match of sourceContent.matchAll(SCRIPT_PUBLIC_VOID_FUNCTION_PATTERN)) {
-    const functionName = match[2]
-    const attribute = match[3]
-
-    if (functionName && attribute !== 'NONBANKED') {
-      names.add(functionName)
+  for (const match of scanTopLevelScriptFunctionDefinitions(sourceContent)) {
+    if (match.qualifier !== 'NONBANKED') {
+      names.add(match.functionName)
     }
   }
 
@@ -937,7 +1126,7 @@ const ensureBankedScriptHeaderPrototypes = (
     .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')
   const prototypePattern = new RegExp(
-    `(^|\\n)([ \\t]*void\\s+(${escapedNames})\\s*\\(\\s*void\\s*\\))\\s*(?:BANKED|NONBANKED)?\\s*;`,
+    `(^|\\n)([ \\t]*(?!(?:static|if|else|for|while|switch|return|sizeof|do|case|default|typedef|struct|union|enum)\\b)[^;{}#]*?\\b(?:${escapedNames})\\s*\\([^;{}]*\\))\\s*(?:BANKED|NONBANKED)?\\s*;`,
     'g'
   )
 

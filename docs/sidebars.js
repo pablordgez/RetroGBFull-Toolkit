@@ -1,6 +1,16 @@
 module.exports = {
-  engineCoreSidebar: [
+  toolkitSidebar: [
     "intro",
+    {
+      type: "category",
+      label: "Concepts",
+      items: ["concepts/concepts"]
+    },
+    {
+      type: "category",
+      label: "Scripting",
+      items: ["scripting/script-basics", "scripting/common-examples"]
+    },
     "architecture",
     {
       type: "category",
