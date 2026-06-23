@@ -1177,19 +1177,6 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
                 {formatLocationLabel(resourceView?.currentPath ?? '')}
               </span>
             </div>
-
-            {resourceView !== null && resourceView.currentPath.length > 0 && (
-              <button
-                type="button"
-                className="resource-management-pane__back-button"
-                onClick={() => {
-                  void loadResources(resourceView.parentPath ?? '')
-                }}
-                disabled={isInteractionDisabled}
-              >
-                Back
-              </button>
-            )}
           </div>
 
           {statusMessage && (
@@ -1203,6 +1190,7 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
 
           <ResourceManagementGrid
             resources={resourceView?.items}
+            currentPath={resourceView?.currentPath ?? ''}
             editingResource={editingResource}
             clipboardResource={clipboardResource}
             selectedResourcePath={selectedResourcePath}
@@ -1237,6 +1225,9 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
             onBeginResourceEditing={beginResourceEditing}
             onRequestDeleteResource={setPendingDeleteResource}
             onRequestBankResource={setPendingBankResource}
+            onOpenParentDirectory={() => {
+              void loadResources(resourceView?.parentPath ?? '')
+            }}
           />
         </div>
 

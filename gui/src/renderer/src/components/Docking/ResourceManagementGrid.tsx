@@ -17,9 +17,11 @@ import {
   isSceneResource,
   supportsBankOverride
 } from './resourceManagementShared'
+import { RetroBackIcon } from './ResourceIcons'
 
 interface ResourceManagementGridProps {
   resources?: ProjectResourceItem[]
+  currentPath?: string
   editingResource: EditingResourceState | null
   clipboardResource: ResourceClipboardState | null
   selectedResourcePath: string | null
@@ -51,10 +53,12 @@ interface ResourceManagementGridProps {
   ) => void
   onRequestDeleteResource: (resource: PendingDeleteResourceState) => void
   onRequestBankResource: (resource: PendingBankResourceState) => void
+  onOpenParentDirectory: () => void | Promise<void>
 }
 
 export const ResourceManagementGrid = ({
   resources = [],
+  currentPath = '',
   editingResource,
   clipboardResource,
   selectedResourcePath,
@@ -74,7 +78,8 @@ export const ResourceManagementGrid = ({
   onSetStartingScene,
   onBeginResourceEditing,
   onRequestDeleteResource,
-  onRequestBankResource
+  onRequestBankResource,
+  onOpenParentDirectory
 }: ResourceManagementGridProps): ReactElement => {
   const buildResourceMenuOptions = (
     resource: ProjectResourceItem,
@@ -164,6 +169,21 @@ export const ResourceManagementGrid = ({
 
   return (
     <div className="resource-management-pane__grid" role="list">
+      {currentPath.length > 0 && (
+        <button
+          type="button"
+          className="resource-management-pane__item resource-management-pane__item--file resource-management-pane__item--back"
+          role="listitem"
+          onClick={() => {
+            void onOpenParentDirectory()
+          }}
+          disabled={isInteractionDisabled}
+        >
+          <RetroBackIcon className="resource-management-pane__folder-icon" />
+          <span className="resource-management-pane__item-name">Back</span>
+        </button>
+      )}
+
       {resources.map((resource) => {
         const resourceType = getTrackedResourceKind(resource)
         const isSelected = selectedResourcePath === resource.path
