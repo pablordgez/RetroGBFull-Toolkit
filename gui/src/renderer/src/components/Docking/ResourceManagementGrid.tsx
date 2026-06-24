@@ -168,12 +168,11 @@ export const ResourceManagementGrid = ({
   ]
 
   return (
-    <div className="resource-management-pane__grid" role="list">
+    <div className="resource-management-pane__grid">
       {currentPath.length > 0 && (
         <button
           type="button"
           className="resource-management-pane__item resource-management-pane__item--file resource-management-pane__item--back"
-          role="listitem"
           onClick={() => {
             void onOpenParentDirectory()
           }}
