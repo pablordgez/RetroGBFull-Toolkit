@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PROJECT_ASSET_DRAG_MIME } from '../../../../src/renderer/src/components/ProjectAssets/projectAssetDrag'
 import { ProjectWorkspace } from '../../../../src/renderer/src/components/ProjectWorkspace/ProjectWorkspace'
+import type { SceneAssetDocument } from '../../../../src/shared/projectAssetTypes'
 
 interface MockDataTransfer {
   dropEffect: string
@@ -65,7 +66,11 @@ const openBuildMenu = (): void => {
 }
 
 const getOpenMenu = (): HTMLElement => {
-  return screen.getByRole('menu')
+  const appMenu = screen
+    .getAllByRole('menu')
+    .find((menu) => menu.closest('.app-menu-bar__dropdown'))
+
+  return appMenu ?? screen.getByRole('menu')
 }
 
 const openCreateMenu = (): void => {
@@ -91,6 +96,17 @@ const createMockDataTransfer = (): MockDataTransfer => {
     getData: vi.fn((type: string) => data.get(type) ?? '')
   }
 }
+
+const createSceneDocument = (
+  overrides: Partial<SceneAssetDocument> = {}
+): SceneAssetDocument => ({
+  kind: 'scene',
+  version: 1,
+  tilemapPath: null,
+  windowPath: null,
+  nodes: [],
+  ...overrides
+})
 
 const openResourceFromPane = async (name: string): Promise<HTMLElement> => {
   const resourcePane = screen.getByTestId('resource-management-pane')
@@ -1200,6 +1216,127 @@ describe('<ProjectWorkspace />', () => {
       })
     })
 
+    expect(
+      await screen.findByText('Built project code and compiled obj/Example.gb.')
+    ).toBeInTheDocument()
+  })
+
+  it('prompts before building when the open scene has unsaved changes', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        {
+          type: 'file',
+          name: 'Room Scene',
+          fileName: 'Room Scene.rgbscene.json',
+          path: 'Scenes/Room Scene.rgbscene.json',
+          extension: 'json',
+          resourceType: 'scene'
+        }
+      ]
+    })
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue({
+      assetKind: 'scene',
+      resourcePath: 'Scenes/Room Scene.rgbscene.json',
+      document: createSceneDocument()
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    await openResourceFromPane('Room Scene')
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Actor' }))
+    expect(await screen.findByText('Unsaved changes.')).toBeInTheDocument()
+
+    openBuildMenu()
+    fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Build' }))
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Unsaved changes in "Room Scene"' })
+    ).toBeInTheDocument()
+    expect(window.api.buildProjectCode).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(window.api.buildProjectCode).not.toHaveBeenCalled()
+
+    openBuildMenu()
+    fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Build' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Proceed Without Saving' }))
+
+    await waitFor(() => {
+      expect(window.api.buildProjectCode).toHaveBeenCalledWith('/projects/Alpha', {
+        autoBankScriptFunctions: true
+      })
+    })
+    expect(window.api.saveProjectAssetFile).not.toHaveBeenCalled()
+  })
+
+  it('can save the open scene before building and compiling', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        {
+          type: 'file',
+          name: 'Room Scene',
+          fileName: 'Room Scene.rgbscene.json',
+          path: 'Scenes/Room Scene.rgbscene.json',
+          extension: 'json',
+          resourceType: 'scene'
+        }
+      ]
+    })
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue({
+      assetKind: 'scene',
+      resourcePath: 'Scenes/Room Scene.rgbscene.json',
+      document: createSceneDocument()
+    })
+    vi.mocked(window.api.saveProjectAssetFile).mockImplementation(
+      async (_projectPath, assetPath, document) => ({
+        assetKind: 'scene' as const,
+        resourcePath: assetPath,
+        document
+      })
+    )
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    await openResourceFromPane('Room Scene')
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Actor' }))
+
+    openBuildMenu()
+    fireEvent.click(within(getOpenMenu()).getByRole('menuitem', { name: 'Build + Compile' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Save and Proceed' }))
+
+    await waitFor(() => {
+      expect(window.api.saveProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Scenes/Room Scene.rgbscene.json',
+        expect.objectContaining({
+          kind: 'scene',
+          nodes: [expect.objectContaining({ type: 'actor' })]
+        })
+      )
+    })
+    await waitFor(() => {
+      expect(window.api.buildAndCompileProject).toHaveBeenCalledWith('/projects/Alpha', {
+        autoBankScriptFunctions: true
+      })
+    })
     expect(
       await screen.findByText('Built project code and compiled obj/Example.gb.')
     ).toBeInTheDocument()

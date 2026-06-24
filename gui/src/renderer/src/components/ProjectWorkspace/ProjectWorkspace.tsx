@@ -35,6 +35,8 @@ interface ProjectDirectoryScanResult {
 }
 
 type WorkspaceStatusTone = 'error' | 'info'
+type BuildOperation = 'build' | 'build-and-compile'
+type UnsavedSceneBuildDecision = 'save' | 'discard' | 'cancel'
 
 interface WorkspaceStatus {
   tone: WorkspaceStatusTone
@@ -106,6 +108,52 @@ const formatBuildProgressMessage = (progress: ProjectBuildProgressPayload): stri
   }
 }
 
+interface UnsavedSceneBuildPromptProps {
+  sceneLabel: string
+  operation: BuildOperation
+  isBusy: boolean
+  onDecision: (decision: UnsavedSceneBuildDecision) => void
+}
+
+const UnsavedSceneBuildPrompt = ({
+  sceneLabel,
+  operation,
+  isBusy,
+  onDecision
+}: UnsavedSceneBuildPromptProps): ReactElement => {
+  const actionLabel = operation === 'build-and-compile' ? 'build and compile' : 'build'
+  const titleId = 'unsaved-scene-build-prompt-title'
+
+  return (
+    <div className="editor-modal-backdrop">
+      <div
+        className="editor-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
+        <h2 id={titleId}>Unsaved changes in &quot;{sceneLabel}&quot;</h2>
+        <p className="editor-modal-copy">
+          Save the open scene before continuing? If you proceed without saving, the {actionLabel}{' '}
+          will use the scene file currently on disk.
+        </p>
+
+        <div className="editor-modal-actions">
+          <button type="button" onClick={() => onDecision('cancel')} disabled={isBusy}>
+            Cancel
+          </button>
+          <button type="button" onClick={() => onDecision('discard')} disabled={isBusy}>
+            Proceed Without Saving
+          </button>
+          <button type="button" onClick={() => onDecision('save')} disabled={isBusy}>
+            Save and Proceed
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export const ProjectWorkspace = (): ReactElement => {
   const [searchParams] = useSearchParams()
   const projectName = searchParams.get('projectName') ?? 'Project Workspace'
@@ -115,9 +163,9 @@ export const ProjectWorkspace = (): ReactElement => {
   const [refreshVersion, setRefreshVersion] = useState(0)
   const [resourceManagerCurrentPath, setResourceManagerCurrentPath] = useState('')
   const [statusMessage, setStatusMessage] = useState<WorkspaceStatus | null>(null)
-  const [activeBuildOperation, setActiveBuildOperation] = useState<
-    'build' | 'build-and-compile' | null
-  >(null)
+  const [activeBuildOperation, setActiveBuildOperation] = useState<BuildOperation | null>(null)
+  const [pendingUnsavedSceneBuildOperation, setPendingUnsavedSceneBuildOperation] =
+    useState<BuildOperation | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [gbdkStatus, setGbdkStatus] = useState<GbdkToolchainStatus | null>(null)
   const [isInstallingGbdk, setIsInstallingGbdk] = useState(false)
@@ -354,32 +402,68 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [projectPath])
 
-  const handleBuildProject = useCallback(async () => {
+  const executeBuildOperation = useCallback(async (operation: BuildOperation) => {
     if (!projectPath) {
       return
     }
 
-    setActiveBuildOperation('build')
+    setActiveBuildOperation(operation)
     setIsBusy(true)
     showStatus('info', 'Building project code...')
 
     try {
-      const result = await window.api.buildProjectCode(projectPath, {
-        autoBankScriptFunctions
-      })
-      showStatus('info', formatBuildStatusMessage(result))
+      if (operation === 'build') {
+        const result = await window.api.buildProjectCode(projectPath, {
+          autoBankScriptFunctions
+        })
+        showStatus('info', formatBuildStatusMessage(result))
+      } else {
+        const result = await window.api.buildAndCompileProject(projectPath, {
+          autoBankScriptFunctions
+        })
+        showStatus(
+          'info',
+          `Built project code and compiled ${result.compileResult.romPath ?? 'the ROM output'}.`
+        )
+      }
+
       setRefreshVersion((currentVersion) => currentVersion + 1)
     } catch (error) {
-      console.error('[project-workspace] buildProjectCode failed', error)
+      console.error(
+        `[project-workspace] ${
+          operation === 'build' ? 'buildProjectCode' : 'buildAndCompileProject'
+        } failed`,
+        error
+      )
       showStatus(
         'error',
-        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.buildCode
+        error instanceof Error
+          ? error.message
+          : operation === 'build'
+            ? GENERIC_WORKSPACE_ERRORS.buildCode
+            : GENERIC_WORKSPACE_ERRORS.buildAndCompile
       )
     } finally {
       setActiveBuildOperation(null)
       setIsBusy(false)
     }
   }, [autoBankScriptFunctions, projectPath])
+
+  const handleBuildRequest = useCallback(
+    (operation: BuildOperation) => {
+      if (!projectPath) {
+        return
+      }
+
+      if (isSceneDirty) {
+        setPendingUnsavedSceneBuildOperation(operation)
+        return
+      }
+
+      void executeBuildOperation(operation)
+    },
+    [executeBuildOperation, isSceneDirty, projectPath]
+  )
 
   const handleOpenSaveDataEditor = useCallback(async () => {
     if (!projectPath) {
@@ -462,35 +546,32 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [projectPath])
 
-  const handleBuildAndCompileProject = useCallback(async () => {
-    if (!projectPath) {
-      return
-    }
+  const handleUnsavedSceneBuildDecision = useCallback(
+    async (decision: UnsavedSceneBuildDecision) => {
+      if (!pendingUnsavedSceneBuildOperation) {
+        return
+      }
 
-    setActiveBuildOperation('build-and-compile')
-    setIsBusy(true)
-    showStatus('info', 'Building project code...')
+      if (decision === 'cancel') {
+        setPendingUnsavedSceneBuildOperation(null)
+        return
+      }
 
-    try {
-      const result = await window.api.buildAndCompileProject(projectPath, {
-        autoBankScriptFunctions
-      })
-      showStatus(
-        'info',
-        `Built project code and compiled ${result.compileResult.romPath ?? 'the ROM output'}.`
-      )
-      setRefreshVersion((currentVersion) => currentVersion + 1)
-    } catch (error) {
-      console.error('[project-workspace] buildAndCompileProject failed', error)
-      showStatus(
-        'error',
-        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.buildAndCompile
-      )
-    } finally {
-      setActiveBuildOperation(null)
-      setIsBusy(false)
-    }
-  }, [autoBankScriptFunctions, projectPath])
+      const buildOperation = pendingUnsavedSceneBuildOperation
+
+      if (decision === 'save') {
+        const didSave = await saveActiveScene()
+
+        if (!didSave) {
+          return
+        }
+      }
+
+      setPendingUnsavedSceneBuildOperation(null)
+      await executeBuildOperation(buildOperation)
+    },
+    [executeBuildOperation, pendingUnsavedSceneBuildOperation, saveActiveScene]
+  )
 
   useEffect(() => {
     if (!activeScenePath || !activeSceneDocument) {
@@ -648,13 +729,13 @@ export const ProjectWorkspace = (): ReactElement => {
             id: 'build-project',
             label: 'Build',
             disabled: isBuildDisabled,
-            onSelect: () => void handleBuildProject()
+            onSelect: () => handleBuildRequest('build')
           },
           {
             id: 'build-and-compile-project',
             label: 'Build + Compile',
             disabled: isBuildAndCompileDisabled,
-            onSelect: () => void handleBuildAndCompileProject()
+            onSelect: () => handleBuildRequest('build-and-compile')
           }
         ]
       }
@@ -664,8 +745,7 @@ export const ProjectWorkspace = (): ReactElement => {
     coordinatePreferences.childCoordinateOrigin,
     coordinatePreferences.coordinateUnit,
     createMenuItems,
-    handleBuildAndCompileProject,
-    handleBuildProject,
+    handleBuildRequest,
     handleCloseProject,
     handleOpenSaveDataEditor,
     handleOpenTagEditor,
@@ -820,6 +900,17 @@ export const ProjectWorkspace = (): ReactElement => {
           isBusy={isSceneSaving || isSceneLoading}
           onCloseDecision={(decision) => {
             void handleSceneCloseDecision(decision)
+          }}
+        />
+      )}
+
+      {pendingUnsavedSceneBuildOperation && activeSceneLabel && (
+        <UnsavedSceneBuildPrompt
+          sceneLabel={activeSceneLabel}
+          operation={pendingUnsavedSceneBuildOperation}
+          isBusy={isSceneSaving}
+          onDecision={(decision) => {
+            void handleUnsavedSceneBuildDecision(decision)
           }}
         />
       )}
