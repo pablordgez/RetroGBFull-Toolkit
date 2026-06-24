@@ -2,6 +2,7 @@ gbdk/
 core/obj/
 .tmp/
 .vscode/
-core/docs/node_modules/
-core/docs/.docusaurus/
-core/docs/build/
+docs/node_modules/
+docs/.docusaurus/
+docs/build/
+docs/.vercel/

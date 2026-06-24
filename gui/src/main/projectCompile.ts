@@ -1,10 +1,12 @@
 import { spawn } from 'child_process'
+import { shell } from 'electron'
 import { readdir, stat } from 'fs/promises'
 import { dirname, extname, join, relative } from 'path'
 import type {
   BuildAndCompileProjectResult,
   CompileProjectResult,
-  ProjectBuildProgressPayload
+  ProjectBuildProgressPayload,
+  ProjectScriptBankingOptions
 } from '../shared/projectCodeWorkspace'
 import { buildProjectCode } from './projectBuildCode'
 import { ensureProjectDirectory } from './projectCodeShared'
@@ -145,6 +147,14 @@ const findCompiledRomPath = async (projectPath: string): Promise<string | null> 
   }
 }
 
+const revealCompiledRomInFileExplorer = (projectPath: string, romPath: string | null): void => {
+  if (!romPath) {
+    return
+  }
+
+  shell.showItemInFolder(join(projectPath, romPath))
+}
+
 const runMakeCommand = async (
   makeExecutablePath: string,
   args: string[],
@@ -205,12 +215,14 @@ export const compileProject = async (
 
 export const buildAndCompileProject = async (
   projectPath: string,
-  onProgress?: BuildProgressReporter
+  onProgress?: BuildProgressReporter,
+  options?: ProjectScriptBankingOptions
 ): Promise<BuildAndCompileProjectResult> => {
   const normalizedProjectPath = await ensureProjectDirectory(projectPath)
   reportBuildProgress(normalizedProjectPath, 'build', 'Generating project code...', onProgress)
-  const buildResult = await buildProjectCode(normalizedProjectPath)
+  const buildResult = await buildProjectCode(normalizedProjectPath, options)
   const compileResult = await compileProject(normalizedProjectPath, onProgress)
+  revealCompiledRomInFileExplorer(normalizedProjectPath, compileResult.romPath)
 
   return {
     buildResult,

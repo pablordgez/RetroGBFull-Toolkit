@@ -1,5 +1,14 @@
-import { type ChangeEvent, type KeyboardEvent, type ReactElement, useEffect, useMemo, useState } from 'react'
+import {
+  type ChangeEvent,
+  type KeyboardEvent,
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState
+} from 'react'
 import type {
+  SceneAssetActorNode,
   SceneAssetCollisionCallback,
   SceneActorPhysicsMode,
   SceneAssetNode
@@ -27,6 +36,10 @@ import {
   normalizeProjectPalette
 } from '../../../../shared/projectPalettes'
 import { ProjectScriptCallbackPickerModal } from '../ProjectAssets/ProjectScriptCallbackPickerModal'
+import {
+  DEFAULT_COORDINATE_MODEL_PREFERENCES,
+  type CoordinateModelPreferences
+} from '../Preferences/coordinatePreferences'
 import { SceneCollisionCallbackControls } from './SceneCollisionCallbackControls'
 import {
   clampSceneActorPosition,
@@ -62,6 +75,7 @@ interface SceneInspectorPaneProps {
   defaultBackgroundPalette?: string[] | null
   spritePaletteMismatchPaths?: string[]
   backgroundPaletteMismatchPaths?: string[]
+  coordinatePreferences?: CoordinateModelPreferences
   onRequestTilemapSelection?: () => void
   onRequestWindowSelection?: () => void
   onRequestSceneScriptSelection?: () => void
@@ -87,7 +101,9 @@ const buildClassName = (baseClassName: string, extraClassName?: string): string 
 const EMPTY_SCRIPT_PROPERTY_DEFINITIONS: ParsedScriptPropertyDefinition[] = []
 
 const getPathLabel = (resourcePath: string | null, fallback: string): string => {
-  return resourcePath ? getProjectAssetDisplayName(resourcePath.split('/').pop() ?? fallback) : fallback
+  return resourcePath
+    ? getProjectAssetDisplayName(resourcePath.split('/').pop() ?? fallback)
+    : fallback
 }
 
 const getScriptPropertyInputId = (propertyName: string): string => {
@@ -101,6 +117,64 @@ const SCENE_ACTOR_PHYSICS_MODE_LABELS: Record<SceneActorPhysicsMode, string> = {
 }
 
 const EMPTY_SCENE_SPRITE_PALETTES: SceneSpritePalettes = [null, null]
+
+const getDirectParentActor = (
+  nodes: SceneAssetNode[],
+  nodeId: string
+): SceneAssetActorNode | null => {
+  const nodeRecord = findSceneNodeRecord(nodes, nodeId)
+  const parentNode = nodeRecord?.parentId ? findSceneNodeById(nodes, nodeRecord.parentId) : null
+
+  return parentNode && isSceneActorNode(parentNode) ? parentNode : null
+}
+
+const getActorDisplayCoordinate = (
+  storedCoordinate: number,
+  parentCoordinate: number | null,
+  preferences: CoordinateModelPreferences
+): number => {
+  if (preferences.childCoordinateOrigin === 'relative' && parentCoordinate !== null) {
+    return storedCoordinate - parentCoordinate
+  }
+
+  return storedCoordinate
+}
+
+const getActorStoredCoordinate = (
+  displayedCoordinate: number,
+  parentCoordinate: number | null,
+  preferences: CoordinateModelPreferences
+): number => {
+  if (preferences.childCoordinateOrigin === 'relative' && parentCoordinate !== null) {
+    return displayedCoordinate + parentCoordinate
+  }
+
+  return displayedCoordinate
+}
+
+const getCollisionDisplayCoordinate = (
+  storedCoordinate: number,
+  parentCoordinate: number | null,
+  preferences: CoordinateModelPreferences
+): number => {
+  if (preferences.childCoordinateOrigin === 'absolute' && parentCoordinate !== null) {
+    return storedCoordinate + parentCoordinate
+  }
+
+  return storedCoordinate
+}
+
+const getCollisionAbsoluteCoordinate = (
+  displayedCoordinate: number,
+  parentCoordinate: number | null,
+  preferences: CoordinateModelPreferences
+): number => {
+  if (preferences.childCoordinateOrigin === 'relative' && parentCoordinate !== null) {
+    return displayedCoordinate + parentCoordinate
+  }
+
+  return displayedCoordinate
+}
 
 const formatPaletteMismatchCopy = (paths: string[], singular: string, plural: string): string => {
   if (paths.length === 0) {
@@ -137,6 +211,7 @@ export const SceneInspectorPane = ({
   defaultBackgroundPalette = null,
   spritePaletteMismatchPaths = [],
   backgroundPaletteMismatchPaths = [],
+  coordinatePreferences = DEFAULT_COORDINATE_MODEL_PREFERENCES,
   onRequestTilemapSelection = () => undefined,
   onRequestWindowSelection = () => undefined,
   onRequestSceneScriptSelection = () => undefined,
@@ -153,15 +228,11 @@ export const SceneInspectorPane = ({
   const selectedNode = editor.selectedNode
   const selectedActor = editor.selectedActor
   const selectedCollision = editor.selectedCollision
+  const selectedActorParentActor = selectedActor
+    ? getDirectParentActor(editor.nodes, selectedActor.id)
+    : null
   const collisionParentActor = selectedCollision
-    ? (() => {
-        const collisionRecord = findSceneNodeRecord(editor.nodes, selectedCollision.id)
-        const parentNode = collisionRecord?.parentId
-          ? findSceneNodeById(editor.nodes, collisionRecord.parentId)
-          : null
-
-        return parentNode && isSceneActorNode(parentNode) ? parentNode : null
-      })()
+    ? getDirectParentActor(editor.nodes, selectedCollision.id)
     : null
   const [xDraft, setXDraft] = useState('0')
   const [yDraft, setYDraft] = useState('0')
@@ -177,27 +248,75 @@ export const SceneInspectorPane = ({
     selectedCollision && collisionCallbackPicker?.nodeId === selectedCollision.id
       ? collisionCallbackPicker.mode
       : null
+  const coordinateUnit = coordinatePreferences.coordinateUnit
+  const childCoordinateOrigin = coordinatePreferences.childCoordinateOrigin
+  const formatCoordinate = useCallback(
+    (value: number): string => formatSceneCoord(value, coordinateUnit),
+    [coordinateUnit]
+  )
+  const parseCoordinate = useCallback(
+    (value: string): number | null => parseSceneCoord(value, coordinateUnit),
+    [coordinateUnit]
+  )
+  const actorParentX = selectedActorParentActor?.x ?? null
+  const actorParentY = selectedActorParentActor?.y ?? null
+  const collisionParentX = collisionParentActor?.x ?? null
+  const collisionParentY = collisionParentActor?.y ?? null
 
   useEffect(() => {
     if (selectedActor) {
-      setXDraft(formatSceneCoord(selectedActor.x))
-      setYDraft(formatSceneCoord(selectedActor.y))
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setXDraft(
+        formatCoordinate(
+          getActorDisplayCoordinate(selectedActor.x, actorParentX, coordinatePreferences)
+        )
+      )
+      setYDraft(
+        formatCoordinate(
+          getActorDisplayCoordinate(selectedActor.y, actorParentY, coordinatePreferences)
+        )
+      )
       return
     }
 
     if (selectedCollision) {
-      setXDraft(formatSceneCoord(selectedCollision.x))
-      setYDraft(formatSceneCoord(selectedCollision.y))
-      setWidthDraft(formatSceneCoord(selectedCollision.width))
-      setHeightDraft(formatSceneCoord(selectedCollision.height))
+      setXDraft(
+        formatCoordinate(
+          getCollisionDisplayCoordinate(
+            selectedCollision.x,
+            collisionParentX,
+            coordinatePreferences
+          )
+        )
+      )
+      setYDraft(
+        formatCoordinate(
+          getCollisionDisplayCoordinate(
+            selectedCollision.y,
+            collisionParentY,
+            coordinatePreferences
+          )
+        )
+      )
+      setWidthDraft(formatCoordinate(selectedCollision.width))
+      setHeightDraft(formatCoordinate(selectedCollision.height))
       return
     }
 
-    setXDraft('0')
-    setYDraft('0')
-    setWidthDraft('8')
-    setHeightDraft('8')
-  }, [collisionParentActor, selectedActor, selectedCollision])
+    setXDraft(formatCoordinate(0))
+    setYDraft(formatCoordinate(0))
+    setWidthDraft(formatCoordinate(128))
+    setHeightDraft(formatCoordinate(128))
+  }, [
+    actorParentX,
+    actorParentY,
+    collisionParentX,
+    collisionParentY,
+    coordinatePreferences,
+    formatCoordinate,
+    selectedActor,
+    selectedCollision
+  ])
 
   const activeScriptPropertyDefinitions = useMemo(() => {
     if (!selectedNode) {
@@ -228,6 +347,7 @@ export const SceneInspectorPane = ({
         })
     )
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setScriptPropertyDrafts(nextDrafts)
     setScriptPropertyErrors({})
   }, [activeScriptPropertyDefinitions, activeScriptProperties, selectedActor?.id, selectedNode?.id])
@@ -237,22 +357,46 @@ export const SceneInspectorPane = ({
       return
     }
 
-    const nextCoord = parseSceneCoord(axis === 'x' ? xDraft : yDraft)
+    const nextCoord = parseCoordinate(axis === 'x' ? xDraft : yDraft)
 
     if (nextCoord === null) {
-      setXDraft(formatSceneCoord(selectedActor.x))
-      setYDraft(formatSceneCoord(selectedActor.y))
+      setXDraft(
+        formatCoordinate(
+          getActorDisplayCoordinate(selectedActor.x, actorParentX, coordinatePreferences)
+        )
+      )
+      setYDraft(
+        formatCoordinate(
+          getActorDisplayCoordinate(selectedActor.y, actorParentY, coordinatePreferences)
+        )
+      )
       return
     }
 
+    const currentDisplayX = getActorDisplayCoordinate(
+      selectedActor.x,
+      actorParentX,
+      coordinatePreferences
+    )
+    const currentDisplayY = getActorDisplayCoordinate(
+      selectedActor.y,
+      actorParentY,
+      coordinatePreferences
+    )
     const nextPosition = clampSceneActorPosition(
-      axis === 'x' ? nextCoord : selectedActor.x,
-      axis === 'y' ? nextCoord : selectedActor.y,
+      getActorStoredCoordinate(
+        axis === 'x' ? nextCoord : currentDisplayX,
+        actorParentX,
+        coordinatePreferences
+      ),
+      getActorStoredCoordinate(
+        axis === 'y' ? nextCoord : currentDisplayY,
+        actorParentY,
+        coordinatePreferences
+      ),
       tilemapSize,
       getSceneActorAnchorOffsetForSize(
-        selectedActor.spritePath && spritePreviews
-          ? spritePreviews[selectedActor.spritePath]
-          : null
+        selectedActor.spritePath && spritePreviews ? spritePreviews[selectedActor.spritePath] : null
       )
     )
 
@@ -264,26 +408,36 @@ export const SceneInspectorPane = ({
       return
     }
 
-    const nextX = parseSceneCoord(field === 'x' ? xDraft : formatSceneCoord(selectedCollision.x))
-    const nextY = parseSceneCoord(field === 'y' ? yDraft : formatSceneCoord(selectedCollision.y))
-    const nextWidth = parseSceneCoord(
-      field === 'width' ? widthDraft : formatSceneCoord(selectedCollision.width)
+    const currentDisplayX = getCollisionDisplayCoordinate(
+      selectedCollision.x,
+      collisionParentX,
+      coordinatePreferences
     )
-    const nextHeight = parseSceneCoord(
-      field === 'height' ? heightDraft : formatSceneCoord(selectedCollision.height)
+    const currentDisplayY = getCollisionDisplayCoordinate(
+      selectedCollision.y,
+      collisionParentY,
+      coordinatePreferences
+    )
+    const nextX = parseCoordinate(field === 'x' ? xDraft : formatCoordinate(currentDisplayX))
+    const nextY = parseCoordinate(field === 'y' ? yDraft : formatCoordinate(currentDisplayY))
+    const nextWidth = parseCoordinate(
+      field === 'width' ? widthDraft : formatCoordinate(selectedCollision.width)
+    )
+    const nextHeight = parseCoordinate(
+      field === 'height' ? heightDraft : formatCoordinate(selectedCollision.height)
     )
 
     if (nextX === null || nextY === null || nextWidth === null || nextHeight === null) {
-      setXDraft(formatSceneCoord(selectedCollision.x))
-      setYDraft(formatSceneCoord(selectedCollision.y))
-      setWidthDraft(formatSceneCoord(selectedCollision.width))
-      setHeightDraft(formatSceneCoord(selectedCollision.height))
+      setXDraft(formatCoordinate(currentDisplayX))
+      setYDraft(formatCoordinate(currentDisplayY))
+      setWidthDraft(formatCoordinate(selectedCollision.width))
+      setHeightDraft(formatCoordinate(selectedCollision.height))
       return
     }
 
     const nextRect = clampSceneCollisionRect(
-      nextX + (collisionParentActor?.x ?? 0),
-      nextY + (collisionParentActor?.y ?? 0),
+      getCollisionAbsoluteCoordinate(nextX, collisionParentX, coordinatePreferences),
+      getCollisionAbsoluteCoordinate(nextY, collisionParentY, coordinatePreferences),
       nextWidth,
       nextHeight,
       tilemapSize
@@ -302,8 +456,16 @@ export const SceneInspectorPane = ({
 
     if (event.key === 'Escape' && selectedActor) {
       event.preventDefault()
-      setXDraft(formatSceneCoord(selectedActor.x))
-      setYDraft(formatSceneCoord(selectedActor.y))
+      setXDraft(
+        formatCoordinate(
+          getActorDisplayCoordinate(selectedActor.x, actorParentX, coordinatePreferences)
+        )
+      )
+      setYDraft(
+        formatCoordinate(
+          getActorDisplayCoordinate(selectedActor.y, actorParentY, coordinatePreferences)
+        )
+      )
     }
   }
 
@@ -318,10 +480,26 @@ export const SceneInspectorPane = ({
 
     if (event.key === 'Escape' && selectedCollision) {
       event.preventDefault()
-      setXDraft(formatSceneCoord(selectedCollision.x))
-      setYDraft(formatSceneCoord(selectedCollision.y))
-      setWidthDraft(formatSceneCoord(selectedCollision.width))
-      setHeightDraft(formatSceneCoord(selectedCollision.height))
+      setXDraft(
+        formatCoordinate(
+          getCollisionDisplayCoordinate(
+            selectedCollision.x,
+            collisionParentX,
+            coordinatePreferences
+          )
+        )
+      )
+      setYDraft(
+        formatCoordinate(
+          getCollisionDisplayCoordinate(
+            selectedCollision.y,
+            collisionParentY,
+            coordinatePreferences
+          )
+        )
+      )
+      setWidthDraft(formatCoordinate(selectedCollision.width))
+      setHeightDraft(formatCoordinate(selectedCollision.height))
     }
   }
 
@@ -401,9 +579,7 @@ export const SceneInspectorPane = ({
     onUseDefaultPalette: (palette: string[]) => void,
     emptyLabel = 'Unset'
   ): ReactElement => {
-    const editablePalette = normalizeProjectPalette(
-      palette ?? defaultPalette ?? DEFAULT_GB_PALETTE
-    )
+    const editablePalette = normalizeProjectPalette(palette ?? defaultPalette ?? DEFAULT_GB_PALETTE)
     const reorderPalette = (sourceIndex: number, targetIndex: number): void => {
       if (sourceIndex === targetIndex) {
         return
@@ -439,10 +615,7 @@ export const SceneInspectorPane = ({
               }}
               onDrop={(event) => {
                 event.preventDefault()
-                const sourceIndex = Number.parseInt(
-                  event.dataTransfer.getData('text/plain'),
-                  10
-                )
+                const sourceIndex = Number.parseInt(event.dataTransfer.getData('text/plain'), 10)
 
                 if (Number.isInteger(sourceIndex)) {
                   reorderPalette(sourceIndex, index)
@@ -519,7 +692,9 @@ export const SceneInspectorPane = ({
     })
   }
 
-  const renderScriptPropertyControl = (definition: ParsedScriptPropertyDefinition): ReactElement => {
+  const renderScriptPropertyControl = (
+    definition: ParsedScriptPropertyDefinition
+  ): ReactElement => {
     if (definition.kind === 'boolean') {
       const currentValue = getStoredScriptPropertyValue(definition, activeScriptProperties) === true
 
@@ -691,7 +866,9 @@ export const SceneInspectorPane = ({
           />
         </div>
         {scriptPropertyErrors[definition.name] && (
-          <span className="scene-inspector-pane__hint">{scriptPropertyErrors[definition.name]}</span>
+          <span className="scene-inspector-pane__hint">
+            {scriptPropertyErrors[definition.name]}
+          </span>
         )}
       </div>
     )
@@ -769,15 +946,11 @@ export const SceneInspectorPane = ({
       data-testid="project-workspace-scene-inspector"
     >
       {!editor.canEdit && (
-        <div className="scene-inspector-pane__empty">
-          Open a scene to inspect it.
-        </div>
+        <div className="scene-inspector-pane__empty">Open a scene to inspect it.</div>
       )}
 
       {editor.canEdit && showLegacyEmptyState && (
-        <div className="scene-inspector-pane__empty">
-          Select an actor or collision.
-        </div>
+        <div className="scene-inspector-pane__empty">Select an actor or collision.</div>
       )}
 
       {editor.canEdit && !showLegacyEmptyState && (
@@ -829,7 +1002,9 @@ export const SceneInspectorPane = ({
                 'Sprite Palette 1',
                 sceneSpritePalettes[1],
                 '',
-                referencedSpritePalettes[1] ?? sceneSpritePalettes[0] ?? referencedSpritePalettes[0],
+                referencedSpritePalettes[1] ??
+                  sceneSpritePalettes[0] ??
+                  referencedSpritePalettes[0],
                 (palette) => editor.setSpritePalette(1, palette),
                 (palette) => editor.setSpritePalette(1, palette)
               )}
@@ -859,7 +1034,9 @@ export const SceneInspectorPane = ({
               <div className="scene-inspector-pane__field">
                 <span>Scene Bounds</span>
                 <strong>
-                  {tilemapSize ? `${tilemapSize.width * 8} x ${tilemapSize.height * 8}px` : 'Unbounded'}
+                  {tilemapSize
+                    ? `${tilemapSize.width * 8} x ${tilemapSize.height * 8}px`
+                    : 'Unbounded'}
                 </strong>
               </div>
 
@@ -963,7 +1140,9 @@ export const SceneInspectorPane = ({
               <div className="scene-inspector-pane__field">
                 <span>Scene Bounds</span>
                 <strong>
-                  {tilemapSize ? `${tilemapSize.width * 8} x ${tilemapSize.height * 8}px` : 'Unbounded'}
+                  {tilemapSize
+                    ? `${tilemapSize.width * 8} x ${tilemapSize.height * 8}px`
+                    : 'Unbounded'}
                 </strong>
               </div>
 
@@ -1003,7 +1182,9 @@ export const SceneInspectorPane = ({
                 </label>
               </div>
 
-              <p className="scene-inspector-pane__hint">1/16th-pixel precision.</p>
+              <p className="scene-inspector-pane__hint">
+                {coordinateUnit === 'gui' ? '1/16th-pixel precision.' : 'Core integer units.'}
+              </p>
 
               {renderTagControls()}
 
@@ -1114,7 +1295,9 @@ export const SceneInspectorPane = ({
               {renderTagControls()}
 
               <p className="scene-inspector-pane__hint">
-                Local under actors; scene coordinates at the root.
+                {childCoordinateOrigin === 'absolute'
+                  ? 'Absolute under actors and at the root.'
+                  : 'Local under actors; scene coordinates at the root.'}
               </p>
 
               {collisionCallbackPickerMode && (

@@ -66,7 +66,7 @@ const createChildProcess = (
   exitCode: number,
   stdoutChunks: string[] = [],
   stderrChunks: string[] = []
-) => {
+): EventEmitter & { stdout: EventEmitter; stderr: EventEmitter } => {
   const child = new EventEmitter() as EventEmitter & {
     stdout: EventEmitter
     stderr: EventEmitter
@@ -213,7 +213,7 @@ describe('project compile and code intelligence integration', () => {
 
     const result = await buildAndCompileProject(projectPath, progress)
 
-    expect(projectBuildCodeMocks.buildProjectCode).toHaveBeenCalledWith(projectPath)
+    expect(projectBuildCodeMocks.buildProjectCode).toHaveBeenCalledWith(projectPath, undefined)
     expect(result.buildResult.writtenFiles).toEqual(['src/main.c'])
     expect(result.compileResult).toEqual({
       romPath: null,

@@ -12,6 +12,7 @@ import type {
   ProjectBuildProgressPayload,
   ProjectCodeSymbolIndex,
   ProjectCodeWorkspaceSnapshot,
+  ProjectScriptBankingOptions,
   ProjectScriptCallbackCandidate,
   ProjectScriptResourcePayload,
   ProjectScriptSavePayload
@@ -42,6 +43,9 @@ interface ProjectActionResponse {
 
 interface AppPreferences {
   scriptEditorTheme: 'light' | 'dark'
+  coordinateUnit: 'gui' | 'core'
+  childCoordinateOrigin: 'absolute' | 'relative'
+  autoBankScriptFunctions: boolean
 }
 
 interface ProjectAssetFilePayload {
@@ -83,7 +87,10 @@ declare global {
         assetPath: string
       ) => Promise<boolean>
       pickProjectParentDirectory: () => Promise<string | null>
-      createProject: (parentDirectory: string, projectName: string) => Promise<ProjectActionResponse>
+      createProject: (
+        parentDirectory: string,
+        projectName: string
+      ) => Promise<ProjectActionResponse>
       openProjectFromDialog: () => Promise<ProjectActionResponse>
       loadRecentProject: (projectPath: string) => Promise<ProjectActionResponse>
       closeCurrentProject: () => Promise<boolean>
@@ -106,11 +113,11 @@ declare global {
         saveDataState: ProjectSaveDataState
       ) => Promise<ProjectSaveDataState>
       loadProjectTags: (projectPath: string) => Promise<ProjectTagState>
-      saveProjectTags: (
+      saveProjectTags: (projectPath: string, tagState: ProjectTagState) => Promise<ProjectTagState>
+      loadProjectAssetFile: (
         projectPath: string,
-        tagState: ProjectTagState
-      ) => Promise<ProjectTagState>
-      loadProjectAssetFile: (projectPath: string, assetPath: string) => Promise<ProjectAssetFilePayload>
+        assetPath: string
+      ) => Promise<ProjectAssetFilePayload>
       saveProjectAssetFile: (
         projectPath: string,
         assetPath: string,
@@ -131,7 +138,8 @@ declare global {
         resourcePath: string,
         scriptKind: ProjectScriptKind,
         editableSourceContent: string,
-        headerContent: string
+        headerContent: string,
+        options?: ProjectScriptBankingOptions
       ) => Promise<ProjectScriptSavePayload>
       listProjectScriptResources: (
         projectPath: string,
@@ -141,7 +149,10 @@ declare global {
         projectPath: string,
         scriptKind?: ProjectScriptKind
       ) => Promise<ProjectScriptCallbackCandidate[]>
-      getProjectResources: (projectPath: string, currentPath?: string) => Promise<ProjectResourceView>
+      getProjectResources: (
+        projectPath: string,
+        currentPath?: string
+      ) => Promise<ProjectResourceView>
       createProjectResource: (
         projectPath: string,
         resourceType: ProjectResourceKind,
@@ -181,22 +192,36 @@ declare global {
       copyProjectEngineCore: (projectPath: string) => Promise<CopyEngineCoreResult>
       readMaxCollisionCallbacks: (projectPath: string) => Promise<number>
       readMaxTagSlots: (projectPath: string) => Promise<number>
-      buildProjectCode: (projectPath: string) => Promise<BuildProjectCodeResult>
-      buildAndCompileProject: (projectPath: string) => Promise<BuildAndCompileProjectResult>
+      buildProjectCode: (
+        projectPath: string,
+        options?: ProjectScriptBankingOptions
+      ) => Promise<BuildProjectCodeResult>
+      buildAndCompileProject: (
+        projectPath: string,
+        options?: ProjectScriptBankingOptions
+      ) => Promise<BuildAndCompileProjectResult>
       getProjectCodeSymbolIndex: (projectPath: string) => Promise<ProjectCodeSymbolIndex>
-      getProjectCodeWorkspaceSnapshot: (projectPath: string) => Promise<ProjectCodeWorkspaceSnapshot>
+      getProjectCodeWorkspaceSnapshot: (
+        projectPath: string
+      ) => Promise<ProjectCodeWorkspaceSnapshot>
       restoreDeletedProjectResource: (
         projectPath: string,
         deletionId: string
       ) => Promise<ProjectResourceMutationResult>
       finalizeDeletedProjectResource: (projectPath: string, deletionId: string) => Promise<boolean>
-      createProjectFolder: (projectPath: string, parentPath?: string) => Promise<ProjectResourceMutationResult>
+      createProjectFolder: (
+        projectPath: string,
+        parentPath?: string
+      ) => Promise<ProjectResourceMutationResult>
       renameProjectFolder: (
         projectPath: string,
         folderPath: string,
         nextName: string
       ) => Promise<ProjectResourceMutationResult>
-      deleteProjectFolder: (projectPath: string, folderPath: string) => Promise<ProjectDeletedResourceResult>
+      deleteProjectFolder: (
+        projectPath: string,
+        folderPath: string
+      ) => Promise<ProjectDeletedResourceResult>
       onEditorCloseRequested: (listener: () => void) => () => void
       onProjectAssetSaved: (
         listener: (payload: ProjectAssetSavedEventPayload) => void
@@ -204,9 +229,7 @@ declare global {
       onProjectScriptSaved: (
         listener: (payload: ProjectScriptSavedEventPayload) => void
       ) => () => void
-      onProjectTagsSaved: (
-        listener: (payload: ProjectTagsSavedEventPayload) => void
-      ) => () => void
+      onProjectTagsSaved: (listener: (payload: ProjectTagsSavedEventPayload) => void) => () => void
       onProjectBuildProgress: (
         listener: (payload: ProjectBuildProgressPayload) => void
       ) => () => void

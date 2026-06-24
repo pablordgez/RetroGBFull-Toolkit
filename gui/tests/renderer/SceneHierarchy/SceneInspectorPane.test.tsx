@@ -6,6 +6,7 @@ import type {
   ParsedScriptPropertyDefinition,
   ProjectScriptCallbackCandidate
 } from '../../../src/shared/projectCodeWorkspace'
+import type { CoordinateModelPreferences } from '../../../src/renderer/src/components/Preferences/coordinatePreferences'
 import { SceneInspectorPane } from '../../../src/renderer/src/components/SceneHierarchy/SceneInspectorPane'
 import { useSceneDocumentEditor } from '../../../src/renderer/src/components/SceneHierarchy/useSceneDocumentEditor'
 
@@ -62,6 +63,57 @@ const createScene = (): SceneAssetDocument => ({
       name: 'Folder',
       isCollapsed: false,
       children: []
+    }
+  ]
+})
+
+const createCoordinatePreferenceScene = (): SceneAssetDocument => ({
+  kind: 'scene',
+  version: 1,
+  tilemapPath: null,
+  windowPath: null,
+  scriptPath: null,
+  nodes: [
+    {
+      id: 'parent-actor',
+      type: 'actor',
+      name: 'Parent',
+      isCollapsed: false,
+      spritePath: null,
+      x: 32,
+      y: 64,
+      physicsMode: 'balanced',
+      followCamera: false,
+      spritePaletteIndex: 0,
+      children: [
+        {
+          id: 'child-actor',
+          type: 'actor',
+          name: 'Child',
+          isCollapsed: false,
+          spritePath: null,
+          x: 80,
+          y: 96,
+          physicsMode: 'balanced',
+          followCamera: false,
+          spritePaletteIndex: 0,
+          children: []
+        },
+        {
+          id: 'child-collision',
+          type: 'collision',
+          name: 'Hitbox',
+          isCollapsed: false,
+          x: 16,
+          y: 32,
+          width: 64,
+          height: 32,
+          isBlocking: true,
+          callbacks: [],
+          exitCallbacks: [],
+          children: []
+        }
+      ]
     }
   ]
 })
@@ -141,14 +193,26 @@ const actorScriptPropertyDefinitions: ParsedScriptPropertyDefinition[] = [
   }
 ]
 
-const renderInspector = () => {
+interface RenderInspectorResult {
+  onRequestSpriteSelection: ReturnType<typeof vi.fn>
+  onRequestActorScriptSelection: ReturnType<typeof vi.fn>
+  onRequestSceneAnimationPropertySelection: ReturnType<typeof vi.fn>
+  onRequestActorAnimationPropertySelection: ReturnType<typeof vi.fn>
+}
+
+const renderInspector = (
+  options: {
+    scene?: SceneAssetDocument
+    coordinatePreferences?: CoordinateModelPreferences
+  } = {}
+): RenderInspectorResult => {
   const onRequestSpriteSelection = vi.fn()
   const onRequestActorScriptSelection = vi.fn()
   const onRequestSceneAnimationPropertySelection = vi.fn()
   const onRequestActorAnimationPropertySelection = vi.fn()
 
-  const Harness = () => {
-    const [scene, setScene] = React.useState(createScene())
+  const Harness = (): React.ReactElement => {
+    const [scene, setScene] = React.useState(options.scene ?? createScene())
     const editor = useSceneDocumentEditor({ scene, onSceneChange: setScene })
 
     return (
@@ -158,6 +222,12 @@ const renderInspector = () => {
         </button>
         <button type="button" onClick={() => editor.selectNode('hero-collision')}>
           Select Collision
+        </button>
+        <button type="button" onClick={() => editor.selectNode('child-actor')}>
+          Select Child Actor
+        </button>
+        <button type="button" onClick={() => editor.selectNode('child-collision')}>
+          Select Child Collision
         </button>
         <button type="button" onClick={() => editor.selectNode('folder-node')}>
           Select Folder
@@ -179,6 +249,7 @@ const renderInspector = () => {
           defaultBackgroundPalette={['#9bbc0f', '#8bac0f', '#306230', '#0f380f']}
           spritePaletteMismatchPaths={['Sprites/HeroAlt.rgbsprite.json']}
           backgroundPaletteMismatchPaths={['Windows/Hud.rgbwindow.json']}
+          coordinatePreferences={options.coordinatePreferences}
           onRequestActorScriptSelection={onRequestActorScriptSelection}
           onRequestSpriteSelection={onRequestSpriteSelection}
           onRequestSceneAnimationPropertySelection={onRequestSceneAnimationPropertySelection}
@@ -291,7 +362,9 @@ describe('SceneInspectorPane', () => {
 
     expect(screen.getByDisplayValue('2')).toBeInTheDocument()
     expect(screen.getByText('Sprite Palette 0')).toBeInTheDocument()
-    expect(screen.getByText(/Sprite palette matches neither scene palette: HeroAlt/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Sprite palette matches neither scene palette: HeroAlt/)
+    ).toBeInTheDocument()
     expect(screen.getByText('Background/Window Palette')).toBeInTheDocument()
     expect(screen.getByText(/Background\/window palette differs: Hud/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Sprite Palette 0 color 0')).not.toBeInTheDocument()
@@ -355,6 +428,58 @@ describe('SceneInspectorPane', () => {
     fireEvent.change(xInput, { target: { value: '2' } })
     fireEvent.keyDown(xInput, { key: 'Enter' })
     expect(xInput).toHaveValue('2')
+  })
+
+  it('shows child coordinates as relative GUI pixels by default', () => {
+    renderInspector({ scene: createCoordinatePreferenceScene() })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Child Collision' }))
+    expect(screen.getByRole('textbox', { name: 'X' })).toHaveValue('1')
+    expect(screen.getByRole('textbox', { name: 'Y' })).toHaveValue('2')
+    expect(screen.getByRole('textbox', { name: 'Width' })).toHaveValue('4')
+    expect(
+      screen.getByText('Local under actors; scene coordinates at the root.')
+    ).toBeInTheDocument()
+
+    const collisionXInput = screen.getByRole('textbox', { name: 'X' })
+    fireEvent.change(collisionXInput, { target: { value: '4' } })
+    fireEvent.keyDown(collisionXInput, { key: 'Enter' })
+    expect(collisionXInput).toHaveValue('4')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Child Actor' }))
+    expect(screen.getByRole('textbox', { name: 'X' })).toHaveValue('3')
+    expect(screen.getByRole('textbox', { name: 'Y' })).toHaveValue('2')
+  })
+
+  it('can show child coordinates as absolute core integers', () => {
+    renderInspector({
+      scene: createCoordinatePreferenceScene(),
+      coordinatePreferences: {
+        coordinateUnit: 'core',
+        childCoordinateOrigin: 'absolute'
+      }
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Child Collision' }))
+    expect(screen.getByRole('textbox', { name: 'X' })).toHaveValue('48')
+    expect(screen.getByRole('textbox', { name: 'Y' })).toHaveValue('96')
+    expect(screen.getByRole('textbox', { name: 'Width' })).toHaveValue('64')
+    expect(screen.getByText('Absolute under actors and at the root.')).toBeInTheDocument()
+
+    const collisionXInput = screen.getByRole('textbox', { name: 'X' })
+    fireEvent.change(collisionXInput, { target: { value: '80' } })
+    fireEvent.keyDown(collisionXInput, { key: 'Enter' })
+    expect(collisionXInput).toHaveValue('80')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Child Actor' }))
+    expect(screen.getByRole('textbox', { name: 'X' })).toHaveValue('80')
+    expect(screen.getByRole('textbox', { name: 'Y' })).toHaveValue('96')
+    expect(screen.getByText('Core integer units.')).toBeInTheDocument()
+
+    const actorXInput = screen.getByRole('textbox', { name: 'X' })
+    fireEvent.change(actorXInput, { target: { value: '96' } })
+    fireEvent.keyDown(actorXInput, { key: 'Enter' })
+    expect(actorXInput).toHaveValue('96')
   })
 
   it('opens a callback dialog grouped by script and adds callbacks from actor or scene scripts', () => {

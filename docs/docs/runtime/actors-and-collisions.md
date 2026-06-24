@@ -44,7 +44,7 @@ Header: `core/src/Actor/Actor.h`
 | `void set_tag(Tags tag, uint8_t index) BANKED;` | Writes a tag into `THIS_ACTOR->tags[index]` when `index < 5`. |
 | `void set_actor_animation(Animation* animation) NONBANKED;` | Replaces the current animation and its playback state. |
 | `void move_actor(int16_t dx, int16_t dy) BANKED;` | Moves `THIS_ACTOR` and its children using `physics_mode`. |
-| `void set_actor_position(uint16_t x, uint16_t y) BANKED;` | Moves `THIS_ACTOR` and its children to a new position. |
+| `void set_actor_position(uint16_t x, uint16_t y) BANKED;` | Moves `THIS_ACTOR` and its children to a new position. Check [Coordinate model](../architecture#coordinate-model) for important notes on absolute movement. |
 | `void attach_child(Actor* child) BANKED;` | Appends `child` to the end of `THIS_ACTOR`'s child list. |
 | `void detach_child(Actor* child) BANKED;` | Removes `child` from `THIS_ACTOR`'s child list. |
 | `void set_collider(Collider* collider) BANKED;` | Replaces the current collider. The new collider starts with no callbacks, so add them after attaching it. |

@@ -20,6 +20,7 @@ import { useSceneDocumentEditor } from '../SceneHierarchy/useSceneDocumentEditor
 import { useSceneWorkspacePickers } from './useSceneWorkspacePickers'
 import { useSceneWorkspaceScriptData } from './useSceneWorkspaceScriptData'
 import { isEditableElementTarget } from '../utils/keyboardShortcuts'
+import type { CoordinateModelPreferences } from '../Preferences/coordinatePreferences'
 
 interface SceneEditorWorkspaceProps {
   projectPath: string
@@ -34,6 +35,7 @@ interface SceneEditorWorkspaceProps {
   onSave: () => void
   onStatus: (tone: 'info' | 'error', text: string) => void
   onResourcesChanged: () => void
+  coordinatePreferences: CoordinateModelPreferences
 }
 
 const EMPTY_SCENE_SPRITE_PALETTES: SceneSpritePalettes = [null, null]
@@ -49,7 +51,8 @@ export const SceneEditorWorkspace = ({
   onSceneChange,
   onSave,
   onStatus,
-  onResourcesChanged
+  onResourcesChanged,
+  coordinatePreferences
 }: SceneEditorWorkspaceProps): ReactElement => {
   const editor = useSceneDocumentEditor({ scene, onSceneChange })
   const workspaceRef = useRef<HTMLDivElement>(null)
@@ -181,7 +184,9 @@ export const SceneEditorWorkspace = ({
         }
 
         applyProjectTags(tagState.entries)
-        setMaxTagSlots((currentTagSlots) => (currentTagSlots === tagSlots ? currentTagSlots : tagSlots))
+        setMaxTagSlots((currentTagSlots) =>
+          currentTagSlots === tagSlots ? currentTagSlots : tagSlots
+        )
       } catch (error) {
         console.error('[scene-editor] load tags failed', error)
       }
@@ -385,6 +390,7 @@ export const SceneEditorWorkspace = ({
               defaultBackgroundPalette={defaultBackgroundPalette}
               spritePaletteMismatchPaths={spritePaletteMismatchPaths}
               backgroundPaletteMismatchPaths={backgroundPaletteMismatchPaths}
+              coordinatePreferences={coordinatePreferences}
               onRequestTilemapSelection={() => {
                 openPicker({ mode: 'tilemap' })
               }}
@@ -556,8 +562,8 @@ export const SceneEditorWorkspace = ({
           <div className="editor-modal" role="dialog" aria-modal="true">
             <h2>Save &quot;{pendingActorSaveChoice.actorName}&quot;?</h2>
             <p className="editor-modal-copy">
-              Overwrite &quot;{pendingActorSaveChoice.existingResourcePath}&quot; or save a new actor in /
-              {resourceManagerCurrentPath || ''}.
+              Overwrite &quot;{pendingActorSaveChoice.existingResourcePath}&quot; or save a new
+              actor in /{resourceManagerCurrentPath || ''}.
             </p>
 
             <div className="editor-modal-actions">

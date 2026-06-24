@@ -37,11 +37,6 @@
     word-break: break-word;
 }
 
-.resource-management-pane__back-button {
-    padding: 8px 14px;
-    font-size: 1rem;
-}
-
 .resource-management-pane__status {
     border: 3px solid #0f380f;
     padding: 10px 12px;
@@ -123,6 +118,12 @@
 
 .resource-management-pane__item--file {
     background-color: rgba(196, 190, 187, 0.88);
+}
+
+.resource-management-pane__item--back {
+    grid-template-columns: auto 1fr;
+    align-self: start;
+    height: auto;
 }
 
 .resource-management-pane__folder-icon,

@@ -1,7 +1,7 @@
-import { vi } from 'vitest';
-import '@testing-library/jest-dom';
-import 'vitest-canvas-mock';
-import type { ProjectBuildProgressPayload } from '../src/shared/projectCodeWorkspace';
+import { vi } from 'vitest'
+import '@testing-library/jest-dom'
+import 'vitest-canvas-mock'
+import type { ProjectBuildProgressPayload } from '../src/shared/projectCodeWorkspace'
 
 // Mock Electron API
 vi.mock('electron', () => {
@@ -10,14 +10,14 @@ vi.mock('electron', () => {
       on: vi.fn(),
       send: vi.fn(),
       invoke: vi.fn(),
-      removeListener: vi.fn(),
+      removeListener: vi.fn()
     },
     shell: {
       openPath: vi.fn().mockResolvedValue(''),
-      showItemInFolder: vi.fn(),
-    },
-  };
-});
+      showItemInFolder: vi.fn()
+    }
+  }
+})
 
 Object.defineProperty(window, 'api', {
   configurable: true,
@@ -35,8 +35,18 @@ Object.defineProperty(window, 'api', {
     openProjectInFileExplorer: vi.fn().mockResolvedValue(true),
     showProjectResourceInFileExplorer: vi.fn().mockResolvedValue(true),
     getRecentProjects: vi.fn().mockResolvedValue([]),
-    getAppPreferences: vi.fn().mockResolvedValue({ scriptEditorTheme: 'light' }),
-    saveAppPreferences: vi.fn().mockResolvedValue({ scriptEditorTheme: 'light' }),
+    getAppPreferences: vi.fn().mockResolvedValue({
+      scriptEditorTheme: 'light',
+      coordinateUnit: 'gui',
+      childCoordinateOrigin: 'relative',
+      autoBankScriptFunctions: true
+    }),
+    saveAppPreferences: vi.fn().mockResolvedValue({
+      scriptEditorTheme: 'light',
+      coordinateUnit: 'gui',
+      childCoordinateOrigin: 'relative',
+      autoBankScriptFunctions: true
+    }),
     getRuntimePlatform: vi.fn().mockResolvedValue('win32'),
     getGbdkToolchainStatus: vi.fn().mockResolvedValue({
       installed: true,
@@ -44,7 +54,7 @@ Object.defineProperty(window, 'api', {
       executablePath: '/toolchains/gbdk/bin/lcc',
       version: null,
       source: 'development-root',
-      message: 'GBDK is available at /toolchains/gbdk.',
+      message: 'GBDK is available at /toolchains/gbdk.'
     }),
     installLatestGbdkToolchain: vi.fn().mockResolvedValue({
       installed: true,
@@ -55,7 +65,7 @@ Object.defineProperty(window, 'api', {
       message: 'Installed gbdk-4.5.0 to /toolchains/gbdk.',
       releaseTag: 'gbdk-4.5.0',
       assetName: 'gbdk-win64.zip',
-      replacedExisting: false,
+      replacedExisting: false
     }),
     getMakeToolchainStatus: vi.fn().mockResolvedValue({
       installed: true,
@@ -63,7 +73,7 @@ Object.defineProperty(window, 'api', {
       executablePath: '/toolchains/make/bin/make',
       version: '4.4.1',
       source: 'runtime-managed',
-      message: 'GNU Make is available at /toolchains/make/bin/make.',
+      message: 'GNU Make is available at /toolchains/make/bin/make.'
     }),
     installLatestMakeToolchain: vi.fn().mockResolvedValue({
       installed: true,
@@ -74,7 +84,7 @@ Object.defineProperty(window, 'api', {
       message: 'Installed GNU Make 4.4.1 to /toolchains/make.',
       releaseVersion: '4.4.1',
       archiveName: 'make-4.4.1.tar.gz',
-      replacedExisting: false,
+      replacedExisting: false
     }),
     loadProjectSaveData: vi.fn().mockResolvedValue({ entries: [] }),
     saveProjectSaveData: vi.fn().mockResolvedValue({ entries: [] }),
@@ -92,7 +102,7 @@ Object.defineProperty(window, 'api', {
       projectPath: '/projects/MockProject',
       currentPath: '',
       parentPath: null,
-      items: [],
+      items: []
     }),
     createProjectResource: vi.fn(),
     renameProjectResource: vi.fn(),
@@ -114,7 +124,7 @@ Object.defineProperty(window, 'api', {
       musicCount: 0,
       sceneCount: 0,
       actorScriptCount: 0,
-      sceneScriptCount: 0,
+      sceneScriptCount: 0
     }),
     buildAndCompileProject: vi.fn().mockResolvedValue({
       buildResult: {
@@ -127,12 +137,12 @@ Object.defineProperty(window, 'api', {
         musicCount: 0,
         sceneCount: 0,
         actorScriptCount: 0,
-        sceneScriptCount: 0,
+        sceneScriptCount: 0
       },
       compileResult: {
         romPath: 'obj/Example.gb',
-        outputSummary: 'Build complete.',
-      },
+        outputSummary: 'Build complete.'
+      }
     }),
     getProjectCodeSymbolIndex: vi.fn().mockResolvedValue({
       structs: [],
@@ -141,41 +151,52 @@ Object.defineProperty(window, 'api', {
       variables: [],
       macros: [],
       typeAliases: [],
-      sourceFilesScanned: 0,
+      sourceFilesScanned: 0
     }),
     getProjectCodeWorkspaceSnapshot: vi.fn().mockResolvedValue({
       workspaceRoot: '/workspace',
       files: [],
-      sourceFileCount: 0,
+      sourceFileCount: 0
     }),
     restoreDeletedProjectResource: vi.fn(),
     finalizeDeletedProjectResource: vi.fn().mockResolvedValue(true),
     onProjectAssetSaved: vi.fn(() => () => undefined),
     onProjectScriptSaved: vi.fn(() => () => undefined),
     onProjectTagsSaved: vi.fn(() => () => undefined),
-    onProjectBuildProgress: vi.fn((_listener: (payload: ProjectBuildProgressPayload) => void) => () => undefined),
+    onProjectBuildProgress: vi.fn((listener: (payload: ProjectBuildProgressPayload) => void) => {
+      void listener
+      return () => undefined
+    }),
     createProjectFolder: vi.fn(),
     renameProjectFolder: vi.fn(),
     deleteProjectFolder: vi.fn(),
     onEditorCloseRequested: vi.fn(() => () => undefined),
-    confirmEditorClose: vi.fn().mockResolvedValue(true),
-  },
-});
+    confirmEditorClose: vi.fn().mockResolvedValue(true)
+  }
+})
 
 class ResizeObserverMock {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe(): void {
+    return undefined
+  }
+
+  unobserve(): void {
+    return undefined
+  }
+
+  disconnect(): void {
+    return undefined
+  }
 }
 
 Object.defineProperty(window, 'ResizeObserver', {
   configurable: true,
   writable: true,
-  value: ResizeObserverMock,
-});
+  value: ResizeObserverMock
+})
 
 Object.defineProperty(globalThis, 'ResizeObserver', {
   configurable: true,
   writable: true,
-  value: ResizeObserverMock,
-});
+  value: ResizeObserverMock
+})

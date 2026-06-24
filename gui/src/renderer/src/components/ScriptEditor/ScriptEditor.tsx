@@ -70,6 +70,7 @@ export const ScriptEditor = (): ReactElement => {
   const [isEditorReady, setIsEditorReady] = useState(false)
   const [isRuntimeStartAllowed, setIsRuntimeStartAllowed] = useState(false)
   const [theme, setTheme] = useState<ScriptEditorTheme>('light')
+  const [autoBankScriptFunctions, setAutoBankScriptFunctions] = useState(true)
   const [hasLoadedThemePreference, setHasLoadedThemePreference] = useState(false)
 
   const isScriptBacked = projectPath.length > 0 && resourcePath.length > 0 && scriptKind !== null
@@ -79,15 +80,16 @@ export const ScriptEditor = (): ReactElement => {
   useEffect(() => {
     let isCancelled = false
 
-    const loadThemePreference = async (): Promise<void> => {
+    const loadEditorPreferences = async (): Promise<void> => {
       try {
         const preferences = await window.api.getAppPreferences()
 
         if (!isCancelled) {
           setTheme(preferences.scriptEditorTheme)
+          setAutoBankScriptFunctions(preferences.autoBankScriptFunctions)
         }
       } catch (error) {
-        console.warn('[script-editor] failed to load theme preference', error)
+        console.warn('[script-editor] failed to load editor preferences', error)
       } finally {
         if (!isCancelled) {
           setHasLoadedThemePreference(true)
@@ -95,7 +97,7 @@ export const ScriptEditor = (): ReactElement => {
       }
     }
 
-    void loadThemePreference()
+    void loadEditorPreferences()
 
     return () => {
       isCancelled = true
@@ -314,14 +316,27 @@ export const ScriptEditor = (): ReactElement => {
     setIsSaving(true)
 
     try {
+      let resolvedAutoBankScriptFunctions = autoBankScriptFunctions
+
+      try {
+        const preferences = await window.api.getAppPreferences()
+        resolvedAutoBankScriptFunctions = preferences.autoBankScriptFunctions
+        setAutoBankScriptFunctions(preferences.autoBankScriptFunctions)
+      } catch (error) {
+        console.warn('[script-editor] failed to refresh banking preference before save', error)
+      }
+
       const payload = await window.api.saveProjectScriptResource(
         projectPath,
         resourcePath,
         scriptKind,
         editableSourceContent,
-        headerContent
+        headerContent,
+        { autoBankScriptFunctions: resolvedAutoBankScriptFunctions }
       )
-      setSavedSnapshot(buildSnapshot(editableSourceContent, headerContent))
+      setEditableSourceContent(payload.editableSourceContent)
+      setHeaderContent(payload.headerContent)
+      setSavedSnapshot(buildSnapshot(payload.editableSourceContent, payload.headerContent))
       setStatusTone('info')
       setStatusMessage(`Saved ${PROJECT_SCRIPT_LABELS[payload.scriptKind].toLowerCase()}.`)
       return true
@@ -335,7 +350,15 @@ export const ScriptEditor = (): ReactElement => {
     } finally {
       setIsSaving(false)
     }
-  }, [editableSourceContent, headerContent, isScriptBacked, projectPath, resourcePath, scriptKind])
+  }, [
+    autoBankScriptFunctions,
+    editableSourceContent,
+    headerContent,
+    isScriptBacked,
+    projectPath,
+    resourcePath,
+    scriptKind
+  ])
 
   useEffect(() => {
     if (!isScriptBacked) {

@@ -8,6 +8,11 @@ import {
 import { buildResourceCreationMenuItems } from '../Docking/resourceCreationMenu'
 import { ResizablePaneLayout } from '../Layout/ResizablePaneLayout'
 import { AppMenuBar, AppMenuDefinition, AppMenuItem } from '../MenuBar/AppMenuBar'
+import {
+  DEFAULT_COORDINATE_MODEL_PREFERENCES,
+  type CoordinateModelPreferences,
+  normalizeCoordinateModelPreferences
+} from '../Preferences/coordinatePreferences'
 import { EditorClosePrompt } from '../ProjectAssets/EditorClosePrompt'
 import { SceneEditorWorkspace } from './SceneEditorWorkspace'
 import { MakeSetupGuideModal } from '../Toolchains/MakeSetupGuideModal'
@@ -30,6 +35,8 @@ interface ProjectDirectoryScanResult {
 }
 
 type WorkspaceStatusTone = 'error' | 'info'
+type BuildOperation = 'build' | 'build-and-compile'
+type UnsavedSceneBuildDecision = 'save' | 'discard' | 'cancel'
 
 interface WorkspaceStatus {
   tone: WorkspaceStatusTone
@@ -101,6 +108,52 @@ const formatBuildProgressMessage = (progress: ProjectBuildProgressPayload): stri
   }
 }
 
+interface UnsavedSceneBuildPromptProps {
+  sceneLabel: string
+  operation: BuildOperation
+  isBusy: boolean
+  onDecision: (decision: UnsavedSceneBuildDecision) => void
+}
+
+const UnsavedSceneBuildPrompt = ({
+  sceneLabel,
+  operation,
+  isBusy,
+  onDecision
+}: UnsavedSceneBuildPromptProps): ReactElement => {
+  const actionLabel = operation === 'build-and-compile' ? 'build and compile' : 'build'
+  const titleId = 'unsaved-scene-build-prompt-title'
+
+  return (
+    <div className="editor-modal-backdrop">
+      <div
+        className="editor-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
+        <h2 id={titleId}>Unsaved changes in &quot;{sceneLabel}&quot;</h2>
+        <p className="editor-modal-copy">
+          Save the open scene before continuing? If you proceed without saving, the {actionLabel}{' '}
+          will use the scene file currently on disk.
+        </p>
+
+        <div className="editor-modal-actions">
+          <button type="button" onClick={() => onDecision('cancel')} disabled={isBusy}>
+            Cancel
+          </button>
+          <button type="button" onClick={() => onDecision('discard')} disabled={isBusy}>
+            Proceed Without Saving
+          </button>
+          <button type="button" onClick={() => onDecision('save')} disabled={isBusy}>
+            Save and Proceed
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export const ProjectWorkspace = (): ReactElement => {
   const [searchParams] = useSearchParams()
   const projectName = searchParams.get('projectName') ?? 'Project Workspace'
@@ -110,7 +163,9 @@ export const ProjectWorkspace = (): ReactElement => {
   const [refreshVersion, setRefreshVersion] = useState(0)
   const [resourceManagerCurrentPath, setResourceManagerCurrentPath] = useState('')
   const [statusMessage, setStatusMessage] = useState<WorkspaceStatus | null>(null)
-  const [activeBuildOperation, setActiveBuildOperation] = useState<'build' | 'build-and-compile' | null>(null)
+  const [activeBuildOperation, setActiveBuildOperation] = useState<BuildOperation | null>(null)
+  const [pendingUnsavedSceneBuildOperation, setPendingUnsavedSceneBuildOperation] =
+    useState<BuildOperation | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [gbdkStatus, setGbdkStatus] = useState<GbdkToolchainStatus | null>(null)
   const [isInstallingGbdk, setIsInstallingGbdk] = useState(false)
@@ -119,6 +174,11 @@ export const ProjectWorkspace = (): ReactElement => {
   const [isRefreshingMakeStatus, setIsRefreshingMakeStatus] = useState(false)
   const [runtimePlatform, setRuntimePlatform] = useState<RuntimePlatform>('unknown')
   const [isMakeGuideOpen, setIsMakeGuideOpen] = useState(false)
+  const [coordinatePreferences, setCoordinatePreferences] = useState<CoordinateModelPreferences>(
+    DEFAULT_COORDINATE_MODEL_PREFERENCES
+  )
+  const [autoBankScriptFunctions, setAutoBankScriptFunctions] = useState(true)
+  const [hasLoadedCoordinatePreferences, setHasLoadedCoordinatePreferences] = useState(false)
 
   const showStatus = (tone: WorkspaceStatusTone, text: string): void => {
     setStatusMessage({ tone, text })
@@ -127,6 +187,48 @@ export const ProjectWorkspace = (): ReactElement => {
   const dismissStatus = useCallback((): void => {
     setStatusMessage(null)
   }, [])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadCoordinatePreferences = async (): Promise<void> => {
+      try {
+        const preferences = await window.api.getAppPreferences()
+
+        if (!isCancelled) {
+          setCoordinatePreferences(normalizeCoordinateModelPreferences(preferences))
+          setAutoBankScriptFunctions(preferences.autoBankScriptFunctions)
+        }
+      } catch (error) {
+        console.warn('[project-workspace] failed to load coordinate preferences', error)
+      } finally {
+        if (!isCancelled) {
+          setHasLoadedCoordinatePreferences(true)
+        }
+      }
+    }
+
+    void loadCoordinatePreferences()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hasLoadedCoordinatePreferences) {
+      return
+    }
+
+    void window.api
+      .saveAppPreferences({
+        ...coordinatePreferences,
+        autoBankScriptFunctions
+      })
+      .catch((error) => {
+        console.warn('[project-workspace] failed to save coordinate preferences', error)
+      })
+  }, [autoBankScriptFunctions, coordinatePreferences, hasLoadedCoordinatePreferences])
 
   const {
     activeScenePath,
@@ -184,7 +286,7 @@ export const ProjectWorkspace = (): ReactElement => {
   }, [loadRecentProjects])
 
   useEffect(() => {
-    const loadToolchainStatuses = async () => {
+    const loadToolchainStatuses = async (): Promise<void> => {
       try {
         setRuntimePlatform(await window.api.getRuntimePlatform())
       } catch (error) {
@@ -300,30 +402,68 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [projectPath])
 
-  const handleBuildProject = useCallback(async () => {
+  const executeBuildOperation = useCallback(async (operation: BuildOperation) => {
     if (!projectPath) {
       return
     }
 
-    setActiveBuildOperation('build')
+    setActiveBuildOperation(operation)
     setIsBusy(true)
     showStatus('info', 'Building project code...')
 
     try {
-      const result = await window.api.buildProjectCode(projectPath)
-      showStatus('info', formatBuildStatusMessage(result))
+      if (operation === 'build') {
+        const result = await window.api.buildProjectCode(projectPath, {
+          autoBankScriptFunctions
+        })
+        showStatus('info', formatBuildStatusMessage(result))
+      } else {
+        const result = await window.api.buildAndCompileProject(projectPath, {
+          autoBankScriptFunctions
+        })
+        showStatus(
+          'info',
+          `Built project code and compiled ${result.compileResult.romPath ?? 'the ROM output'}.`
+        )
+      }
+
       setRefreshVersion((currentVersion) => currentVersion + 1)
     } catch (error) {
-      console.error('[project-workspace] buildProjectCode failed', error)
+      console.error(
+        `[project-workspace] ${
+          operation === 'build' ? 'buildProjectCode' : 'buildAndCompileProject'
+        } failed`,
+        error
+      )
       showStatus(
         'error',
-        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.buildCode
+        error instanceof Error
+          ? error.message
+          : operation === 'build'
+            ? GENERIC_WORKSPACE_ERRORS.buildCode
+            : GENERIC_WORKSPACE_ERRORS.buildAndCompile
       )
     } finally {
       setActiveBuildOperation(null)
       setIsBusy(false)
     }
-  }, [projectPath])
+  }, [autoBankScriptFunctions, projectPath])
+
+  const handleBuildRequest = useCallback(
+    (operation: BuildOperation) => {
+      if (!projectPath) {
+        return
+      }
+
+      if (isSceneDirty) {
+        setPendingUnsavedSceneBuildOperation(operation)
+        return
+      }
+
+      void executeBuildOperation(operation)
+    },
+    [executeBuildOperation, isSceneDirty, projectPath]
+  )
 
   const handleOpenSaveDataEditor = useCallback(async () => {
     if (!projectPath) {
@@ -383,9 +523,8 @@ export const ProjectWorkspace = (): ReactElement => {
   }, [])
 
   const isInstallingToolchain = isInstallingGbdk || isInstallingMake
-  const isBuildDisabled =
-    isBusy || isInstallingToolchain || !projectPath || !Boolean(gbdkStatus?.installed)
-  const isBuildAndCompileDisabled = isBuildDisabled || !Boolean(makeStatus?.installed)
+  const isBuildDisabled = isBusy || isInstallingToolchain || !projectPath || !gbdkStatus?.installed
+  const isBuildAndCompileDisabled = isBuildDisabled || !makeStatus?.installed
 
   const handleOpenTagEditor = useCallback(async () => {
     if (!projectPath) {
@@ -398,36 +537,41 @@ export const ProjectWorkspace = (): ReactElement => {
       await window.api.openProjectTagEditor(projectPath)
     } catch (error) {
       console.error('[project-workspace] openProjectTagEditor failed', error)
-      showStatus('error', error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openTags)
-    } finally {
-      setIsBusy(false)
-    }
-  }, [projectPath])
-
-  const handleBuildAndCompileProject = useCallback(async () => {
-    if (!projectPath) {
-      return
-    }
-
-    setActiveBuildOperation('build-and-compile')
-    setIsBusy(true)
-    showStatus('info', 'Building project code...')
-
-    try {
-      const result = await window.api.buildAndCompileProject(projectPath)
-      showStatus('info', `Built project code and compiled ${result.compileResult.romPath ?? 'the ROM output'}.`)
-      setRefreshVersion((currentVersion) => currentVersion + 1)
-    } catch (error) {
-      console.error('[project-workspace] buildAndCompileProject failed', error)
       showStatus(
         'error',
-        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.buildAndCompile
+        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openTags
       )
     } finally {
-      setActiveBuildOperation(null)
       setIsBusy(false)
     }
   }, [projectPath])
+
+  const handleUnsavedSceneBuildDecision = useCallback(
+    async (decision: UnsavedSceneBuildDecision) => {
+      if (!pendingUnsavedSceneBuildOperation) {
+        return
+      }
+
+      if (decision === 'cancel') {
+        setPendingUnsavedSceneBuildOperation(null)
+        return
+      }
+
+      const buildOperation = pendingUnsavedSceneBuildOperation
+
+      if (decision === 'save') {
+        const didSave = await saveActiveScene()
+
+        if (!didSave) {
+          return
+        }
+      }
+
+      setPendingUnsavedSceneBuildOperation(null)
+      await executeBuildOperation(buildOperation)
+    },
+    [executeBuildOperation, pendingUnsavedSceneBuildOperation, saveActiveScene]
+  )
 
   useEffect(() => {
     if (!activeScenePath || !activeSceneDocument) {
@@ -538,6 +682,46 @@ export const ProjectWorkspace = (): ReactElement => {
         ]
       },
       {
+        id: 'preferences-menu',
+        label: 'Preferences',
+        items: [
+          {
+            id: 'display-gui-coordinate-units',
+            label: 'Display GUI pixel coordinates',
+            checked: coordinatePreferences.coordinateUnit === 'gui',
+            closeOnSelect: false,
+            onSelect: () => {
+              setCoordinatePreferences((currentPreferences) => ({
+                ...currentPreferences,
+                coordinateUnit: currentPreferences.coordinateUnit === 'gui' ? 'core' : 'gui'
+              }))
+            }
+          },
+          {
+            id: 'display-absolute-child-coordinates',
+            label: 'Display child coordinates as absolute',
+            checked: coordinatePreferences.childCoordinateOrigin === 'absolute',
+            closeOnSelect: false,
+            onSelect: () => {
+              setCoordinatePreferences((currentPreferences) => ({
+                ...currentPreferences,
+                childCoordinateOrigin:
+                  currentPreferences.childCoordinateOrigin === 'absolute' ? 'relative' : 'absolute'
+              }))
+            }
+          },
+          {
+            id: 'auto-bank-script-functions',
+            label: 'Auto-add BANKED to script functions',
+            checked: autoBankScriptFunctions,
+            closeOnSelect: false,
+            onSelect: () => {
+              setAutoBankScriptFunctions((currentValue) => !currentValue)
+            }
+          }
+        ]
+      },
+      {
         id: 'build-menu',
         label: 'Build',
         items: [
@@ -545,35 +729,30 @@ export const ProjectWorkspace = (): ReactElement => {
             id: 'build-project',
             label: 'Build',
             disabled: isBuildDisabled,
-            onSelect: () => void handleBuildProject()
+            onSelect: () => handleBuildRequest('build')
           },
           {
             id: 'build-and-compile-project',
             label: 'Build + Compile',
             disabled: isBuildAndCompileDisabled,
-            onSelect: () => void handleBuildAndCompileProject()
+            onSelect: () => handleBuildRequest('build-and-compile')
           }
         ]
       }
     ]
   }, [
+    autoBankScriptFunctions,
+    coordinatePreferences.childCoordinateOrigin,
+    coordinatePreferences.coordinateUnit,
     createMenuItems,
-    handleBuildAndCompileProject,
-    handleBuildProject,
+    handleBuildRequest,
     handleCloseProject,
-    handleInstallGbdk,
-    handleInstallMake,
     handleOpenSaveDataEditor,
     handleOpenTagEditor,
     handleOpenProject,
     handleOpenProjectInExplorer,
     handleScanProjectDirectory,
-    gbdkStatus?.installed,
-    makeStatus?.installed,
     isBusy,
-    isInstallingGbdk,
-    isInstallingMake,
-    isInstallingToolchain,
     isBuildAndCompileDisabled,
     isBuildDisabled,
     loadRecentProjects,
@@ -590,7 +769,20 @@ export const ProjectWorkspace = (): ReactElement => {
 
         <div className="project-workspace__project-summary">
           <strong>{projectName}</strong>
-          <span>{projectPath}</span>
+          {projectPath ? (
+            <button
+              type="button"
+              className="project-workspace__project-path-button"
+              onClick={() => void handleOpenProjectInExplorer()}
+              disabled={isBusy}
+              title="Open project in file explorer"
+              aria-label={`Open ${projectPath} in file explorer`}
+            >
+              {projectPath}
+            </button>
+          ) : (
+            <span>{projectPath}</span>
+          )}
         </div>
       </div>
 
@@ -601,10 +793,7 @@ export const ProjectWorkspace = (): ReactElement => {
         >
           <div className="project-workspace__status-main">
             {activeBuildOperation && statusMessage.tone === 'info' && (
-              <span
-                className="project-workspace__status-spinner"
-                aria-label="Build in progress"
-              />
+              <span className="project-workspace__status-spinner" aria-label="Build in progress" />
             )}
             <span className="project-workspace__status-text">{statusMessage.text}</span>
           </div>
@@ -628,7 +817,11 @@ export const ProjectWorkspace = (): ReactElement => {
             <strong>GBDK is missing</strong>
             <span>{gbdkStatus.installPath}</span>
           </div>
-          <button type="button" onClick={() => void handleInstallGbdk()} disabled={isBusy || isInstallingToolchain}>
+          <button
+            type="button"
+            onClick={() => void handleInstallGbdk()}
+            disabled={isBusy || isInstallingToolchain}
+          >
             {isInstallingGbdk ? 'Installing GBDK...' : 'Install GBDK'}
           </button>
         </div>
@@ -641,10 +834,18 @@ export const ProjectWorkspace = (): ReactElement => {
             <span>{makeStatus.installPath}</span>
           </div>
           <div className="project-workspace__toolchain-actions">
-            <button type="button" onClick={() => setIsMakeGuideOpen(true)} disabled={isBusy || isInstallingToolchain}>
+            <button
+              type="button"
+              onClick={() => setIsMakeGuideOpen(true)}
+              disabled={isBusy || isInstallingToolchain}
+            >
               Open Setup Guide
             </button>
-            <button type="button" onClick={() => void handleInstallMake()} disabled={isBusy || isInstallingToolchain}>
+            <button
+              type="button"
+              onClick={() => void handleInstallMake()}
+              disabled={isBusy || isInstallingToolchain}
+            >
               {isInstallingMake ? 'Installing GNU Make...' : 'Try Install Anyway'}
             </button>
           </div>
@@ -688,6 +889,7 @@ export const ProjectWorkspace = (): ReactElement => {
             onResourcesChanged={() => {
               setRefreshVersion((currentVersion) => currentVersion + 1)
             }}
+            coordinatePreferences={coordinatePreferences}
           />
         </ResizablePaneLayout>
       </div>
@@ -698,6 +900,17 @@ export const ProjectWorkspace = (): ReactElement => {
           isBusy={isSceneSaving || isSceneLoading}
           onCloseDecision={(decision) => {
             void handleSceneCloseDecision(decision)
+          }}
+        />
+      )}
+
+      {pendingUnsavedSceneBuildOperation && activeSceneLabel && (
+        <UnsavedSceneBuildPrompt
+          sceneLabel={activeSceneLabel}
+          operation={pendingUnsavedSceneBuildOperation}
+          isBusy={isSceneSaving}
+          onDecision={(decision) => {
+            void handleUnsavedSceneBuildDecision(decision)
           }}
         />
       )}

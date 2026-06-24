@@ -60,7 +60,6 @@ export const ResourceManagementGridItem = ({
       <div
         key={resource.path}
         className="resource-management-pane__item resource-management-pane__item--file"
-        role="listitem"
       >
         <span className="resource-management-pane__file-chip" aria-hidden="true">
           {formatFileBadge(resource)}
@@ -84,7 +83,6 @@ export const ResourceManagementGridItem = ({
           className={`${itemClassName} ${isSelected ? 'resource-management-pane__item--selected' : ''} ${
             isPendingCut ? 'resource-management-pane__item--cut' : ''
           }`}
-          role="listitem"
           onContextMenuCapture={() => onSelect(resource.path)}
         >
           {getResourceIcon(resource)}
@@ -122,7 +120,6 @@ export const ResourceManagementGridItem = ({
           className={`${itemClassName} ${isSelected ? 'resource-management-pane__item--selected' : ''} ${
             isPendingCut ? 'resource-management-pane__item--cut' : ''
           }`}
-          role="listitem"
           onClick={() => onSelect(resource.path)}
           onContextMenuCapture={() => onSelect(resource.path)}
           onDoubleClick={() => {

@@ -3,13 +3,20 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActorAssetDocument, SceneAssetDocument } from '../../../src/shared/projectAssets'
 import type { ProjectCodeSymbolIndex } from '../../../src/shared/projectCodeWorkspace'
+import { DEFAULT_COORDINATE_MODEL_PREFERENCES } from '../../../src/renderer/src/components/Preferences/coordinatePreferences'
 import { SceneEditorWorkspace } from '../../../src/renderer/src/components/ProjectWorkspace/SceneEditorWorkspace'
 
 const listProjectAssetsByKindMock = vi.fn()
 const listProjectScriptsByKindMock = vi.fn()
 
 vi.mock('../../../src/renderer/src/components/Layout/ResizablePaneLayout', () => ({
-  ResizablePaneLayout: ({ pane, children }: { pane: React.ReactNode; children: React.ReactNode }) => (
+  ResizablePaneLayout: ({
+    pane,
+    children
+  }: {
+    pane: React.ReactNode
+    children: React.ReactNode
+  }) => (
     <div>
       <div>{pane}</div>
       <div>{children}</div>
@@ -91,7 +98,11 @@ vi.mock('../../../src/renderer/src/components/SceneHierarchy/SceneInspectorPane'
       <div data-testid="tilemap-path">{String(props.editor.tilemapPath ?? '')}</div>
       <div data-testid="window-path">{String(props.editor.windowPath ?? '')}</div>
       <div data-testid="selected-sprite-path">
-        {String(props.editor.selectedNode?.type === 'actor' ? props.editor.selectedNode.spritePath ?? '' : '')}
+        {String(
+          props.editor.selectedNode?.type === 'actor'
+            ? (props.editor.selectedNode.spritePath ?? '')
+            : ''
+        )}
       </div>
       <div data-testid="selected-node-id">{String(props.editor.selectedNodeId ?? '')}</div>
       <button type="button" onClick={() => props.onRequestTilemapSelection()}>
@@ -117,7 +128,9 @@ vi.mock('../../../src/renderer/src/components/SceneHierarchy/SceneInspectorPane'
       </button>
       <button
         type="button"
-        onClick={() => props.onRequestActorAnimationPropertySelection('hero-node', 'idle_animation')}
+        onClick={() =>
+          props.onRequestActorAnimationPropertySelection('hero-node', 'idle_animation')
+        }
       >
         Pick Actor Animation
       </button>
@@ -363,8 +376,7 @@ const renderWorkspace = ({
   onSave?: ReturnType<typeof vi.fn>
   onStatus?: ReturnType<typeof vi.fn>
   onResourcesChanged?: ReturnType<typeof vi.fn>
-} = {}) => {
-
+} = {}): ReturnType<typeof render> => {
   return render(
     <SceneEditorWorkspace
       projectPath={projectPath}
@@ -379,6 +391,7 @@ const renderWorkspace = ({
       onSave={onSave}
       onStatus={onStatus}
       onResourcesChanged={onResourcesChanged}
+      coordinatePreferences={DEFAULT_COORDINATE_MODEL_PREFERENCES}
     />
   )
 }
@@ -539,74 +552,76 @@ describe('SceneEditorWorkspace', () => {
 
       return [{ kind: 'sprite', name: 'Hero Alt', path: 'Sprites/HeroAlt.rgbsprite.json' }]
     })
-    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(async (_projectPath, assetPath) => {
-      if (assetPath === 'Actors/Npc.rgbactor.json') {
-        return {
-          assetKind: 'actor',
-          resourcePath: assetPath,
-          document: createActorDocument()
-        }
-      }
-
-      if (assetPath === 'Sprites/HeroAlt.rgbsprite.json') {
-        return {
-          assetKind: 'sprite',
-          resourcePath: assetPath,
-          document: {
-            kind: 'sprite',
-            version: 1,
-            width: 8,
-            height: 8,
-            fps: 8,
-            is8x16Mode: false,
-            currentFrame: 0,
-            frames: [new Array(64).fill(1)],
-            palette: ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'],
-            selectedColor: 0
+    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(
+      async (_projectPath, assetPath) => {
+        if (assetPath === 'Actors/Npc.rgbactor.json') {
+          return {
+            assetKind: 'actor',
+            resourcePath: assetPath,
+            document: createActorDocument()
           }
         }
-      }
 
-      if (assetPath === 'Maps/Room.rgbtilemap.json') {
-        return {
-          assetKind: 'tilemap',
-          resourcePath: assetPath,
-          document: {
-            kind: 'tilemap',
-            version: 1,
-            width: 20,
-            height: 18,
-            tilesetPath: 'Tilesets/Room.rgbtileset.json',
-            tiles: []
+        if (assetPath === 'Sprites/HeroAlt.rgbsprite.json') {
+          return {
+            assetKind: 'sprite',
+            resourcePath: assetPath,
+            document: {
+              kind: 'sprite',
+              version: 1,
+              width: 8,
+              height: 8,
+              fps: 8,
+              is8x16Mode: false,
+              currentFrame: 0,
+              frames: [new Array(64).fill(1)],
+              palette: ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'],
+              selectedColor: 0
+            }
           }
         }
-      }
 
-      if (assetPath === 'Windows/Hud.rgbwindow.json') {
-        return {
-          assetKind: 'window',
-          resourcePath: assetPath,
-          document: {
-            kind: 'window',
-            version: 1,
-            width: 20,
-            height: 18,
-            tilesetPath: 'Tilesets/Ui.rgbtileset.json',
-            tileIndices: []
+        if (assetPath === 'Maps/Room.rgbtilemap.json') {
+          return {
+            assetKind: 'tilemap',
+            resourcePath: assetPath,
+            document: {
+              kind: 'tilemap',
+              version: 1,
+              width: 20,
+              height: 18,
+              tilesetPath: 'Tilesets/Room.rgbtileset.json',
+              tiles: []
+            }
           }
         }
-      }
 
-      if (assetPath === 'Actors/Npc.rgbactor.json') {
-        return {
-          assetKind: 'actor',
-          resourcePath: assetPath,
-          document: createActorDocument()
+        if (assetPath === 'Windows/Hud.rgbwindow.json') {
+          return {
+            assetKind: 'window',
+            resourcePath: assetPath,
+            document: {
+              kind: 'window',
+              version: 1,
+              width: 20,
+              height: 18,
+              tilesetPath: 'Tilesets/Ui.rgbtileset.json',
+              tileIndices: []
+            }
+          }
         }
-      }
 
-      throw new Error(`Unexpected asset load: ${assetPath}`)
-    })
+        if (assetPath === 'Actors/Npc.rgbactor.json') {
+          return {
+            assetKind: 'actor',
+            resourcePath: assetPath,
+            document: createActorDocument()
+          }
+        }
+
+        throw new Error(`Unexpected asset load: ${assetPath}`)
+      }
+    )
 
     renderWorkspace()
 
@@ -785,7 +800,9 @@ describe('SceneEditorWorkspace', () => {
 
   it('reports picker, script picker, symbol index, and drop errors', async () => {
     const onStatus = vi.fn()
-    vi.mocked(window.api.getProjectCodeSymbolIndex).mockRejectedValueOnce(new Error('symbols failed'))
+    vi.mocked(window.api.getProjectCodeSymbolIndex).mockRejectedValueOnce(
+      new Error('symbols failed')
+    )
     listProjectAssetsByKindMock.mockRejectedValueOnce(new Error('assets failed'))
     listProjectScriptsByKindMock
       .mockResolvedValueOnce([])

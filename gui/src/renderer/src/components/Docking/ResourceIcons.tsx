@@ -174,3 +174,19 @@ export const RetroFileIcon = ({ className }: ResourceIconProps): ReactElement =>
     </svg>
   )
 }
+
+export const RetroBackIcon = ({ className }: ResourceIconProps): ReactElement => {
+  return (
+    <svg className={className} viewBox="0 0 32 32" role="img" aria-hidden="true">
+      <path
+        d="M13 3 4 13h5v5c0 6 5 10 12 10h6v-7h-6c-3 0-5-1-5-4v-4h5L13 3Z"
+        fill="#0f380f"
+      />
+      <path
+        d="M13 7 8 12h4v6c0 5 4 7 9 7h3v-2h-3c-4 0-7-2-7-6v-5h3l-4-5Z"
+        fill="#9bbc0f"
+      />
+      <path d="M15 14h2v3c0 2 1 3 4 3h3v2h-3c-4 0-6-2-6-5v-3Z" fill="#306230" />
+    </svg>
+  )
+}

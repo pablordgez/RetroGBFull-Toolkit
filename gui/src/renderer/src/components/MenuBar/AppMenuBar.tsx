@@ -1,10 +1,18 @@
-import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from 'react'
+import {
+  type ReactElement,
+  MouseEvent as ReactMouseEvent,
+  useEffect,
+  useMemo,
+  useState
+} from 'react'
 import './AppMenuBar.css'
 
 export interface AppMenuItem {
   id?: string
   label: string
   disabled?: boolean
+  checked?: boolean
+  closeOnSelect?: boolean
   onSelect?: () => void
   children?: AppMenuItem[]
 }
@@ -44,7 +52,7 @@ interface AppMenuItemEntryProps {
   onItemSelect: (item: AppMenuItem) => void
 }
 
-const AppMenuItemEntry = ({ item, onItemSelect }: AppMenuItemEntryProps) => {
+const AppMenuItemEntry = ({ item, onItemSelect }: AppMenuItemEntryProps): ReactElement => {
   const itemHasChildren = hasChildren(item)
 
   return (
@@ -53,7 +61,8 @@ const AppMenuItemEntry = ({ item, onItemSelect }: AppMenuItemEntryProps) => {
         type="button"
         className="app-menu-bar__item-button"
         disabled={item.disabled}
-        role="menuitem"
+        role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+        aria-checked={item.checked === undefined ? undefined : item.checked}
         aria-haspopup={itemHasChildren ? 'menu' : undefined}
         onClick={() => {
           if (!itemHasChildren && !item.disabled) {
@@ -61,7 +70,15 @@ const AppMenuItemEntry = ({ item, onItemSelect }: AppMenuItemEntryProps) => {
           }
         }}
       >
-        <span>{item.label}</span>
+        <span className="app-menu-bar__item-label">
+          {item.checked !== undefined && (
+            <span
+              className={`app-menu-bar__checkbox${item.checked ? ' app-menu-bar__checkbox--checked' : ''}`}
+              aria-hidden="true"
+            />
+          )}
+          <span>{item.label}</span>
+        </span>
         {itemHasChildren && (
           <span className="app-menu-bar__caret" aria-hidden="true">
             {'>'}
@@ -78,21 +95,17 @@ const AppMenuItemEntry = ({ item, onItemSelect }: AppMenuItemEntryProps) => {
   )
 }
 
-const AppMenuList = ({ items, onItemSelect }: AppMenuListProps) => {
+const AppMenuList = ({ items, onItemSelect }: AppMenuListProps): ReactElement => {
   return (
     <div className="app-menu-bar__menu" role="menu">
       {items.map((item, index) => (
-        <AppMenuItemEntry
-          key={buildItemKey(item, index)}
-          item={item}
-          onItemSelect={onItemSelect}
-        />
+        <AppMenuItemEntry key={buildItemKey(item, index)} item={item} onItemSelect={onItemSelect} />
       ))}
     </div>
   )
 }
 
-export const AppMenuBar = ({ menus, className }: AppMenuBarProps) => {
+export const AppMenuBar = ({ menus, className }: AppMenuBarProps): ReactElement => {
   const [activeMenuIndex, setActiveMenuIndex] = useState<number | null>(null)
 
   useEffect(() => {
@@ -109,7 +122,7 @@ export const AppMenuBar = ({ menus, className }: AppMenuBarProps) => {
       return
     }
 
-    const handlePointerDown = (event: PointerEvent) => {
+    const handlePointerDown = (event: PointerEvent): void => {
       if (!(event.target instanceof Node)) {
         return
       }
@@ -121,13 +134,13 @@ export const AppMenuBar = ({ menus, className }: AppMenuBarProps) => {
       }
     }
 
-    const handleEscape = (event: KeyboardEvent) => {
+    const handleEscape = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         setActiveMenuIndex(null)
       }
     }
 
-    const handleWindowBlur = () => {
+    const handleWindowBlur = (): void => {
       setActiveMenuIndex(null)
     }
 
@@ -142,9 +155,12 @@ export const AppMenuBar = ({ menus, className }: AppMenuBarProps) => {
     }
   }, [activeMenuIndex])
 
-  const handleItemSelect = (item: AppMenuItem) => {
+  const handleItemSelect = (item: AppMenuItem): void => {
     item.onSelect?.()
-    setActiveMenuIndex(null)
+
+    if (item.closeOnSelect !== false) {
+      setActiveMenuIndex(null)
+    }
   }
 
   const activeMenu = useMemo(() => {

@@ -81,9 +81,13 @@ The shipped core includes placeholder values such as `NUMBER_OF_MAPS = 1` and `N
 
 The runtime uses more than one coordinate space:
 
-- actor and collider positions are subpixel coordinates with a ratio of 1:16
-- maps are in tile coordinates
-- the camera is in pixel coordinates, which it translates to tile coordinates for map scrolling
+- Actor and collider positions are subpixel coordinates with a ratio of 1:16. This means, in order to move something 1px in the screen, it must be moved 16 coordinates
+- Maps are in tile coordinates (1 tile coordinate is 8 pixels)
+- The camera is in pixel coordinates, which it translates to tile coordinates for map scrolling
+
+Note that:
+- Subpixel coordinates are, by default, represented with decimals in the GUI to display them as screen coordinates. This is not the case in the core, where larger integers are used instead of decimals. To calculate core coordinates, multiply GUI coordinates by 16. It's possible to adjust preferences to display core coordinates in the GUI.
+- In the GUI, by default, coordinates for actors or colliders that are children of actors are represented as relative to their parent. This is again only a convention and they are transformed to global coordinates when building. It's possible to adjust preferences to always display absolute coordinates.
 
 ## Boot order
 
