@@ -295,37 +295,38 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
     }
   }, [])
 
+  const canPasteClipboardResourceTo = useCallback(
+    (destinationParentPath: string) => {
+      if (
+        !projectPath ||
+        !clipboardResource ||
+        isInteractionDisabled ||
+        Boolean(pendingDeleteResource) ||
+        Boolean(editingResource)
+      ) {
+        return false
+      }
+
+      if (
+        clipboardResource.operation === 'cut' &&
+        clipboardResource.resourceType === 'script' &&
+        clipboardResource.scriptKind &&
+        !isProjectScriptPathWithinKindRoot(clipboardResource.scriptKind, destinationParentPath)
+      ) {
+        return false
+      }
+
+      return !(
+        clipboardResource.operation === 'cut' &&
+        clipboardResource.parentPath === destinationParentPath
+      )
+    },
+    [clipboardResource, editingResource, isInteractionDisabled, pendingDeleteResource, projectPath]
+  )
+
   const canPasteClipboardResource = useMemo(() => {
-    if (
-      !projectPath ||
-      !clipboardResource ||
-      isInteractionDisabled ||
-      Boolean(pendingDeleteResource) ||
-      Boolean(editingResource)
-    ) {
-      return false
-    }
-
-    if (
-      clipboardResource.operation === 'cut' &&
-      clipboardResource.resourceType === 'script' &&
-      clipboardResource.scriptKind &&
-      !isProjectScriptPathWithinKindRoot(clipboardResource.scriptKind, currentResourcePath)
-    ) {
-      return false
-    }
-
-    return !(
-      clipboardResource.operation === 'cut' && clipboardResource.parentPath === currentResourcePath
-    )
-  }, [
-    clipboardResource,
-    currentResourcePath,
-    editingResource,
-    isInteractionDisabled,
-    pendingDeleteResource,
-    projectPath
-  ])
+    return canPasteClipboardResourceTo(currentResourcePath)
+  }, [canPasteClipboardResourceTo, currentResourcePath])
 
   const placeClipboardResource = useCallback(
     (resource: ProjectResourceItem, operation: ResourceClipboardOperation) => {
@@ -361,151 +362,157 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
     }
   )
 
-  const handlePasteClipboardResource = useCallback(async () => {
-    if (!projectPath || !clipboardResource || !canPasteClipboardResource) {
-      return
-    }
-
-    const destinationParentPath = currentResourcePath
-    setIsBusy(true)
-
-    try {
-      const transferMode = clipboardResource.operation === 'copy' ? 'copy' : 'move'
-      const result = await window.api.transferProjectResource(
-        projectPath,
-        clipboardResource.resourceType,
-        clipboardResource.resourcePath,
-        destinationParentPath,
-        transferMode
-      )
-
-      if (clipboardResource.operation === 'copy') {
-        let deletionId: string | null = null
-
-        record({
-          undo: async () => {
-            const deletedResult = await window.api.deleteProjectResource(
-              projectPath,
-              result.resourceType,
-              result.resourcePath,
-              deletionId ?? undefined
-            )
-            deletionId = deletedResult.deletionId
-            applyResourceMutation(deletedResult)
-            notifyResourceMutation({
-              action: 'delete',
-              resourceType: result.resourceType,
-              resourcePath: deletedResult.resourcePath
-            })
-          },
-          redo: async () => {
-            if (deletionId) {
-              const restoredResult = await window.api.restoreDeletedProjectResource(
-                projectPath,
-                deletionId
-              )
-              applyResourceMutation(restoredResult)
-              notifyResourceMutation({
-                action: 'restore',
-                resourceType: restoredResult.resourceType,
-                resourcePath: restoredResult.resourcePath
-              })
-              return
-            }
-
-            const redoneResult = await window.api.transferProjectResource(
-              projectPath,
-              clipboardResource.resourceType,
-              clipboardResource.resourcePath,
-              destinationParentPath,
-              'copy'
-            )
-            applyResourceMutation(redoneResult)
-            notifyResourceMutation({
-              action: 'copy',
-              resourceType: redoneResult.resourceType,
-              resourcePath: redoneResult.resourcePath,
-              previousResourcePath: clipboardResource.resourcePath
-            })
-          },
-          dispose: async () => {
-            if (!deletionId) {
-              return
-            }
-
-            await window.api.finalizeDeletedProjectResource(projectPath, deletionId)
-          }
-        })
-      } else {
-        const sourceResourcePath = clipboardResource.resourcePath
-        const sourceParentPath = clipboardResource.parentPath
-        const destinationResourcePath = result.resourcePath
-
-        record({
-          undo: async () => {
-            const revertedResult = await window.api.transferProjectResource(
-              projectPath,
-              clipboardResource.resourceType,
-              destinationResourcePath,
-              sourceParentPath,
-              'move'
-            )
-            applyResourceMutation(revertedResult)
-            notifyResourceMutation({
-              action: 'move',
-              resourceType: clipboardResource.resourceType,
-              resourcePath: revertedResult.resourcePath,
-              previousResourcePath: destinationResourcePath
-            })
-          },
-          redo: async () => {
-            const redoneResult = await window.api.transferProjectResource(
-              projectPath,
-              clipboardResource.resourceType,
-              sourceResourcePath,
-              destinationParentPath,
-              'move'
-            )
-            applyResourceMutation(redoneResult)
-            notifyResourceMutation({
-              action: 'move',
-              resourceType: clipboardResource.resourceType,
-              resourcePath: redoneResult.resourcePath,
-              previousResourcePath: sourceResourcePath
-            })
-          }
-        })
-
-        setClipboardResource(null)
+  const handlePasteClipboardResource = useCallback(
+    async (destinationParentPath = currentResourcePath) => {
+      if (
+        !projectPath ||
+        !clipboardResource ||
+        !canPasteClipboardResourceTo(destinationParentPath)
+      ) {
+        return
       }
 
-      applyResourceMutation(result)
-      setSelectedResourcePath(result.resourcePath)
-      notifyResourceMutation({
-        action: clipboardResource.operation === 'copy' ? 'copy' : 'move',
-        resourceType: result.resourceType,
-        resourcePath: result.resourcePath,
-        previousResourcePath: clipboardResource.resourcePath
-      })
-    } catch (error) {
-      console.error('[resource-management-pane] transferProjectResource failed', error)
-      showErrorStatus(
-        getFriendlyErrorMessage(
-          error,
-          'Something went wrong while pasting the resource. Please try again.'
+      setIsBusy(true)
+
+      try {
+        const transferMode = clipboardResource.operation === 'copy' ? 'copy' : 'move'
+        const result = await window.api.transferProjectResource(
+          projectPath,
+          clipboardResource.resourceType,
+          clipboardResource.resourcePath,
+          destinationParentPath,
+          transferMode
         )
-      )
-    } finally {
-      setIsBusy(false)
-    }
-  }, [
-    canPasteClipboardResource,
-    clipboardResource,
-    currentResourcePath,
-    notifyResourceMutation,
-    projectPath,
-    record
-  ])
+
+        if (clipboardResource.operation === 'copy') {
+          let deletionId: string | null = null
+
+          record({
+            undo: async () => {
+              const deletedResult = await window.api.deleteProjectResource(
+                projectPath,
+                result.resourceType,
+                result.resourcePath,
+                deletionId ?? undefined
+              )
+              deletionId = deletedResult.deletionId
+              applyResourceMutation(deletedResult)
+              notifyResourceMutation({
+                action: 'delete',
+                resourceType: result.resourceType,
+                resourcePath: deletedResult.resourcePath
+              })
+            },
+            redo: async () => {
+              if (deletionId) {
+                const restoredResult = await window.api.restoreDeletedProjectResource(
+                  projectPath,
+                  deletionId
+                )
+                applyResourceMutation(restoredResult)
+                notifyResourceMutation({
+                  action: 'restore',
+                  resourceType: restoredResult.resourceType,
+                  resourcePath: restoredResult.resourcePath
+                })
+                return
+              }
+
+              const redoneResult = await window.api.transferProjectResource(
+                projectPath,
+                clipboardResource.resourceType,
+                clipboardResource.resourcePath,
+                destinationParentPath,
+                'copy'
+              )
+              applyResourceMutation(redoneResult)
+              notifyResourceMutation({
+                action: 'copy',
+                resourceType: redoneResult.resourceType,
+                resourcePath: redoneResult.resourcePath,
+                previousResourcePath: clipboardResource.resourcePath
+              })
+            },
+            dispose: async () => {
+              if (!deletionId) {
+                return
+              }
+
+              await window.api.finalizeDeletedProjectResource(projectPath, deletionId)
+            }
+          })
+        } else {
+          const sourceResourcePath = clipboardResource.resourcePath
+          const sourceParentPath = clipboardResource.parentPath
+          const destinationResourcePath = result.resourcePath
+
+          record({
+            undo: async () => {
+              const revertedResult = await window.api.transferProjectResource(
+                projectPath,
+                clipboardResource.resourceType,
+                destinationResourcePath,
+                sourceParentPath,
+                'move'
+              )
+              applyResourceMutation(revertedResult)
+              notifyResourceMutation({
+                action: 'move',
+                resourceType: clipboardResource.resourceType,
+                resourcePath: revertedResult.resourcePath,
+                previousResourcePath: destinationResourcePath
+              })
+            },
+            redo: async () => {
+              const redoneResult = await window.api.transferProjectResource(
+                projectPath,
+                clipboardResource.resourceType,
+                sourceResourcePath,
+                destinationParentPath,
+                'move'
+              )
+              applyResourceMutation(redoneResult)
+              notifyResourceMutation({
+                action: 'move',
+                resourceType: clipboardResource.resourceType,
+                resourcePath: redoneResult.resourcePath,
+                previousResourcePath: sourceResourcePath
+              })
+            }
+          })
+
+          setClipboardResource(null)
+        }
+
+        applyResourceMutation(result)
+        setSelectedResourcePath(result.resourcePath)
+        notifyResourceMutation({
+          action: clipboardResource.operation === 'copy' ? 'copy' : 'move',
+          resourceType: result.resourceType,
+          resourcePath: result.resourcePath,
+          previousResourcePath: clipboardResource.resourcePath
+        })
+      } catch (error) {
+        console.error('[resource-management-pane] transferProjectResource failed', error)
+        showErrorStatus(
+          getFriendlyErrorMessage(
+            error,
+            'Something went wrong while pasting the resource. Please try again.'
+          )
+        )
+      } finally {
+        setIsBusy(false)
+      }
+    },
+    [
+      canPasteClipboardResourceTo,
+      clipboardResource,
+      currentResourcePath,
+      notifyResourceMutation,
+      projectPath,
+      record
+    ]
+  )
 
   useEffect(() => {
     if (!projectPath) {
@@ -1195,7 +1202,7 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
             clipboardResource={clipboardResource}
             selectedResourcePath={selectedResourcePath}
             isInteractionDisabled={isInteractionDisabled}
-            canPasteClipboardResource={canPasteClipboardResource}
+            canPasteClipboardResourceTo={canPasteClipboardResourceTo}
             renameInputRef={renameInputRef}
             shortcutLabels={shortcutLabels}
             startingScenePath={startingScenePath}

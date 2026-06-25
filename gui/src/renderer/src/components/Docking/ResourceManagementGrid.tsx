@@ -26,7 +26,7 @@ interface ResourceManagementGridProps {
   clipboardResource: ResourceClipboardState | null
   selectedResourcePath: string | null
   isInteractionDisabled: boolean
-  canPasteClipboardResource: boolean
+  canPasteClipboardResourceTo: (destinationParentPath: string) => boolean
   renameInputRef: RefObject<HTMLInputElement | null>
   shortcutLabels: {
     copy: string
@@ -43,7 +43,7 @@ interface ResourceManagementGridProps {
     resource: ProjectResourceItem,
     operation: ResourceClipboardOperation
   ) => void
-  onPasteClipboardResource: () => void | Promise<void>
+  onPasteClipboardResource: (destinationParentPath?: string) => void | Promise<void>
   onShowResourceInFileExplorer: (resource: ProjectResourceItem) => void | Promise<void>
   onSetStartingScene: (scenePath: string | null, sceneName: string | null) => void | Promise<void>
   onBeginResourceEditing: (
@@ -63,7 +63,7 @@ export const ResourceManagementGrid = ({
   clipboardResource,
   selectedResourcePath,
   isInteractionDisabled,
-  canPasteClipboardResource,
+  canPasteClipboardResourceTo,
   renameInputRef,
   shortcutLabels,
   startingScenePath,
@@ -99,13 +99,17 @@ export const ResourceManagementGrid = ({
       disabled: isInteractionDisabled,
       onSelect: () => onPlaceClipboardResource(resource, 'cut')
     },
-    {
-      id: `paste-${resource.path}`,
-      label: 'Paste',
-      shortcutLabel: shortcutLabels.paste,
-      disabled: !canPasteClipboardResource,
-      onSelect: () => void onPasteClipboardResource()
-    },
+    ...(resource.type === 'folder'
+      ? [
+          {
+            id: `paste-${resource.path}`,
+            label: 'Paste',
+            shortcutLabel: shortcutLabels.paste,
+            disabled: !canPasteClipboardResourceTo(resource.path),
+            onSelect: () => void onPasteClipboardResource(resource.path)
+          } satisfies ContextMenuOption
+        ]
+      : []),
     {
       id: `show-in-file-explorer-${resource.path}`,
       label: 'Show In File Explorer',

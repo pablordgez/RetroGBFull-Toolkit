@@ -389,4 +389,41 @@ describe('<ResourceManagementPane /> integration', () => {
       expect(window.api.restoreDeletedProjectResource).toHaveBeenCalledWith(PROJECT_PATH, 'delete-copy')
     })
   })
+
+  it('shows paste only on folders and pastes into the right-clicked folder', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue(
+      createView([fileResource('Hero', 'Hero.rgbsprite.json', 'sprite'), folderResource('Sprites')])
+    )
+    vi.mocked(window.api.transferProjectResource).mockResolvedValue({
+      resourceType: 'sprite',
+      resourcePath: 'Sprites/Hero Copy.rgbsprite.json',
+      resourceName: 'Hero Copy',
+      parentPath: 'Sprites',
+      view: createView([
+        fileResource('Hero', 'Hero.rgbsprite.json', 'sprite'),
+        folderResource('Sprites')
+      ])
+    })
+
+    renderPane()
+    fireEvent.click(await getResourceButton('Hero'))
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true })
+
+    await openResourceMenu('Hero')
+    expect(screen.queryByRole('menuitem', { name: 'Paste' })).not.toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    await openResourceMenu('Sprites')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Paste' }))
+
+    await waitFor(() => {
+      expect(window.api.transferProjectResource).toHaveBeenCalledWith(
+        PROJECT_PATH,
+        'sprite',
+        'Hero.rgbsprite.json',
+        'Sprites',
+        'copy'
+      )
+    })
+  })
 })
