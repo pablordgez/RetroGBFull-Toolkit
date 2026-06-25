@@ -217,6 +217,7 @@ export const TilesetEditor = () => {
                     ref={tilesetRef} 
                     onSelectTile={handleSelectTile}
                     onRemoveTile={handleRemoveTile}
+                    selectedIndex={selectedTileIndex}
                     className="sidebar-tileset"
                 />
                 

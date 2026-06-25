@@ -136,6 +136,34 @@ describe('project asset editors', () => {
     expect(screen.queryByRole('button', { name: 'EXPORT DATA' })).not.toBeInTheDocument()
   })
 
+  it('syncs the tileset sidebar selection with the loaded selected tile', async () => {
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue({
+      assetKind: 'tileset',
+      resourcePath: 'Tilesets/Main.rgbtileset.json',
+      document: {
+        kind: 'tileset',
+        version: 1,
+        tiles: [new Array(64).fill(0), new Array(64).fill(1)],
+        palette: ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'],
+        selectedColor: 3,
+        selectedTileIndex: 1
+      }
+    })
+
+    renderEditor(
+      '/tileset-editor?projectPath=%2Fprojects%2FAlpha&assetPath=Tilesets%2FMain.rgbtileset.json',
+      <TilesetEditor />
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Tile 1')).toHaveClass('selected')
+    })
+    expect(screen.getByTitle('Tile 0')).not.toHaveClass('selected')
+
+    fireEvent.click(screen.getByTitle('Tile 1'))
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+  })
+
   it('prompts to save sprite changes before closing an edited asset', async () => {
     let closeListener: (() => void) | undefined
 
