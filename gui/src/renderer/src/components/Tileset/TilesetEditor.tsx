@@ -273,6 +273,7 @@ export const TilesetEditor = () => {
                 style={{ overflow: 'hidden', backgroundColor: '#202020' }}
             >
                 <PixelCanvas
+                    testId="tileset-editor-canvas"
                     grid={currentGrid}
                     width={width}
                     height={height}

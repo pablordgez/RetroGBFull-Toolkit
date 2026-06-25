@@ -6,3 +6,5 @@ docs/node_modules/
 docs/.docusaurus/
 docs/build/
 docs/.vercel/
+gui/test-results/
+gui/playwright-report/

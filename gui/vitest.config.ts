@@ -5,7 +5,7 @@ export default defineConfig(mergeConfig(sharedConfig, {
   test: {
     // Include all tests EXCEPT integration
     include: ['tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    exclude: ['tests/integration/**', 'node_modules/**'],
+    exclude: ['tests/integration/**', 'tests/e2e/**', 'node_modules/**'],
     // Coverage-instrumented filesystem tests in the main process regularly exceed 5s on Windows.
     testTimeout: 20000,
     coverage: {

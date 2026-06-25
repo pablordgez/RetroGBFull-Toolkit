@@ -103,6 +103,10 @@ const getPackagedRendererRoot = (): string => {
   return resolve(__dirname, '../renderer')
 }
 
+const getExternalDevRendererUrl = (): string | null => {
+  return is.dev ? (process.env['ELECTRON_RENDERER_URL'] ?? null) : null
+}
+
 const buildRendererWindowUrl = (hash = ''): string => {
   if (!packagedRendererServerOrigin) {
     throw new Error('Packaged renderer server has not started.')
@@ -401,8 +405,10 @@ const createAppWindow = (hash: string, options?: AppWindowOptions): BrowserWindo
     }
   })
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    appWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#${hash}`)
+  const externalDevRendererUrl = getExternalDevRendererUrl()
+
+  if (externalDevRendererUrl) {
+    appWindow.loadURL(`${externalDevRendererUrl}#${hash}`)
   } else {
     appWindow.loadURL(buildRendererWindowUrl(hash))
   }
@@ -535,8 +541,10 @@ function createWindow(): void {
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  const externalDevRendererUrl = getExternalDevRendererUrl()
+
+  if (externalDevRendererUrl) {
+    mainWindow.loadURL(externalDevRendererUrl)
   } else {
     mainWindow.loadURL(buildRendererWindowUrl('/'))
   }
@@ -609,7 +617,7 @@ app.whenReady().then(async () => {
 
   enableCrossOriginIsolationHeaders()
 
-  if (!is.dev) {
+  if (!getExternalDevRendererUrl()) {
     await startPackagedRendererServer()
   }
 

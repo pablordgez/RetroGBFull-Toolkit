@@ -23,13 +23,14 @@ interface PixelCanvasProps {
     onPixelInput: (x: number, y: number, type: 'down' | 'move' | 'up' | 'leave', button: number) => void;
     onPan: (dx: number, dy: number) => void;
     onZoom: (factor: number, centerX: number, centerY: number) => void;
+    testId?: string;
 }
 
 export const PixelCanvas: React.FC<PixelCanvasProps> = ({
     grid, width, height, palette, tileset,
     transparentColor, transparencyGridBackground, backgroundColor, gridColor, majorGridColor, gridSize, eraserIndex,
     viewportSize, scale, pan,
-    onPixelInput, onPan, onZoom
+    onPixelInput, onPan, onZoom, testId
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const isPanning = useRef(false);
@@ -128,6 +129,7 @@ export const PixelCanvas: React.FC<PixelCanvasProps> = ({
     return (
         <canvas
             ref={canvasRef}
+            data-testid={testId}
             width={viewportSize.w}
             height={viewportSize.h}
             onMouseDown={handleMouseDown}

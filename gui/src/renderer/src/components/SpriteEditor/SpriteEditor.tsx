@@ -344,6 +344,7 @@ export const SpriteEditor = () => {
                 style={{ overflow: 'hidden', backgroundColor: '#202020' }}
             >
                 <PixelCanvas
+                    testId="sprite-editor-canvas"
                     grid={grid}
                     width={width}
                     height={height}

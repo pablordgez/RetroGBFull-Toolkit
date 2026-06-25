@@ -924,6 +924,7 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
         style={{ overflow: 'hidden', backgroundColor: '#202020' }}
       >
         <PixelCanvas
+          testId={`${assetKind}-editor-canvas`}
           grid={grid}
           width={mapWidth}
           height={mapHeight}
