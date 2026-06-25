@@ -241,6 +241,7 @@ export const TilesetEditor = () => {
                     selectedColor={selectedColor}
                     onSelect={setSelectedColor}
                     onReorder={setPalette}
+                    showTransparentIndexHint={false}
                 />
 
                 <div className="toolbox">

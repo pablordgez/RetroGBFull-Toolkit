@@ -5,9 +5,16 @@ interface PaletteProps {
     selectedColor: number;
     onSelect: (colorIndex: number) => void;
     onReorder: (newColors: string[]) => void; 
+    showTransparentIndexHint?: boolean;
 }
 
-export const Palette: React.FC<PaletteProps> = ({ colors, selectedColor, onSelect, onReorder }) => {
+export const Palette: React.FC<PaletteProps> = ({
+    colors,
+    selectedColor,
+    onSelect,
+    onReorder,
+    showTransparentIndexHint = true
+}) => {
 
     // When we start dragging we register the index of the color being dragged in the event's dataTransfer object
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
@@ -64,7 +71,12 @@ export const Palette: React.FC<PaletteProps> = ({ colors, selectedColor, onSelec
                 ))}
             </div>
             <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '0.8em', opacity: 0.7 }}>
-                Drag to reorder.<br/>Index 0 is transparent.
+                Drag to reorder.
+                {showTransparentIndexHint && (
+                    <>
+                        <br/>Index 0 is transparent.
+                    </>
+                )}
             </div>
         </div>
     );
