@@ -113,3 +113,5 @@ Header: `core/src/Camera/Camera.h`
 ### Behavior notes
 
 - Camera movement streams only the newly visible tile row or column.
+- Configure camera deadzones on the actor that has **Follow camera** enabled in the scene editor. The actor properties expose `Left`, `Right`, `Top`, and `Bottom` deadzone margins in pixels. Generated scene initialization writes those values into `deadzone_left`, `deadzone_right`, `deadzone_top`, and `deadzone_bottom` before marking the actor as followed, and the scene viewport preview uses the same values when drawing the screen outline.
+- If no custom values are set, each deadzone margin defaults to `20` pixels.

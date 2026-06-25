@@ -1,5 +1,6 @@
 import { DEFAULT_GB_PALETTE } from './projectPalettes'
 import {
+  DEFAULT_SCENE_CAMERA_DEADZONE,
   DEFAULT_SCENE_ACTOR_PHYSICS_MODE,
   type ProjectAssetDocument,
   type ProjectAssetKind,
@@ -17,6 +18,7 @@ export const createDefaultSceneActorNode = (name = 'Actor'): SceneAssetActorNode
     y: 0,
     physicsMode: DEFAULT_SCENE_ACTOR_PHYSICS_MODE,
     followCamera: false,
+    cameraDeadzone: { ...DEFAULT_SCENE_CAMERA_DEADZONE },
     spritePaletteIndex: 0,
     children: []
   }

@@ -9,6 +9,7 @@ import {
   MUSIC_NOTE_COUNT,
   MUSIC_NOTE_REST,
   MUSIC_PATTERN_LENGTH,
+  normalizeSceneCameraDeadzone,
   type ActorAssetDocument,
   type MusicChannelKey,
   type MusicStep,
@@ -334,7 +335,8 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
     physicsMode: isSceneActorPhysicsMode(value.physicsMode)
       ? value.physicsMode
       : DEFAULT_SCENE_ACTOR_PHYSICS_MODE,
-    followCamera: typeof value.followCamera === 'boolean' ? value.followCamera : false
+    followCamera: typeof value.followCamera === 'boolean' ? value.followCamera : false,
+    cameraDeadzone: normalizeSceneCameraDeadzone(value.cameraDeadzone)
   }
 }
 

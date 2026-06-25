@@ -1,15 +1,16 @@
 import { ProjectLauncherError } from './projectLauncher'
 import type { ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
-import type {
-  SceneActorPhysicsMode,
-  SceneAssetCollisionNode,
-  SceneAssetDocument,
-  SceneAssetNode,
-  SpriteAssetDocument,
-  TilemapAssetDocument,
-  TilesetAssetDocument,
-  WindowAssetDocument
+import {
+  normalizeSceneCameraDeadzone,
+  type SceneActorPhysicsMode,
+  type SceneAssetCollisionNode,
+  type SceneAssetDocument,
+  type SceneAssetNode,
+  type SpriteAssetDocument,
+  type TilemapAssetDocument,
+  type TilesetAssetDocument,
+  type WindowAssetDocument
 } from '../shared/projectAssets'
 import { buildProjectTagEnumName, type ProjectTagEntry } from '../shared/projectTags'
 import {
@@ -310,6 +311,11 @@ export const createNodeEmitter = (
     }
 
     if (node.followCamera) {
+      const cameraDeadzone = normalizeSceneCameraDeadzone(node.cameraDeadzone)
+      lines.push(`    deadzone_left = ${cameraDeadzone.left};`)
+      lines.push(`    deadzone_right = ${cameraDeadzone.right};`)
+      lines.push(`    deadzone_top = ${cameraDeadzone.top};`)
+      lines.push(`    deadzone_bottom = ${cameraDeadzone.bottom};`)
       lines.push(`    ${actorVariable}->followed = 1;`)
     }
 

@@ -1,8 +1,9 @@
-import type {
-  SceneAssetActorNode,
-  SceneAssetCollisionCallback,
-  SceneAssetCollisionNode,
-  SceneAssetNode
+import {
+  normalizeSceneCameraDeadzone,
+  type SceneAssetActorNode,
+  type SceneAssetCollisionCallback,
+  type SceneAssetCollisionNode,
+  type SceneAssetNode
 } from '../../../../shared/projectAssets'
 import type {
   ScriptPropertyMap,
@@ -283,7 +284,13 @@ export const buildActorUpdateChange = (
   nextValues: Partial<
     Pick<
       SceneAssetActorNode,
-      'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode' | 'spritePaletteIndex'
+      | 'x'
+      | 'y'
+      | 'spritePath'
+      | 'scriptPath'
+      | 'physicsMode'
+      | 'spritePaletteIndex'
+      | 'cameraDeadzone'
     >
   >
 ): SceneNodeChange | null => {
@@ -295,8 +302,19 @@ export const buildActorUpdateChange = (
 
   const nextActor: SceneAssetActorNode = {
     ...actor,
-    ...nextValues
+    ...nextValues,
+    cameraDeadzone:
+      nextValues.cameraDeadzone !== undefined
+        ? normalizeSceneCameraDeadzone(nextValues.cameraDeadzone)
+        : actor.cameraDeadzone
   }
+  const nextDeadzone = normalizeSceneCameraDeadzone(nextActor.cameraDeadzone)
+  const currentDeadzone = normalizeSceneCameraDeadzone(actor.cameraDeadzone)
+  const didDeadzoneChange =
+    nextDeadzone.left !== currentDeadzone.left ||
+    nextDeadzone.right !== currentDeadzone.right ||
+    nextDeadzone.top !== currentDeadzone.top ||
+    nextDeadzone.bottom !== currentDeadzone.bottom
 
   if (
     nextActor.x === actor.x &&
@@ -304,7 +322,8 @@ export const buildActorUpdateChange = (
     nextActor.spritePath === actor.spritePath &&
     nextActor.scriptPath === actor.scriptPath &&
     nextActor.physicsMode === actor.physicsMode &&
-    nextActor.spritePaletteIndex === actor.spritePaletteIndex
+    nextActor.spritePaletteIndex === actor.spritePaletteIndex &&
+    !didDeadzoneChange
   ) {
     return null
   }
@@ -330,7 +349,8 @@ export const buildActorUpdateChange = (
         scriptPath: nextActor.scriptPath,
         physicsMode: nextActor.physicsMode,
         spritePaletteIndex: nextActor.spritePaletteIndex,
-        followCamera: nextActor.followCamera
+        followCamera: nextActor.followCamera,
+        cameraDeadzone: nextDeadzone
       }
     }),
     selectedNodeId: nodeId
@@ -536,7 +556,8 @@ export const buildCollisionExitCallbacksChange = (
   nodes: SceneAssetNode[],
   nodeId: string,
   callbacks: SceneAssetCollisionCallback[]
-): SceneNodeChange | null => buildCollisionCallbackListChange(nodes, nodeId, callbacks, 'exitCallbacks')
+): SceneNodeChange | null =>
+  buildCollisionCallbackListChange(nodes, nodeId, callbacks, 'exitCallbacks')
 
 const buildCollisionCallbackListChange = (
   nodes: SceneAssetNode[],

@@ -38,7 +38,13 @@ describe('projectAssets scene parsing', () => {
     expect(document.nodes[0]).toMatchObject({
       type: 'actor',
       physicsMode: 'balanced',
-      followCamera: false
+      followCamera: false,
+      cameraDeadzone: {
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: 20
+      }
     })
   })
 
@@ -147,6 +153,12 @@ describe('projectAssets scene parsing', () => {
           y: 0,
           physicsMode: 'highFidelity',
           followCamera: false,
+          cameraDeadzone: {
+            left: -1,
+            right: 999,
+            top: 12.8,
+            bottom: 30
+          },
           children: [
             {
               id: 'hero-collision',
@@ -173,6 +185,15 @@ describe('projectAssets scene parsing', () => {
 
     expect(sceneDocument.nodes[0]).toMatchObject({ type: 'actor', tags: ['player', 'spawn'] })
     expect(sceneDocument.nodes[0]).toMatchObject({ type: 'actor', physicsMode: 'highFidelity' })
+    expect(sceneDocument.nodes[0]).toMatchObject({
+      type: 'actor',
+      cameraDeadzone: {
+        left: 0,
+        right: 160,
+        top: 12,
+        bottom: 30
+      }
+    })
     expect(actorDocument.root.children[0]).toMatchObject({
       type: 'collision',
       tags: ['hurtbox']
@@ -272,7 +293,9 @@ describe('projectAssets scene parsing', () => {
       }
     }) as ActorAssetDocument
 
-    expect(serializeProjectAssetDocument(sceneDocument)).toContain('"resourcePath": "Actors/Hero.rgbactor.json"')
+    expect(serializeProjectAssetDocument(sceneDocument)).toContain(
+      '"resourcePath": "Actors/Hero.rgbactor.json"'
+    )
     expect(serializeProjectAssetDocument(actorDocument)).not.toContain('"resourcePath"')
   })
 

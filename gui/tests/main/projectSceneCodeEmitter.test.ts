@@ -30,7 +30,7 @@ const script = (path: string, identifier: string, bank = 3): ProjectScriptRecord
   bank
 })
 
-const actorNode = (overrides: Record<string, unknown> = {}) => ({
+const actorNode = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 'actor-1',
   type: 'actor',
   name: 'Hero',
@@ -47,7 +47,7 @@ const actorNode = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-const collisionNode = (overrides: Record<string, unknown> = {}) => ({
+const collisionNode = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 'collision-1',
   type: 'collision',
   name: 'Hitbox',
@@ -64,7 +64,7 @@ const collisionNode = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-const sceneDocument = (overrides: Record<string, unknown> = {}) => ({
+const sceneDocument = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   kind: 'scene',
   version: 1,
   tilemapPath: null,
@@ -124,6 +124,12 @@ describe('projectSceneCodeEmitter', () => {
             y: 5,
             physicsMode: 'highFidelity',
             followCamera: true,
+            cameraDeadzone: {
+              left: 8,
+              right: 24,
+              top: 12,
+              bottom: 28
+            },
             tags: ['solid', 'danger'],
             children: [
               actorNode({ id: 'child', name: 'Child', physicsMode: 'highPerf', x: 1, y: 1 }),
@@ -142,10 +148,16 @@ describe('projectSceneCodeEmitter', () => {
     )
 
     expect(emitted).toBeNull()
-    expect(lines.join('\n')).toContain('Actor* generated_actor_0 = (Actor*) malloc(sizeof(HeroActor));')
+    expect(lines.join('\n')).toContain(
+      'Actor* generated_actor_0 = (Actor*) malloc(sizeof(HeroActor));'
+    )
     expect(lines.join('\n')).toContain('generated_actor_0->physics_mode = HIGH_FIDELITY;')
     expect(lines.join('\n')).toContain('set_actor_position(260, 389);')
     expect(lines.join('\n')).toContain('set_animation_props(S_PALETTE, 16, 24);')
+    expect(lines.join('\n')).toContain('deadzone_left = 8;')
+    expect(lines.join('\n')).toContain('deadzone_right = 24;')
+    expect(lines.join('\n')).toContain('deadzone_top = 12;')
+    expect(lines.join('\n')).toContain('deadzone_bottom = 28;')
     expect(lines.join('\n')).toContain('generated_actor_0->followed = 1;')
     expect(lines.join('\n')).toContain('set_tag(TAG_SOLID, 0);')
     expect(lines.join('\n')).not.toContain('set_tag(TAG_DANGER_ZONE, 1);')

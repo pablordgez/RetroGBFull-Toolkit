@@ -328,6 +328,12 @@ describe('SceneInspectorPane', () => {
     const followCameraCheckbox = screen.getByLabelText('Follow camera')
     fireEvent.click(followCameraCheckbox)
     expect(followCameraCheckbox).toBeChecked()
+    expect(screen.getByText('Camera Deadzone')).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'Right' })).toHaveValue(20)
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Right' }), {
+      target: { value: '42' }
+    })
+    expect(screen.getByRole('spinbutton', { name: 'Right' })).toHaveValue(42)
 
     const xInput = screen.getByRole('textbox', { name: 'X' })
     fireEvent.change(xInput, { target: { value: 'oops' } })

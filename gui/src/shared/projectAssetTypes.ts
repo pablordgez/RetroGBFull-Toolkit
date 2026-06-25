@@ -45,6 +45,7 @@ export interface SceneAssetActorNode extends BaseSceneAssetNode {
   y: number
   physicsMode: SceneActorPhysicsMode
   followCamera: boolean
+  cameraDeadzone?: SceneCameraDeadzone
 }
 
 export interface SceneAssetCollisionNode extends BaseSceneAssetNode {
@@ -62,6 +63,64 @@ export interface SceneAssetCollisionNode extends BaseSceneAssetNode {
 export type SceneAssetNode = SceneAssetFolderNode | SceneAssetActorNode | SceneAssetCollisionNode
 
 export type SceneActorPhysicsMode = 'highPerf' | 'balanced' | 'highFidelity'
+
+export interface SceneCameraDeadzone {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+export const DEFAULT_SCENE_CAMERA_DEADZONE: SceneCameraDeadzone = {
+  left: 20,
+  right: 20,
+  top: 20,
+  bottom: 20
+}
+
+export const SCENE_CAMERA_DEADZONE_LIMITS: SceneCameraDeadzone = {
+  left: 160,
+  right: 160,
+  top: 144,
+  bottom: 144
+}
+
+export const normalizeSceneCameraDeadzoneValue = (value: unknown, maxValue: number): number => {
+  const numericValue = typeof value === 'number' ? value : Number(value)
+
+  if (!Number.isFinite(numericValue)) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(maxValue, Math.trunc(numericValue)))
+}
+
+export const normalizeSceneCameraDeadzone = (value: unknown): SceneCameraDeadzone => {
+  if (typeof value !== 'object' || value === null) {
+    return { ...DEFAULT_SCENE_CAMERA_DEADZONE }
+  }
+
+  const deadzone = value as Partial<Record<keyof SceneCameraDeadzone, unknown>>
+
+  return {
+    left: normalizeSceneCameraDeadzoneValue(
+      deadzone.left ?? DEFAULT_SCENE_CAMERA_DEADZONE.left,
+      SCENE_CAMERA_DEADZONE_LIMITS.left
+    ),
+    right: normalizeSceneCameraDeadzoneValue(
+      deadzone.right ?? DEFAULT_SCENE_CAMERA_DEADZONE.right,
+      SCENE_CAMERA_DEADZONE_LIMITS.right
+    ),
+    top: normalizeSceneCameraDeadzoneValue(
+      deadzone.top ?? DEFAULT_SCENE_CAMERA_DEADZONE.top,
+      SCENE_CAMERA_DEADZONE_LIMITS.top
+    ),
+    bottom: normalizeSceneCameraDeadzoneValue(
+      deadzone.bottom ?? DEFAULT_SCENE_CAMERA_DEADZONE.bottom,
+      SCENE_CAMERA_DEADZONE_LIMITS.bottom
+    )
+  }
+}
 
 export const SCENE_ACTOR_PHYSICS_MODES: SceneActorPhysicsMode[] = [
   'highPerf',
