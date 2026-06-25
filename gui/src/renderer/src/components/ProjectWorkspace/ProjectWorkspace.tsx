@@ -240,6 +240,7 @@ export const ProjectWorkspace = (): ReactElement => {
     isSceneLoading,
     isSceneClosePromptOpen,
     openScene,
+    requestActiveSceneClose,
     updateSceneDocument,
     saveActiveScene,
     handleSceneCloseDecision,
@@ -573,6 +574,43 @@ export const ProjectWorkspace = (): ReactElement => {
     [executeBuildOperation, pendingUnsavedSceneBuildOperation, saveActiveScene]
   )
 
+  const isWindowClosePendingRef = useRef(false)
+
+  useEffect(() => {
+    return window.api.onEditorCloseRequested(() => {
+      if (isSceneDirty) {
+        isWindowClosePendingRef.current = true
+        requestActiveSceneClose()
+        return
+      }
+
+      void window.api.confirmEditorClose()
+    })
+  }, [isSceneDirty, requestActiveSceneClose])
+
+  const handleScenePromptCloseDecision = useCallback(
+    async (decision: 'save' | 'discard' | 'cancel') => {
+      const didCloseScene = await handleSceneCloseDecision(decision)
+
+      if (!isWindowClosePendingRef.current) {
+        return
+      }
+
+      if (decision === 'cancel') {
+        isWindowClosePendingRef.current = false
+        return
+      }
+
+      if (!didCloseScene) {
+        return
+      }
+
+      isWindowClosePendingRef.current = false
+      await window.api.confirmEditorClose()
+    },
+    [handleSceneCloseDecision]
+  )
+
   useEffect(() => {
     if (!activeScenePath || !activeSceneDocument) {
       return
@@ -899,7 +937,7 @@ export const ProjectWorkspace = (): ReactElement => {
           assetLabel={activeSceneLabel}
           isBusy={isSceneSaving || isSceneLoading}
           onCloseDecision={(decision) => {
-            void handleSceneCloseDecision(decision)
+            void handleScenePromptCloseDecision(decision)
           }}
         />
       )}

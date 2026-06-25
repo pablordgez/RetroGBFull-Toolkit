@@ -260,6 +260,17 @@ const registerProjectWindow = (projectWindow: BrowserWindow, projectPath: string
       return
     }
 
+    const hasCloseConfirmation = editorWindowsWaitingForCloseConfirmation.has(windowId)
+    if (hasCloseConfirmation) {
+      editorWindowsWaitingForCloseConfirmation.delete(windowId)
+    }
+
+    if (!hasCloseConfirmation) {
+      event.preventDefault()
+      projectWindow.webContents.send('editor:close-requested')
+      return
+    }
+
     if (projectWindowsWaitingForCleanup.has(windowId)) {
       event.preventDefault()
       return
@@ -471,6 +482,10 @@ const scheduleWindowReplacement = (
     nextWindow.show()
 
     if (currentWindow && !currentWindow.isDestroyed()) {
+      if (projectWindowPaths.has(currentWindow.webContents.id)) {
+        editorWindowsWaitingForCloseConfirmation.add(currentWindow.webContents.id)
+      }
+
       currentWindow.close()
     }
   })

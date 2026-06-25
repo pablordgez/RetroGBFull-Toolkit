@@ -1,5 +1,6 @@
 import React from 'react'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -133,6 +134,8 @@ const resetWorkspaceApiMocks = (): void => {
   vi.mocked(window.api.installLatestMakeToolchain).mockReset()
   vi.mocked(window.api.getProjectResources).mockReset()
   vi.mocked(window.api.scanProjectDirectory).mockReset()
+  vi.mocked(window.api.onEditorCloseRequested).mockReset()
+  vi.mocked(window.api.confirmEditorClose).mockReset()
 }
 
 describe('<ProjectWorkspace />', () => {
@@ -203,6 +206,8 @@ describe('<ProjectWorkspace />', () => {
       trackedCount: 0,
       removedCount: 0
     })
+    vi.mocked(window.api.onEditorCloseRequested).mockImplementation(() => () => undefined)
+    vi.mocked(window.api.confirmEditorClose).mockResolvedValue(true)
   })
 
   afterEach(() => {
@@ -1340,6 +1345,88 @@ describe('<ProjectWorkspace />', () => {
     expect(
       await screen.findByText('Built project code and compiled obj/Example.gb.')
     ).toBeInTheDocument()
+  })
+
+  it('prompts before closing the project window when the open scene has unsaved changes', async () => {
+    let closeListener: (() => void) | undefined
+
+    vi.mocked(window.api.onEditorCloseRequested).mockImplementation((listener) => {
+      closeListener = listener
+      return () => undefined
+    })
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        {
+          type: 'file',
+          name: 'Room Scene',
+          fileName: 'Room Scene.rgbscene.json',
+          path: 'Scenes/Room Scene.rgbscene.json',
+          extension: 'json',
+          resourceType: 'scene'
+        }
+      ]
+    })
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue({
+      assetKind: 'scene',
+      resourcePath: 'Scenes/Room Scene.rgbscene.json',
+      document: createSceneDocument()
+    })
+    vi.mocked(window.api.saveProjectAssetFile).mockImplementation(
+      async (_projectPath, assetPath, document) => ({
+        assetKind: 'scene' as const,
+        resourcePath: assetPath,
+        document
+      })
+    )
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    await openResourceFromPane('Room Scene')
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Actor' }))
+
+    expect(closeListener).toBeDefined()
+    act(() => {
+      closeListener?.()
+    })
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Save changes to "Room Scene"?' })
+    ).toBeInTheDocument()
+    expect(window.api.confirmEditorClose).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(window.api.confirmEditorClose).not.toHaveBeenCalled()
+
+    act(() => {
+      closeListener?.()
+    })
+    const closePrompt = await screen.findByRole('dialog', {
+      name: 'Save changes to "Room Scene"?'
+    })
+    fireEvent.click(within(closePrompt).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(window.api.saveProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Scenes/Room Scene.rgbscene.json',
+        expect.objectContaining({
+          kind: 'scene',
+          nodes: [expect.objectContaining({ type: 'actor' })]
+        })
+      )
+      expect(window.api.confirmEditorClose).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('shows live compile progress with a spinner while build and compile is running', async () => {
