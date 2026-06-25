@@ -50,13 +50,29 @@ export const isSameOrDescendantPath = (
   )
 }
 
-const buildFolderItem = (resource: ProjectFolderRecord): ProjectResourceItem => {
+const hasScriptDescendant = (
+  folder: ProjectFolderRecord,
+  resources: ProjectStoredResourceRecord[]
+): boolean => {
+  return resources.some(
+    (resource) =>
+      resource.type === 'file' &&
+      resource.resourceType === 'script' &&
+      isSameOrDescendantPath(resource.path, folder.path)
+  )
+}
+
+const buildFolderItem = (
+  resource: ProjectFolderRecord,
+  resources: ProjectStoredResourceRecord[]
+): ProjectResourceItem => {
   return {
     type: 'folder',
     id: resource.id,
     name: resource.name,
     path: resource.path,
-    parentPath: resource.parentPath
+    parentPath: resource.parentPath,
+    hasScriptDescendants: hasScriptDescendant(resource, resources)
   }
 }
 
@@ -120,7 +136,7 @@ export const buildProjectResourceView = (
   const items = resources
     .filter((resource) => resource.parentPath === expectedParentPath)
     .map((resource) =>
-      resource.type === 'folder' ? buildFolderItem(resource) : buildFileItem(resource)
+      resource.type === 'folder' ? buildFolderItem(resource, resources) : buildFileItem(resource)
     )
     .sort((left, right) => {
       if (left.type !== right.type) {

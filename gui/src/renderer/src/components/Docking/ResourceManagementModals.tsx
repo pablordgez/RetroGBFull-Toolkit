@@ -7,6 +7,7 @@ interface PendingDeleteResource {
   name: string
   resourceType: ProjectResourceKind
   scriptKind?: ProjectScriptKind | null
+  warningMessage?: string | null
 }
 
 interface PendingBankResource {
@@ -45,6 +46,9 @@ export const DeleteResourceModal = ({
           This will remove everything inside that{' '}
           {getResourceTypeLabel(resource.resourceType, resource.scriptKind).toLowerCase()}.
         </p>
+        {resource.warningMessage && (
+          <p className="resource-management-pane__modal-copy">{resource.warningMessage}</p>
+        )}
 
         <div className="resource-management-pane__modal-actions">
           <button type="button" onClick={onCancel} disabled={isInteractionDisabled}>

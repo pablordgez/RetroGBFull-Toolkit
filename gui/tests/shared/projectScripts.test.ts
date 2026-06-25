@@ -4,6 +4,7 @@ import {
   buildProjectScriptHeaderFileName,
   getProjectScriptDisplayName,
   getProjectScriptKindFromPath,
+  isProjectScriptPathWithinAllowedKindRoot,
   isProjectScriptPathWithinKindRoot,
   isProjectScriptSourcePath
 } from '../../src/shared/projectScripts'
@@ -37,5 +38,29 @@ describe('projectScripts', () => {
     expect(isProjectScriptPathWithinKindRoot('actor', 'src/CustomScenes')).toBe(false)
     expect(isProjectScriptPathWithinKindRoot('actor', 'src/Scripts')).toBe(false)
     expect(isProjectScriptPathWithinKindRoot('actor', '')).toBe(false)
+  })
+
+  it('allows scripts inside their current renamed kind root or canonical kind root', () => {
+    expect(
+      isProjectScriptPathWithinAllowedKindRoot(
+        'actor',
+        'Source/CustomActors/Hero.c',
+        'Source/CustomActors/Archive'
+      )
+    ).toBe(true)
+    expect(
+      isProjectScriptPathWithinAllowedKindRoot(
+        'actor',
+        'Source/CustomActors/Hero.c',
+        'src/CustomActors'
+      )
+    ).toBe(true)
+    expect(
+      isProjectScriptPathWithinAllowedKindRoot(
+        'actor',
+        'Source/CustomActors/Hero.c',
+        'Source/Scripts'
+      )
+    ).toBe(false)
   })
 })

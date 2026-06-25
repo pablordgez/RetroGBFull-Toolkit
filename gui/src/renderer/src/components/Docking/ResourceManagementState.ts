@@ -6,6 +6,7 @@ export interface EditingResourceState {
   draftName: string
   originalName: string
   resourceType: ProjectResourceKind
+  warningMessage?: string | null
 }
 
 export interface PendingDeleteResourceState {
@@ -13,6 +14,7 @@ export interface PendingDeleteResourceState {
   name: string
   resourceType: ProjectResourceKind
   scriptKind?: ProjectScriptKind | null
+  warningMessage?: string | null
 }
 
 export interface PendingBankResourceState {

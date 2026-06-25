@@ -13,7 +13,7 @@ import { useHistory } from '../hooks/history/useHistory'
 import { useUndoRedoShortcuts } from '../hooks/history/useUndoRedoShortcuts'
 import { getCommandShortcutLabelPrefix, isEditableElementTarget } from '../utils/keyboardShortcuts'
 import {
-  isProjectScriptPathWithinKindRoot,
+  isProjectScriptPathWithinAllowedKindRoot,
   type ProjectScriptKind
 } from '../../../../shared/projectScripts'
 import type {
@@ -40,12 +40,12 @@ import {
   getFriendlyErrorMessage,
   getParentResourcePath,
   getTrackedResourceKind,
+  isProjectCodeFolder,
   isResourceNameConflictMessage,
+  PROJECT_CODE_FOLDER_WARNING_MESSAGE,
   supportsBankOverride
 } from './resourceManagementShared'
-import {
-  buildResourceCreationMenuItems,
-} from './resourceCreationMenu'
+import { buildResourceCreationMenuItems } from './resourceCreationMenu'
 import './ResourceManagementPane.css'
 
 interface ResourceManagementPaneProps {
@@ -62,14 +62,20 @@ export interface ResourceManagementPaneHandle {
   createScriptResource: (scriptKind: ProjectScriptKind) => void
 }
 
-export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, ResourceManagementPaneProps>(function ResourceManagementPane({
-  className,
-  projectPath = '',
-  refreshVersion = 0,
-  onOpenScene,
-  onCurrentPathChange,
-  onResourceMutation
-}: ResourceManagementPaneProps, ref): ReactElement {
+export const ResourceManagementPane = forwardRef<
+  ResourceManagementPaneHandle,
+  ResourceManagementPaneProps
+>(function ResourceManagementPane(
+  {
+    className,
+    projectPath = '',
+    refreshVersion = 0,
+    onOpenScene,
+    onCurrentPathChange,
+    onResourceMutation
+  }: ResourceManagementPaneProps,
+  ref
+): ReactElement {
   const paneRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const isCommittingRenameRef = useRef(false)
@@ -237,16 +243,22 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
   const beginResourceEditing = (
     resourcePath: string,
     resourceName: string,
-    resourceType: ProjectResourceKind
+    resourceType: ProjectResourceKind,
+    warningMessage: string | null = null
   ): void => {
     setSelectedResourcePath(resourcePath)
     setEditingResource({
       path: resourcePath,
       draftName: resourceName,
       originalName: resourceName,
-      resourceType
+      resourceType,
+      warningMessage
     })
-    setStatusMessage(null)
+    if (warningMessage) {
+      showInfoStatus(warningMessage)
+    } else {
+      setStatusMessage(null)
+    }
   }
 
   const executeHistoryAction = useCallback(
@@ -311,7 +323,11 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
         clipboardResource.operation === 'cut' &&
         clipboardResource.resourceType === 'script' &&
         clipboardResource.scriptKind &&
-        !isProjectScriptPathWithinKindRoot(clipboardResource.scriptKind, destinationParentPath)
+        !isProjectScriptPathWithinAllowedKindRoot(
+          clipboardResource.scriptKind,
+          clipboardResource.resourcePath,
+          destinationParentPath
+        )
       ) {
         return false
       }
@@ -345,8 +361,15 @@ export const ResourceManagementPane = forwardRef<ResourceManagementPaneHandle, R
         scriptKind: resource.type === 'file' ? (resource.scriptKind ?? null) : null,
         parentPath: getParentResourcePath(resource.path)
       })
-      showInfoStatus(
+      const warningMessage = isProjectCodeFolder(resource)
+        ? PROJECT_CODE_FOLDER_WARNING_MESSAGE
+        : null
+      const operationMessage =
         operation === 'copy' ? `Copied "${resource.name}".` : `"${resource.name}" is ready to move.`
+      showInfoStatus(
+        operation === 'cut' && warningMessage
+          ? `${operationMessage} ${warningMessage}`
+          : operationMessage
       )
     },
     [isInteractionDisabled]

@@ -14,7 +14,9 @@ import type {
 } from './ResourceManagementState'
 import {
   getTrackedResourceKind,
+  isProjectCodeFolder,
   isSceneResource,
+  PROJECT_CODE_FOLDER_WARNING_MESSAGE,
   supportsBankOverride
 } from './resourceManagementShared'
 import { RetroBackIcon } from './ResourceIcons'
@@ -49,7 +51,8 @@ interface ResourceManagementGridProps {
   onBeginResourceEditing: (
     resourcePath: string,
     resourceName: string,
-    resourceType: ProjectResourceKind
+    resourceType: ProjectResourceKind,
+    warningMessage?: string | null
   ) => void
   onRequestDeleteResource: (resource: PendingDeleteResourceState) => void
   onRequestBankResource: (resource: PendingBankResourceState) => void
@@ -81,6 +84,10 @@ export const ResourceManagementGrid = ({
   onRequestBankResource,
   onOpenParentDirectory
 }: ResourceManagementGridProps): ReactElement => {
+  const getResourceWarningMessage = (resource: ProjectResourceItem): string | null => {
+    return isProjectCodeFolder(resource) ? PROJECT_CODE_FOLDER_WARNING_MESSAGE : null
+  }
+
   const buildResourceMenuOptions = (
     resource: ProjectResourceItem,
     resourceType: ProjectResourceKind
@@ -121,7 +128,9 @@ export const ResourceManagementGrid = ({
           {
             id: `start-scene-${resource.path}`,
             label:
-              startingScenePath === resource.path ? 'Clear Starting Scene' : 'Set As Starting Scene',
+              startingScenePath === resource.path
+                ? 'Clear Starting Scene'
+                : 'Set As Starting Scene',
             disabled: isInteractionDisabled,
             onSelect: () => {
               void onSetStartingScene(
@@ -154,7 +163,13 @@ export const ResourceManagementGrid = ({
       id: `rename-${resource.path}`,
       label: 'Rename',
       disabled: isInteractionDisabled,
-      onSelect: () => onBeginResourceEditing(resource.path, resource.name, resourceType)
+      onSelect: () =>
+        onBeginResourceEditing(
+          resource.path,
+          resource.name,
+          resourceType,
+          getResourceWarningMessage(resource)
+        )
     },
     {
       id: `delete-${resource.path}`,
@@ -165,7 +180,8 @@ export const ResourceManagementGrid = ({
           path: resource.path,
           name: resource.name,
           resourceType,
-          scriptKind: resource.type === 'file' ? (resource.scriptKind ?? null) : null
+          scriptKind: resource.type === 'file' ? (resource.scriptKind ?? null) : null,
+          warningMessage: getResourceWarningMessage(resource)
         })
       }
     }
@@ -191,8 +207,7 @@ export const ResourceManagementGrid = ({
         const resourceType = getTrackedResourceKind(resource)
         const isSelected = selectedResourcePath === resource.path
         const isPendingCut =
-          clipboardResource?.operation === 'cut' &&
-          clipboardResource.resourcePath === resource.path
+          clipboardResource?.operation === 'cut' && clipboardResource.resourcePath === resource.path
 
         return (
           <ResourceManagementGridItem

@@ -61,6 +61,56 @@ export const isProjectScriptPathWithinKindRoot = (
   return normalizedPath === rootPath || normalizedPath.startsWith(`${rootPath}/`)
 }
 
+const getProjectScriptKindDirectoryName = (scriptKind: ProjectScriptKind): string => {
+  const scriptDirectory = PROJECT_SCRIPT_DIRECTORY_BY_KIND[scriptKind].replace(/\\/g, '/')
+  return scriptDirectory.split('/').at(-1) ?? scriptDirectory
+}
+
+export const getProjectScriptKindRootFromPath = (
+  scriptKind: ProjectScriptKind,
+  resourcePath: string
+): string | null => {
+  const normalizedSegments = resourcePath
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)
+  const scriptDirectoryName = getProjectScriptKindDirectoryName(scriptKind).toLowerCase()
+  const scriptDirectoryIndex = normalizedSegments.findIndex(
+    (segment) => segment.toLowerCase() === scriptDirectoryName
+  )
+
+  if (scriptDirectoryIndex < 0) {
+    return null
+  }
+
+  return normalizedSegments.slice(0, scriptDirectoryIndex + 1).join('/')
+}
+
+export const isProjectScriptPathWithinAllowedKindRoot = (
+  scriptKind: ProjectScriptKind,
+  scriptResourcePath: string,
+  resourcePath: string
+): boolean => {
+  if (isProjectScriptPathWithinKindRoot(scriptKind, resourcePath)) {
+    return true
+  }
+
+  const currentKindRoot = getProjectScriptKindRootFromPath(scriptKind, scriptResourcePath)
+
+  if (!currentKindRoot) {
+    return false
+  }
+
+  const normalizedPath = resourcePath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  const normalizedCurrentKindRoot = currentKindRoot.toLowerCase()
+
+  return (
+    normalizedPath === normalizedCurrentKindRoot ||
+    normalizedPath.startsWith(`${normalizedCurrentKindRoot}/`)
+  )
+}
+
 export const isProjectScriptSourcePath = (resourcePath: string): boolean => {
   return resourcePath.toLowerCase().endsWith(PROJECT_SCRIPT_SOURCE_EXTENSION)
 }

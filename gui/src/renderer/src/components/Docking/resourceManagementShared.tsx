@@ -18,6 +18,9 @@ import {
   RetroWindowIcon
 } from './ResourceIcons'
 
+export const PROJECT_CODE_FOLDER_WARNING_MESSAGE =
+  'Changing this code folder can break script paths and includes. Engine core files stay protected.'
+
 export const buildClassName = (extraClassName?: string): string => {
   return extraClassName ? `resource-management-pane ${extraClassName}` : 'resource-management-pane'
 }
@@ -95,6 +98,18 @@ export const isSceneResource = (
   resource: ProjectResourceItem
 ): resource is ProjectResourceFileItem => {
   return resource.type === 'file' && resource.resourceType === 'scene'
+}
+
+export const isProjectCodeFolderPath = (resourcePath: string): boolean => {
+  const normalizedPath = resourcePath.replace(/\\/g, '/').replace(/\/+$/, '')
+  return normalizedPath === 'src' || normalizedPath.startsWith('src/')
+}
+
+export const isProjectCodeFolder = (resource: ProjectResourceItem): boolean => {
+  return (
+    resource.type === 'folder' &&
+    (isProjectCodeFolderPath(resource.path) || Boolean(resource.hasScriptDescendants))
+  )
 }
 
 export const getResourceIcon = (resource: ProjectResourceItem): ReactElement => {

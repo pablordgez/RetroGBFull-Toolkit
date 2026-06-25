@@ -12,12 +12,18 @@ import type {
 
 const PROJECT_PATH = '/projects/Alpha'
 
-const folderResource = (name: string, path = name, parentPath: string | null = null): ProjectResourceItem => ({
+const folderResource = (
+  name: string,
+  path = name,
+  parentPath: string | null = null,
+  extra: Partial<Extract<ProjectResourceItem, { type: 'folder' }>> = {}
+): ProjectResourceItem => ({
   type: 'folder',
   id: `folder-${path}`,
   name,
   path,
-  parentPath
+  parentPath,
+  ...extra
 })
 
 const fileResource = (
@@ -37,10 +43,7 @@ const fileResource = (
   ...extra
 })
 
-const createView = (
-  items: ProjectResourceItem[] = [],
-  currentPath = ''
-): ProjectResourceView => ({
+const createView = (items: ProjectResourceItem[] = [], currentPath = ''): ProjectResourceView => ({
   projectName: 'Alpha',
   projectPath: PROJECT_PATH,
   currentPath,
@@ -87,7 +90,9 @@ describe('<ResourceManagementPane /> integration', () => {
     const ref = createRef<ResourceManagementPaneHandle>()
     render(<ResourceManagementPane projectPath="" ref={ref} />)
 
-    expect(await screen.findByText('This window was opened without a project path.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('This window was opened without a project path.')
+    ).toBeInTheDocument()
     expect(window.api.getProjectResources).not.toHaveBeenCalled()
 
     ref.current?.createResource('folder')
@@ -140,7 +145,9 @@ describe('<ResourceManagementPane /> integration', () => {
     expect(onOpenScene).toHaveBeenCalledWith('Scenes/Intro.rgbscene.json')
 
     fireEvent.doubleClick(await getResourceButton('Hero Actor'))
-    expect(await screen.findByText('Load actor resources from the scene hierarchy.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Load actor resources from the scene hierarchy.')
+    ).toBeInTheDocument()
 
     fireEvent.doubleClick(await getResourceButton('Boot'))
     await waitFor(() => {
@@ -187,11 +194,15 @@ describe('<ResourceManagementPane /> integration', () => {
 
     fireEvent.change(bankInput, { target: { value: 'abc' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText('Bank must be an integer between 0 and 255.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Bank must be an integer between 0 and 255.')
+    ).toBeInTheDocument()
 
     fireEvent.change(bankInput, { target: { value: '300' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText('Bank must be an integer between 0 and 255.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Bank must be an integer between 0 and 255.')
+    ).toBeInTheDocument()
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reset To 255' }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
@@ -199,7 +210,9 @@ describe('<ResourceManagementPane /> integration', () => {
 
     await openResourceMenu('Hero')
     fireEvent.click(screen.getByRole('menuitem', { name: 'Bank...' }))
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset To 255' }))
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset To 255' })
+    )
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
@@ -278,7 +291,10 @@ describe('<ResourceManagementPane /> integration', () => {
 
     fireEvent.keyDown(window, { key: 'y', ctrlKey: true })
     await waitFor(() => {
-      expect(window.api.restoreDeletedProjectResource).toHaveBeenCalledWith(PROJECT_PATH, 'delete-script')
+      expect(window.api.restoreDeletedProjectResource).toHaveBeenCalledWith(
+        PROJECT_PATH,
+        'delete-script'
+      )
     })
   })
 
@@ -386,7 +402,10 @@ describe('<ResourceManagementPane /> integration', () => {
 
     fireEvent.keyDown(window, { key: 'y', ctrlKey: true })
     await waitFor(() => {
-      expect(window.api.restoreDeletedProjectResource).toHaveBeenCalledWith(PROJECT_PATH, 'delete-copy')
+      expect(window.api.restoreDeletedProjectResource).toHaveBeenCalledWith(
+        PROJECT_PATH,
+        'delete-copy'
+      )
     })
   })
 
@@ -425,5 +444,43 @@ describe('<ResourceManagementPane /> integration', () => {
         'copy'
       )
     })
+  })
+
+  it('warns when changing project code folders', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue(
+      createView([
+        folderResource('src'),
+        folderResource('Source', 'Source', null, { hasScriptDescendants: true })
+      ])
+    )
+
+    renderPane()
+
+    await openResourceMenu('src')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
+    expect(
+      await screen.findByText(
+        'Changing this code folder can break script paths and includes. Engine core files stay protected.'
+      )
+    ).toBeInTheDocument()
+
+    fireEvent.keyDown(screen.getByLabelText('Folder name for src'), { key: 'Escape' })
+    await openResourceMenu('src')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+
+    expect(
+      within(screen.getByRole('dialog')).getByText(
+        'Changing this code folder can break script paths and includes. Engine core files stay protected.'
+      )
+    ).toBeInTheDocument()
+
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+    await openResourceMenu('Source')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    expect(
+      within(screen.getByRole('dialog')).getByText(
+        'Changing this code folder can break script paths and includes. Engine core files stay protected.'
+      )
+    ).toBeInTheDocument()
   })
 })
