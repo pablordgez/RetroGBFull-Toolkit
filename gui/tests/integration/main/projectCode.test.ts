@@ -429,7 +429,7 @@ describe('projectCode integration', () => {
 
     expect(result.musicCount).toBe(1)
     expect(musicSource).toContain(`const Instrument ${musicIdentifier}_instruments[]`)
-    expect(musicSource).toContain('{ .reg1 = 0x80, .reg2 = 0xF2, .reg3 = 0x20 }')
+    expect(musicSource).toContain('{ .sweep = 0x00, .reg1 = 0x80, .reg2 = 0xF2, .reg3 = 0x20 }')
     expect(musicSource).toContain('{ .note_index = 0x0C, .instrument = 0x01 }')
     expect(musicSource).toContain(`const Pattern* const ${musicIdentifier}_ch2_sequence[] = {`)
     expect(musicSource).toContain('(void*) 0')

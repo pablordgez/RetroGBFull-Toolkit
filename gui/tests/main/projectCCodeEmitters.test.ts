@@ -29,7 +29,7 @@ const asset = (
   document: document as ProjectAssetRecordLike['document']
 })
 
-const spriteDocument = (overrides: Record<string, unknown> = {}) => ({
+const spriteDocument = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   kind: 'sprite',
   version: 1,
   width: 8,
@@ -41,7 +41,7 @@ const spriteDocument = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-const tilesetDocument = (overrides: Record<string, unknown> = {}) => ({
+const tilesetDocument = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   kind: 'tileset',
   version: 1,
   palette: ['#ffffff', '#aaaaaa', '#555555', '#000000'],
@@ -49,7 +49,7 @@ const tilesetDocument = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-const tilemapDocument = (overrides: Record<string, unknown> = {}) => ({
+const tilemapDocument = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   kind: 'tilemap',
   version: 1,
   width: 2,
@@ -59,7 +59,7 @@ const tilemapDocument = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-const musicDocument = (overrides: Record<string, unknown> = {}) => ({
+const musicDocument = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   kind: 'music',
   version: 1,
   speed: 6,
@@ -186,11 +186,12 @@ describe('projectCCodeEmitters', () => {
         })
       )
     )
-    expect(silent.sourceContent).toContain('{ .reg1 = 0x00, .reg2 = 0x00, .reg3 = 0x00 },')
+    expect(silent.sourceContent).toContain('{ .sweep = 0x00, .reg1 = 0x00, .reg2 = 0x00, .reg3 = 0x00 },')
 
     const invalidDocuments = [
       { kind: 'sprite' },
       musicDocument({ speed: 0 }),
+      musicDocument({ instruments: [{ sweep: 0x100, reg1: 1, reg2: 2, reg3: 3 }] }),
       musicDocument({ instruments: [{ reg1: -1, reg2: 2, reg3: 3 }] }),
       musicDocument({ patterns: [{ id: 'dup', steps: [] }, { id: 'dup', steps: [] }] }),
       musicDocument({ patterns: [{ id: 'bad-note', steps: [{ noteIndex: 72, instrument: 0 }] }] }),

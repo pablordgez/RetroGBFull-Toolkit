@@ -481,6 +481,7 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
             (instrument.channelType === undefined ||
               instrument.channelType === 'pulse' ||
               instrument.channelType === 'noise') &&
+            (instrument.sweep === undefined || isByte(instrument.sweep)) &&
             isByte(instrument.reg1) &&
             isByte(instrument.reg2) &&
             isByte(instrument.reg3)

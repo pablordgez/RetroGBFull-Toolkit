@@ -198,6 +198,7 @@ export interface ActorAssetDocument {
 export interface MusicInstrument {
   name?: string
   channelType?: MusicInstrumentKind
+  sweep?: number
   reg1: number
   reg2: number
   reg3: number

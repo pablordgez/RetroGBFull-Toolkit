@@ -22,6 +22,7 @@ import {
   createDefaultInstrument,
   createEmptySteps,
   createPatternId,
+  getInstrumentKind,
   getInstrumentKindForChannel,
   getNoteLabel,
   getPatternById,
@@ -29,7 +30,11 @@ import {
   getPitchFromPointer,
   getSequenceLength,
   isInstrumentValidForChannel,
+  isPatternUsingSweep,
+  isPatternValidForChannel,
+  isPulseInstrumentUsingSweep,
   readDragPayload,
+  sanitizeMusicSequenceCompatibility,
   writeDragPayload,
   type EditorMode
 } from './musicEditorModel'
@@ -143,9 +148,10 @@ export const MusicEditor = (): ReactElement => {
         return current
       }
 
+      const compatibleDocument = sanitizeMusicSequenceCompatibility(nextDocument)
       undoStackRef.current = [...undoStackRef.current.slice(-99), current]
       redoStackRef.current = []
-      return nextDocument
+      return compatibleDocument
     })
     setHistoryRevision((revision) => revision + 1)
   }, [])
@@ -429,7 +435,7 @@ export const MusicEditor = (): ReactElement => {
 
       const draggedPattern = getPatternById(document, payload.patternId)
 
-      if (draggedPattern && getPatternChannel(draggedPattern) !== channel) {
+      if (draggedPattern && !isPatternValidForChannel(document, draggedPattern, channel)) {
         return
       }
 
@@ -546,6 +552,42 @@ export const MusicEditor = (): ReactElement => {
     [sequenceLength]
   )
   const arrangementGridColumns = `130px repeat(${sequenceLength}, minmax(120px, 1fr)) 92px`
+  const getPatternScopeLabel = useCallback(
+    (pattern: MusicAssetDocument['patterns'][number]): string => {
+      const patternChannel = getPatternChannel(pattern)
+
+      if (patternChannel === 'ch4') {
+        return 'CH4 Noise'
+      }
+
+      return isPatternUsingSweep(document, pattern) ? 'CH1 Sweep' : 'CH1/CH2 Pulse'
+    },
+    [document]
+  )
+  const getInstrumentScopeLabel = useCallback((instrument: MusicInstrument): string => {
+    if (getInstrumentKind(instrument) === 'noise') {
+      return 'CH4 Noise'
+    }
+
+    return isPulseInstrumentUsingSweep(instrument) ? 'CH1 Sweep' : 'CH1/CH2 Pulse'
+  }, [])
+  const getInstrumentUnavailableReason = useCallback(
+    (instrument: MusicInstrument, channel: MusicChannelKey): string => {
+      if (getInstrumentKindForChannel(channel) !== getInstrumentKind(instrument)) {
+        return getInstrumentKind(instrument) === 'noise' ? 'Noise only works on CH4' : 'Pulse only works on CH1/CH2'
+      }
+
+      if (channel === 'ch2' && isPulseInstrumentUsingSweep(instrument)) {
+        return 'Sweep only works on CH1'
+      }
+
+      return ''
+    },
+    []
+  )
+  const editedPatternScope = editedPattern ? getPatternScopeLabel(editedPattern) : 'No pattern'
+  const selectedInstrument = selectedInstrumentIndex !== null ? document.instruments[selectedInstrumentIndex] : null
+  const selectedInstrumentScope = selectedInstrument ? getInstrumentScopeLabel(selectedInstrument) : null
 
   if (!isLoaded) {
     return <main className="music-editor">Loading music asset...</main>
@@ -563,20 +605,24 @@ export const MusicEditor = (): ReactElement => {
         {document.patterns.length === 0 ? (
           <p className="music-editor__empty-copy">No patterns yet.</p>
         ) : (
-          document.patterns.map((pattern) => (
-            <button
-              type="button"
-              key={pattern.id}
-              className={pattern.id === focusedPatternId ? 'is-selected' : ''}
-              draggable
-              onDragStart={(event) => writeDragPayload(event, { type: 'pattern', patternId: pattern.id })}
-              onClick={() => setFocusedPatternId(pattern.id)}
+          document.patterns.map((pattern) => {
+            const patternScope = getPatternScopeLabel(pattern)
+
+            return (
+              <button
+                type="button"
+                key={pattern.id}
+                className={pattern.id === focusedPatternId ? 'is-selected' : ''}
+                draggable
+                onDragStart={(event) => writeDragPayload(event, { type: 'pattern', patternId: pattern.id })}
+                onClick={() => setFocusedPatternId(pattern.id)}
               onDoubleClick={() => openPattern(pattern.id)}
             >
-              <span>{CHANNEL_LABELS[getPatternChannel(pattern)]}</span>
-              {pattern.name}
+              <span>{patternScope}</span>
+              <strong>{pattern.name}</strong>
             </button>
-          ))
+            )
+          })
         )}
       </div>
     </aside>
@@ -587,35 +633,52 @@ export const MusicEditor = (): ReactElement => {
       <div className="music-editor__section-header">
         <div>
           <h2>Instruments</h2>
-          <span>{CHANNEL_KIND_LABELS[getInstrumentKindForChannel(editedPatternChannel)]}</span>
+          <span>{CHANNEL_LABELS[editedPatternChannel]}</span>
         </div>
         <button type="button" onClick={addInstrument}>
           New
         </button>
       </div>
+      <p className="music-editor__status">
+        {CHANNEL_KIND_LABELS[getInstrumentKindForChannel(editedPatternChannel)]}
+        {selectedInstrumentScope ? ` - selected ${selectedInstrumentScope}` : ''}
+      </p>
       <button type="button" onClick={() => setMode('sequence')}>
         Back
       </button>
       <div className="music-editor__library-list">
-        {document.instruments.filter((instrument) =>
-          isInstrumentValidForChannel(instrument, editedPatternChannel)
-        ).length === 0 ? (
+        {document.instruments.length === 0 ? (
           <p className="music-editor__empty-copy">No compatible instruments yet.</p>
         ) : (
-          document.instruments.map((instrument, index) =>
-            isInstrumentValidForChannel(instrument, editedPatternChannel) ? (
+          document.instruments.map((instrument, index) => {
+            const isCompatible = isInstrumentValidForChannel(instrument, editedPatternChannel)
+            const unavailableReason = getInstrumentUnavailableReason(instrument, editedPatternChannel)
+
+            return (
               <button
                 type="button"
                 key={index}
-                className={index === selectedInstrumentIndex ? 'is-selected' : ''}
-                onClick={() => setSelectedInstrumentIndex(index)}
+                className={[
+                  index === selectedInstrumentIndex ? 'is-selected' : '',
+                  isCompatible ? '' : 'is-incompatible'
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                aria-disabled={!isCompatible}
+                title={unavailableReason || getInstrumentScopeLabel(instrument)}
+                onClick={() => {
+                  if (isCompatible) {
+                    setSelectedInstrumentIndex(index)
+                  }
+                }}
                 onDoubleClick={() => editInstrument(index)}
               >
                 <span>{index.toString().padStart(2, '0')}</span>
-                {instrument.name || `Instrument ${index}`}
+                <strong>{instrument.name || `Instrument ${index}`}</strong>
+                <small>{isCompatible ? getInstrumentScopeLabel(instrument) : unavailableReason}</small>
               </button>
-            ) : null
-          )
+            )
+          })
         )}
       </div>
     </aside>
@@ -676,11 +739,20 @@ export const MusicEditor = (): ReactElement => {
               const patternId = document.sequence[channel][slotIndex] ?? null
               const pattern = getPatternById(document, patternId)
               const isPlaying = Math.floor(playheadStep / MUSIC_PATTERN_LENGTH) === slotIndex
+              const isFocusedPatternCompatible =
+                !focusedPattern || isPatternValidForChannel(document, focusedPattern, channel)
 
               return (
                 <div
-                  className={isPlaying ? 'music-editor__clip-cell is-playing' : 'music-editor__clip-cell'}
+                  className={[
+                    'music-editor__clip-cell',
+                    isPlaying ? 'is-playing' : '',
+                    isFocusedPatternCompatible ? '' : 'is-incompatible'
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                   key={`${channel}-${slotIndex}`}
+                  title={isFocusedPatternCompatible ? undefined : `${getPatternScopeLabel(focusedPattern)} cannot play on ${CHANNEL_LABELS[channel]}`}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event) => handleClipDrop(event, channel, slotIndex)}
                 >
@@ -707,18 +779,36 @@ export const MusicEditor = (): ReactElement => {
                       {pattern.name}
                     </button>
                   ) : (
-                    <span className="music-editor__empty-clip">Drop Pattern</span>
+                    <span className="music-editor__empty-clip">
+                      {isFocusedPatternCompatible ? 'Drop Pattern' : 'Unavailable'}
+                    </span>
                   )}
                 </div>
               )
             })}
+            {(() => {
+              const isFocusedPatternCompatible =
+                !focusedPattern || isPatternValidForChannel(document, focusedPattern, channel)
+
+              return (
             <div
-              className="music-editor__clip-cell music-editor__clip-cell--append"
+              className={[
+                'music-editor__clip-cell',
+                'music-editor__clip-cell--append',
+                isFocusedPatternCompatible ? '' : 'is-incompatible'
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              title={isFocusedPatternCompatible ? undefined : `${getPatternScopeLabel(focusedPattern)} cannot play on ${CHANNEL_LABELS[channel]}`}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => handleClipDrop(event, channel, sequenceLength)}
             >
-              <span className="music-editor__empty-clip">Drop to Add</span>
+              <span className="music-editor__empty-clip">
+                {isFocusedPatternCompatible ? 'Drop to Add' : 'Unavailable'}
+              </span>
             </div>
+              )
+            })()}
           </div>
         ))}
       </div>
@@ -733,7 +823,7 @@ export const MusicEditor = (): ReactElement => {
           <span>
             {selectedInstrumentIndex === null
               ? 'No compatible instrument selected'
-              : `Instrument ${selectedInstrumentIndex}`}
+              : `Instrument ${selectedInstrumentIndex}${selectedInstrumentScope ? ` - ${selectedInstrumentScope}` : ''}`}
           </span>
         </div>
         <div>
@@ -747,6 +837,11 @@ export const MusicEditor = (): ReactElement => {
                 value={editedPatternChannel}
                 onChange={(event) => {
                   const nextChannel = event.target.value as MusicChannelKey
+
+                  if (nextChannel === 'ch2' && isPatternUsingSweep(document, editedPattern)) {
+                    return
+                  }
+
                   updateDocument((current) => ({
                     ...current,
                     patterns: current.patterns.map((pattern) =>
@@ -756,11 +851,17 @@ export const MusicEditor = (): ReactElement => {
                   setActiveChannel(nextChannel)
                 }}
               >
-                {CHANNELS.map((channel) => (
-                  <option key={channel} value={channel}>
-                    {CHANNEL_LABELS[channel]}
-                  </option>
-                ))}
+                {CHANNELS.map((channel) => {
+                  const isDisabled =
+                    channel === 'ch2' && isPatternUsingSweep(document, editedPattern)
+
+                  return (
+                    <option key={channel} value={channel} disabled={isDisabled}>
+                      {CHANNEL_LABELS[channel]}
+                      {isDisabled ? ' - sweep unavailable' : ''}
+                    </option>
+                  )
+                })}
               </select>
             </label>
           ) : null}
@@ -780,6 +881,18 @@ export const MusicEditor = (): ReactElement => {
           ) : null}
         </div>
       </div>
+      {editedPattern ? (
+        <div className="music-editor__pattern-status" role="status">
+          <span className="music-editor__badge">{editedPatternScope}</span>
+          <span>
+            {isPatternUsingSweep(document, editedPattern)
+              ? 'CH2 is disabled because this pattern uses CH1 sweep.'
+              : editedPatternChannel === 'ch4'
+                ? 'Noise patterns can only be sequenced on CH4.'
+                : 'Plain pulse patterns can be sequenced on CH1 or CH2.'}
+          </span>
+        </div>
+      ) : null}
       <div className="music-editor__pattern-grid">
         <div className="music-editor__step-strip">
           {Array.from({ length: MUSIC_PATTERN_LENGTH }, (_, stepIndex) => {

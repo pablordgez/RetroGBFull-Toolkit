@@ -8,6 +8,7 @@
 #define PATTERN_LENGTH 16
 
 typedef struct {
+    uint8_t sweep;
     uint8_t reg1;
     uint8_t reg2;
     uint8_t reg3;

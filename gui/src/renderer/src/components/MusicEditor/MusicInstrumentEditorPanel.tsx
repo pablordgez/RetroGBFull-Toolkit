@@ -26,7 +26,10 @@ interface MusicInstrumentEditorPanelProps {
 
 type PulseNumericField = {
   label: string
-  property: keyof Pick<PulseInstrumentState, 'length' | 'initialVolume' | 'envelopePace'>
+  property: keyof Pick<
+    PulseInstrumentState,
+    'sweepPace' | 'sweepShift' | 'length' | 'initialVolume' | 'envelopePace'
+  >
   min: number
   max: number
 }
@@ -42,6 +45,8 @@ type NoiseNumericField = {
 }
 
 const PULSE_NUMERIC_FIELDS: PulseNumericField[] = [
+  { label: 'Sweep Pace', property: 'sweepPace', min: 0, max: 7 },
+  { label: 'Sweep Shift', property: 'sweepShift', min: 0, max: 7 },
   { label: 'Length', property: 'length', min: 0, max: 63 },
   { label: 'Volume', property: 'initialVolume', min: 0, max: 15 },
   { label: 'Pace', property: 'envelopePace', min: 0, max: 7 }
@@ -65,6 +70,7 @@ export const MusicInstrumentEditorPanel = ({
   const editedInstrumentKind = draftInstrument ? getInstrumentKind(draftInstrument) : 'pulse'
   const pulseState = draftInstrument ? decodePulseInstrument(draftInstrument) : null
   const noiseState = draftInstrument ? decodeNoiseInstrument(draftInstrument) : null
+  const pulseTypeLabel = pulseState?.sweepEnabled ? 'Pulse (CH1 sweep)' : 'Pulse (CH1/CH2)'
 
   const updatePulseField = (
     property: PulseNumericField['property'],
@@ -113,6 +119,7 @@ export const MusicInstrumentEditorPanel = ({
                     ? {
                         ...createDefaultInstrument(draftInstrumentIndex ?? 0, channelType),
                         name: current.name,
+                        ...(channelType === 'pulse' ? { sweep: current.sweep ?? 0 } : {}),
                         reg1: current.reg1,
                         reg2: current.reg2,
                         reg3: current.reg3
@@ -121,16 +128,21 @@ export const MusicInstrumentEditorPanel = ({
                 )
               }}
             >
-              <option value="pulse">Pulse (CH1/CH2)</option>
+              <option value="pulse">{pulseTypeLabel}</option>
               <option value="noise">Noise (CH4)</option>
             </select>
           </label>
+          {editedInstrumentKind === 'pulse' ? (
+            <p className="music-editor__status">
+              {pulseState?.sweepEnabled ? 'CH1 only: sweep is enabled.' : 'Shared CH1/CH2 pulse.'}
+            </p>
+          ) : null}
           <div className="music-editor__hex-row">
-            {(['reg1', 'reg2', 'reg3'] as const).map((registerKey) => (
+            {(['sweep', 'reg1', 'reg2', 'reg3'] as const).map((registerKey) => (
               <label key={registerKey}>
-                {registerKey.toUpperCase()}
+                {registerKey === 'sweep' ? 'SWEEP' : registerKey.toUpperCase()}
                 <input
-                  value={formatHexByte(draftInstrument[registerKey])}
+                  value={formatHexByte(draftInstrument[registerKey] ?? 0)}
                   onChange={(event) => {
                     const parsedByte = parseByteInput(event.target.value)
 
@@ -180,6 +192,24 @@ export const MusicInstrumentEditorPanel = ({
                   />
                 </label>
               ))}
+              <label>
+                Sweep
+                <select
+                  value={pulseState.sweepDirection}
+                  onChange={(event) =>
+                    setDraftInstrument((current) =>
+                      current
+                        ? updatePulseInstrument(current, {
+                            sweepDirection: event.target.value as 'increase' | 'decrease'
+                          })
+                        : current
+                    )
+                  }
+                >
+                  <option value="increase">Increase</option>
+                  <option value="decrease">Decrease</option>
+                </select>
+              </label>
               <label>
                 Envelope
                 <select

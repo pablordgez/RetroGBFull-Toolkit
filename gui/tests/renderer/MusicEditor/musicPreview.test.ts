@@ -37,13 +37,26 @@ const createMusicDocument = (): MusicAssetDocument => ({
 
 describe('music preview audio helpers', () => {
   it('decodes pulse and noise instrument register fields', () => {
-    expect(decodePulseInstrument({ reg1: 0x80, reg2: 0xf2, reg3: 0x00 })).toMatchObject({
+    expect(decodePulseInstrument({ sweep: 0x3b, reg1: 0x80, reg2: 0xf2, reg3: 0x00 })).toMatchObject({
+      sweepPace: 3,
+      sweepDirection: 'decrease',
+      sweepShift: 3,
+      sweepEnabled: true,
       duty: 2,
       length: 0,
       initialVolume: 15,
       envelopeDirection: 'decrease',
       envelopePace: 2,
       dacEnabled: true
+    })
+    expect(decodePulseInstrument({ sweep: 0x10, reg1: 0x80, reg2: 0xf2, reg3: 0x00 })).toMatchObject({
+      sweepPace: 1,
+      sweepShift: 0,
+      sweepEnabled: true
+    })
+    expect(decodePulseInstrument({ sweep: 0x08, reg1: 0x80, reg2: 0xf2, reg3: 0x00 })).toMatchObject({
+      sweepDirection: 'decrease',
+      sweepEnabled: true
     })
     expect(decodeNoiseInstrument({ reg1: 0x3f, reg2: 0xf9, reg3: 0x2b })).toMatchObject({
       length: 63,
@@ -69,6 +82,22 @@ describe('music preview audio helpers', () => {
     expect(firstRender.length).toBe(secondRender.length)
     expect(firstRender.some((sample) => sample !== 0)).toBe(true)
     expect(firstRender.slice(0, 512)).toEqual(secondRender.slice(0, 512))
+  })
+
+  it('applies channel 1 frequency sweep during preview rendering', () => {
+    const sweptDocument = {
+      ...createMusicDocument(),
+      instruments: [{ name: 'Sweep', sweep: 0x13, reg1: 0x80, reg2: 0xf0, reg3: 0x20 }]
+    }
+    const plainDocument = {
+      ...sweptDocument,
+      instruments: [{ name: 'Plain', sweep: 0x00, reg1: 0x80, reg2: 0xf0, reg3: 0x20 }]
+    }
+
+    const sweptSamples = renderMusicPreviewSamples(sweptDocument, 8000)
+    const plainSamples = renderMusicPreviewSamples(plainDocument, 8000)
+
+    expect(sweptSamples.slice(512, 2048)).not.toEqual(plainSamples.slice(512, 2048))
   })
 
   it('treats instrument 0 as the first instrument instead of keeping the previous one', () => {

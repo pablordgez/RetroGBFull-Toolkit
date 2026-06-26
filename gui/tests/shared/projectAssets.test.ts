@@ -614,7 +614,7 @@ describe('projectAssets scene parsing', () => {
       speed: 6,
       loop: false,
       instruments: [
-        { name: 'Lead', reg1: 0x80, reg2: 0xf2, reg3: 0x20 },
+        { name: 'Lead', sweep: 0x13, reg1: 0x80, reg2: 0xf2, reg3: 0x20 },
         { name: 'Kick', reg1: 0x3f, reg2: 0xf1, reg3: 0x23 }
       ],
       patterns: [
@@ -635,6 +635,7 @@ describe('projectAssets scene parsing', () => {
     }) as MusicAssetDocument
 
     expect(document.patterns[0].steps[0]).toEqual({ noteIndex: 12, instrument: 1 })
+    expect(document.instruments[0]).toMatchObject({ sweep: 0x13 })
     expect(serializeProjectAssetDocument(document)).toContain('"kind": "music"')
   })
 

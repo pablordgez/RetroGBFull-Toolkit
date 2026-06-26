@@ -16,6 +16,7 @@ static void stop_music_playback_state(void) NONBANKED{
     current_tick = 0;
     current_step = 0;
     current_pattern_index = 0;
+    NR10_REG = 0x00;
     NR12_REG = 0x00;
     NR14_REG = 0x80;
     NR22_REG = 0x00;
@@ -89,6 +90,7 @@ void play_music_step(void) NONBANKED{
         if (s1.note_index != NOTE_REST) {
             Instrument inst = song->instruments[s1.instrument];
             uint16_t freq = NOTE_FREQUENCIES[s1.note_index];
+            NR10_REG = inst.sweep;
             NR11_REG = inst.reg1;
             NR12_REG = inst.reg2;
             NR13_REG = (uint8_t)(freq & 0xFF);         

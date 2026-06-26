@@ -524,6 +524,8 @@ const assertValidMusicDocument = (music: ProjectAssetRecordLike): MusicAssetDocu
     document.instruments.length > 256 ||
     document.instruments.some(
       (instrument) =>
+        (instrument.sweep !== undefined &&
+          (!Number.isInteger(instrument.sweep) || instrument.sweep < 0 || instrument.sweep > 255)) ||
         !Number.isInteger(instrument.reg1) ||
         instrument.reg1 < 0 ||
         instrument.reg1 > 255 ||
@@ -642,9 +644,9 @@ export const buildMusicResourceFiles = (
     ...(document.instruments.length > 0
       ? document.instruments.map(
           (instrument) =>
-            `    { .reg1 = ${formatHexByte(instrument.reg1)}, .reg2 = ${formatHexByte(instrument.reg2)}, .reg3 = ${formatHexByte(instrument.reg3)} },`
+            `    { .sweep = ${formatHexByte(instrument.sweep ?? 0)}, .reg1 = ${formatHexByte(instrument.reg1)}, .reg2 = ${formatHexByte(instrument.reg2)}, .reg3 = ${formatHexByte(instrument.reg3)} },`
         )
-      : ['    { .reg1 = 0x00, .reg2 = 0x00, .reg3 = 0x00 },']),
+      : ['    { .sweep = 0x00, .reg1 = 0x00, .reg2 = 0x00, .reg3 = 0x00 },']),
     '};'
   ]
   const patternLines = document.patterns.flatMap((pattern, index) => [

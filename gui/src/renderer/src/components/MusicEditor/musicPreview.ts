@@ -94,6 +94,10 @@ export const NOTE_FREQUENCY_REGISTERS = [
 ] as const
 
 export interface PulseInstrumentState {
+  sweepPace: number
+  sweepDirection: 'increase' | 'decrease'
+  sweepShift: number
+  sweepEnabled: boolean
   duty: number
   length: number
   initialVolume: number
@@ -119,6 +123,8 @@ interface VoiceState {
   volume: number
   envelopeTimer: number
   phase: number
+  periodValue: number
+  sweepTimer: number
   frequency: number
   lfsr: number
   noiseTimer: number
@@ -142,7 +148,15 @@ export const getNoiseClockHz = (reg3: number): number => {
 }
 
 export const decodePulseInstrument = (instrument: MusicInstrument): PulseInstrumentState => {
+  const sweep = instrument.sweep ?? 0
+  const sweepPace = (sweep >> 4) & 0x07
+  const sweepShift = sweep & 0x07
+
   return {
+    sweepPace,
+    sweepDirection: (sweep & 0x08) !== 0 ? 'decrease' : 'increase',
+    sweepShift,
+    sweepEnabled: (sweep & 0x7f) !== 0,
     duty: (instrument.reg1 >> 6) & 0x03,
     length: instrument.reg1 & 0x3f,
     initialVolume: (instrument.reg2 >> 4) & 0x0f,
@@ -186,6 +200,8 @@ const createVoiceState = (instrument: MusicInstrument): VoiceState => {
     volume: 0,
     envelopeTimer: 0,
     phase: 0,
+    periodValue: 0,
+    sweepTimer: 0,
     frequency: 0,
     lfsr: 0x7fff,
     noiseTimer: 0,
@@ -218,12 +234,45 @@ const applyEnvelopeTick = (voice: VoiceState, isNoise: boolean): void => {
   voice.volume = Math.max(0, voice.volume - 1)
 }
 
+const applyPulseSweepTick = (voice: VoiceState): void => {
+  const state = decodePulseInstrument(voice.instrument)
+
+  if (!voice.active || state.sweepPace === 0 || state.sweepShift === 0) {
+    return
+  }
+
+  voice.sweepTimer += 1
+
+  if (voice.sweepTimer < state.sweepPace) {
+    return
+  }
+
+  voice.sweepTimer = 0
+
+  const delta = voice.periodValue >> state.sweepShift
+  const nextPeriod =
+    state.sweepDirection === 'decrease'
+      ? Math.max(0, voice.periodValue - delta)
+      : voice.periodValue + delta
+
+  if (nextPeriod > 0x07ff) {
+    voice.active = false
+    return
+  }
+
+  voice.periodValue = nextPeriod
+  voice.frequency = getPulseFrequencyHz(nextPeriod)
+}
+
 const triggerPulse = (voice: VoiceState, instrument: MusicInstrument, step: MusicStep): void => {
   const state = decodePulseInstrument(instrument)
+  const periodValue = NOTE_FREQUENCY_REGISTERS[step.noteIndex] ?? 0
   voice.instrument = instrument
   voice.volume = state.initialVolume
   voice.envelopeTimer = 0
-  voice.frequency = getPulseFrequencyHz(NOTE_FREQUENCY_REGISTERS[step.noteIndex] ?? 0)
+  voice.sweepTimer = 0
+  voice.periodValue = periodValue
+  voice.frequency = getPulseFrequencyHz(periodValue)
   voice.active = state.dacEnabled
 }
 
@@ -296,8 +345,10 @@ export const renderMusicPreviewSamples = (
   }
   let nextStepSample = 0
   let songStep = -1
-  let nextEnvelopeSample = Math.max(1, Math.round(sampleRate / 64))
+  const nextEnvelopeSample = Math.max(1, Math.round(sampleRate / 64))
   let envelopeSample = nextEnvelopeSample
+  const nextSweepSample = Math.max(1, Math.round(sampleRate / 128))
+  let sweepSample = nextSweepSample
 
   for (let sampleIndex = 0; sampleIndex < totalSamples; sampleIndex += 1) {
     if (sampleIndex >= nextStepSample && songStep + 1 < totalSteps) {
@@ -337,6 +388,11 @@ export const renderMusicPreviewSamples = (
       applyEnvelopeTick(voices.ch1, false)
       applyEnvelopeTick(voices.ch2, false)
       applyEnvelopeTick(voices.ch4, true)
+    }
+
+    if (sampleIndex >= sweepSample) {
+      sweepSample += nextSweepSample
+      applyPulseSweepTick(voices.ch1)
     }
 
     const mixed =
