@@ -52,7 +52,8 @@ const GENERIC_WORKSPACE_ERRORS = {
   buildCode: 'Something went wrong while building the project.',
   buildAndCompile: 'Something went wrong while building and compiling the project.',
   openSaveData: 'Something went wrong while opening the save-data editor.',
-  openTags: 'Something went wrong while opening the tag editor.'
+  openTags: 'Something went wrong while opening the tag editor.',
+  openDocumentation: 'Something went wrong while opening the documentation.'
 } as const
 
 const formatCount = (count: number, singular: string, plural = `${singular}s`): string => {
@@ -547,6 +548,18 @@ export const ProjectWorkspace = (): ReactElement => {
     }
   }, [projectPath])
 
+  const handleOpenDocumentation = useCallback(async () => {
+    try {
+      await window.api.openDocumentation()
+    } catch (error) {
+      console.error('[project-workspace] openDocumentation failed', error)
+      showStatus(
+        'error',
+        error instanceof Error ? error.message : GENERIC_WORKSPACE_ERRORS.openDocumentation
+      )
+    }
+  }, [])
+
   const handleUnsavedSceneBuildDecision = useCallback(
     async (decision: UnsavedSceneBuildDecision) => {
       if (!pendingUnsavedSceneBuildOperation) {
@@ -798,11 +811,23 @@ export const ProjectWorkspace = (): ReactElement => {
     recentProjectItems
   ])
 
+  const menuActions = useMemo(() => {
+    return [
+      {
+        id: 'open-documentation',
+        label: 'Docs',
+        title: 'Open documentation in browser',
+        ariaLabel: 'Open documentation in browser',
+        onSelect: () => void handleOpenDocumentation()
+      }
+    ]
+  }, [handleOpenDocumentation])
+
   return (
     <div className="project-workspace">
       <div className="project-workspace__topbar">
         <div className="project-workspace__menu-cluster">
-          <AppMenuBar menus={menus} />
+          <AppMenuBar menus={menus} actions={menuActions} />
         </div>
 
         <div className="project-workspace__project-summary">

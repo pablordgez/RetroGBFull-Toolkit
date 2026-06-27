@@ -127,6 +127,7 @@ const resetWorkspaceApiMocks = (): void => {
   vi.mocked(window.api.getRecentProjects).mockReset()
   vi.mocked(window.api.getAppPreferences).mockReset()
   vi.mocked(window.api.saveAppPreferences).mockReset()
+  vi.mocked(window.api.openDocumentation).mockReset()
   vi.mocked(window.api.getRuntimePlatform).mockReset()
   vi.mocked(window.api.getGbdkToolchainStatus).mockReset()
   vi.mocked(window.api.installLatestGbdkToolchain).mockReset()
@@ -156,6 +157,7 @@ describe('<ProjectWorkspace />', () => {
       childCoordinateOrigin: 'relative',
       autoBankScriptFunctions: true
     })
+    vi.mocked(window.api.openDocumentation).mockResolvedValue(true)
     vi.mocked(window.api.getRuntimePlatform).mockResolvedValue('linux')
     vi.mocked(window.api.getGbdkToolchainStatus).mockResolvedValue({
       installed: true,
@@ -471,6 +473,26 @@ describe('<ProjectWorkspace />', () => {
 
     await waitFor(() => {
       expect(window.api.openProjectInFileExplorer).toHaveBeenCalledWith('/projects/Alpha')
+    })
+  })
+
+  it('opens the documentation from the menu bar docs action', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: []
+    })
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open documentation in browser' }))
+
+    await waitFor(() => {
+      expect(window.api.openDocumentation).toHaveBeenCalledTimes(1)
     })
   })
 

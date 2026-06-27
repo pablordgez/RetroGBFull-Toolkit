@@ -1,15 +1,34 @@
 .app-menu-bar {
+  width: 100%;
   display: flex;
   align-items: stretch;
   gap: 6px;
   position: relative;
 }
 
+.app-menu-bar__menus,
+.app-menu-bar__actions {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.app-menu-bar__menus {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.app-menu-bar__actions {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
 .app-menu-bar__top-item {
   position: relative;
 }
 
-.app-menu-bar__top-button {
+.app-menu-bar__top-button,
+.app-menu-bar__action-button {
   min-height: 44px;
   padding: 10px 16px;
   border: 3px solid transparent;
@@ -20,7 +39,9 @@
 
 .app-menu-bar__top-button:hover,
 .app-menu-bar__top-button:focus-visible,
-.app-menu-bar__top-button--active {
+.app-menu-bar__top-button--active,
+.app-menu-bar__action-button:hover,
+.app-menu-bar__action-button:focus-visible {
   border-color: #0f380f;
   background-color: #9bbc0f;
   outline: none;
@@ -72,7 +93,8 @@
 }
 
 .app-menu-bar__item-button:disabled,
-.app-menu-bar__top-button:disabled {
+.app-menu-bar__top-button:disabled,
+.app-menu-bar__action-button:disabled {
   opacity: 0.55;
 }
 

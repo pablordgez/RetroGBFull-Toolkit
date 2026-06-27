@@ -120,6 +120,7 @@ const api = {
   getAppPreferences: () => ipcRenderer.invoke('app:preferences:get') as Promise<AppPreferences>,
   saveAppPreferences: (preferences: Partial<AppPreferences>) =>
     ipcRenderer.invoke('app:preferences:save', preferences) as Promise<AppPreferences>,
+  openDocumentation: () => ipcRenderer.invoke('app:documentation:open') as Promise<boolean>,
   getRuntimePlatform: () => ipcRenderer.invoke('app:runtime-platform') as Promise<RuntimePlatform>,
   getGbdkToolchainStatus: () => ipcRenderer.invoke('gbdk:status') as Promise<GbdkToolchainStatus>,
   installLatestGbdkToolchain: () =>

@@ -102,6 +102,7 @@ declare global {
       getRecentProjects: () => Promise<RecentProject[]>
       getAppPreferences: () => Promise<AppPreferences>
       saveAppPreferences: (preferences: Partial<AppPreferences>) => Promise<AppPreferences>
+      openDocumentation: () => Promise<boolean>
       getRuntimePlatform: () => Promise<RuntimePlatform>
       getGbdkToolchainStatus: () => Promise<GbdkToolchainStatus>
       installLatestGbdkToolchain: () => Promise<GbdkInstallResult>

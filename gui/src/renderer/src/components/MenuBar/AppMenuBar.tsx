@@ -25,8 +25,18 @@ export interface AppMenuDefinition {
   onOpen?: () => void
 }
 
+export interface AppMenuAction {
+  id?: string
+  label: string
+  title?: string
+  ariaLabel?: string
+  disabled?: boolean
+  onSelect?: () => void
+}
+
 interface AppMenuBarProps {
   menus: AppMenuDefinition[]
+  actions?: AppMenuAction[]
   className?: string
 }
 
@@ -105,7 +115,7 @@ const AppMenuList = ({ items, onItemSelect }: AppMenuListProps): ReactElement =>
   )
 }
 
-export const AppMenuBar = ({ menus, className }: AppMenuBarProps): ReactElement => {
+export const AppMenuBar = ({ menus, actions = [], className }: AppMenuBarProps): ReactElement => {
   const [activeMenuIndex, setActiveMenuIndex] = useState<number | null>(null)
 
   useEffect(() => {
@@ -173,42 +183,67 @@ export const AppMenuBar = ({ menus, className }: AppMenuBarProps): ReactElement 
 
   return (
     <div className={buildClassName('app-menu-bar', className)} role="menubar">
-      {menus.map((menu, index) => {
-        const isActive = activeMenuIndex === index
+      <div className="app-menu-bar__menus" role="none">
+        {menus.map((menu, index) => {
+          const isActive = activeMenuIndex === index
 
-        return (
-          <div
-            key={menu.id ?? `${menu.label}-${index}`}
-            className="app-menu-bar__top-item"
-            onMouseEnter={() => {
-              if (activeMenuIndex !== null && !menu.disabled) {
-                setActiveMenuIndex(index)
-              }
-            }}
-          >
-            <button
-              type="button"
-              className={`app-menu-bar__top-button${isActive ? ' app-menu-bar__top-button--active' : ''}`}
-              role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={isActive}
-              disabled={menu.disabled}
-              onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
-                event.preventDefault()
-                setActiveMenuIndex((currentIndex) => (currentIndex === index ? null : index))
+          return (
+            <div
+              key={menu.id ?? `${menu.label}-${index}`}
+              className="app-menu-bar__top-item"
+              onMouseEnter={() => {
+                if (activeMenuIndex !== null && !menu.disabled) {
+                  setActiveMenuIndex(index)
+                }
               }}
             >
-              {menu.label}
-            </button>
+              <button
+                type="button"
+                className={`app-menu-bar__top-button${isActive ? ' app-menu-bar__top-button--active' : ''}`}
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={isActive}
+                disabled={menu.disabled}
+                onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+                  event.preventDefault()
+                  setActiveMenuIndex((currentIndex) => (currentIndex === index ? null : index))
+                }}
+              >
+                {menu.label}
+              </button>
 
-            {isActive && activeMenu && (
-              <div className="app-menu-bar__dropdown" role="none">
-                <AppMenuList items={activeMenu.items} onItemSelect={handleItemSelect} />
-              </div>
-            )}
-          </div>
-        )
-      })}
+              {isActive && activeMenu && (
+                <div className="app-menu-bar__dropdown" role="none">
+                  <AppMenuList items={activeMenu.items} onItemSelect={handleItemSelect} />
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {actions.length > 0 && (
+        <div className="app-menu-bar__actions" role="none">
+          {actions.map((action, index) => (
+            <button
+              key={action.id ?? `${action.label}-${index}`}
+              type="button"
+              className="app-menu-bar__action-button"
+              role="menuitem"
+              disabled={action.disabled}
+              title={action.title}
+              aria-label={action.ariaLabel}
+              onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+                event.preventDefault()
+                setActiveMenuIndex(null)
+                action.onSelect?.()
+              }}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

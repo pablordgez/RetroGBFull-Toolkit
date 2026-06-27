@@ -47,6 +47,7 @@ interface AppPreferences {
 
 const APP_DISPLAY_NAME = 'RetroGBFull-Toolkit'
 const APP_USER_DATA_DIRECTORY = 'retrogbfull-toolkit'
+const DOCUMENTATION_URL = 'https://gbdocs.aernus.com/'
 const DEFAULT_APP_PREFERENCES: AppPreferences = {
   scriptEditorTheme: 'light',
   coordinateUnit: 'gui',
@@ -584,6 +585,11 @@ const registerIpcHandlers = (): void => {
 
   ipcMain.handle('app:preferences:save', async (_, preferences: Partial<AppPreferences>) => {
     return saveAppPreferences(preferences)
+  })
+
+  ipcMain.handle('app:documentation:open', async () => {
+    await shell.openExternal(DOCUMENTATION_URL)
+    return true
   })
 
   registerProjectIpcHandlers({
