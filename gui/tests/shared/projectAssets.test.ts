@@ -8,7 +8,10 @@ import {
   serializeProjectAssetDocument,
   getProjectAssetDisplayName,
   getProjectAssetKindFromFileName,
-  normalizeWindowSplitSettings,
+  normalizeLegacyWindowVisibilityBands,
+  normalizeWindowVisibilityBands,
+  normalizeWindowVisibilityTileBands,
+  WINDOW_VISIBILITY_MAX_BANDS,
   type ActorAssetDocument,
   type MusicAssetDocument,
   type SceneAssetDocument
@@ -532,23 +535,50 @@ describe('projectAssets scene parsing', () => {
     ).toThrow('The scene asset file is invalid.')
   })
 
-  it('normalizes window split settings for full, top-only, and split windows', () => {
-    expect(normalizeWindowSplitSettings(0, 8, 18)).toEqual({
-      windowTopEnd: 0,
-      windowBottomStart: 0
-    })
-    expect(normalizeWindowSplitSettings(4, 0, 18)).toEqual({
-      windowTopEnd: 4,
-      windowBottomStart: 0
-    })
-    expect(normalizeWindowSplitSettings(4, 2, 18)).toEqual({
-      windowTopEnd: 4,
-      windowBottomStart: 5
-    })
-    expect(normalizeWindowSplitSettings(4, 15, 18)).toEqual({
-      windowTopEnd: 4,
-      windowBottomStart: 15
-    })
+  it('normalizes window visibility bands and legacy split settings', () => {
+    expect(
+      normalizeWindowVisibilityBands([
+        { start: 12.8, end: 16.9 },
+        { start: -5, end: 4 },
+        { start: 16, end: 20 },
+        { start: 20, end: 20 },
+        { start: 150, end: 160 }
+      ])
+    ).toEqual([
+      { start: 0, end: 4 },
+      { start: 16, end: 20 }
+    ])
+
+    expect(
+      normalizeWindowVisibilityBands(
+        Array.from({ length: WINDOW_VISIBILITY_MAX_BANDS + 1 }, (_, index) => ({
+          start: index * 2,
+          end: index * 2 + 1
+        }))
+      )
+    ).toHaveLength(WINDOW_VISIBILITY_MAX_BANDS)
+
+    expect(
+      normalizeWindowVisibilityTileBands([
+        { start: 5, end: 10 },
+        { start: 25, end: 31 }
+      ])
+    ).toEqual([
+      { start: 0, end: 16 },
+      { start: 24, end: 32 }
+    ])
+
+    expect(normalizeLegacyWindowVisibilityBands(0, 8, 18)).toEqual([
+      { start: 0, end: 144 }
+    ])
+    expect(normalizeLegacyWindowVisibilityBands(4, 0, 18)).toEqual([{ start: 0, end: 32 }])
+    expect(normalizeLegacyWindowVisibilityBands(4, 2, 18)).toEqual([
+      { start: 0, end: 32 },
+      { start: 40, end: 144 }
+    ])
+    expect(normalizeLegacyWindowVisibilityBands(4, 15, 18, 112)).toEqual([
+      { start: 112, end: 144 }
+    ])
   })
 
   it('builds file names and resolves asset kinds and display names case-insensitively', () => {
@@ -578,8 +608,7 @@ describe('projectAssets scene parsing', () => {
     })
     expect(createDefaultProjectAssetDocument('window')).toMatchObject({
       kind: 'window',
-      windowTopEnd: 0,
-      windowBottomStart: 0
+      windowVisibilityBands: [{ start: 0, end: 144 }]
     })
     expect(createDefaultProjectAssetDocument('scene')).toMatchObject({
       kind: 'scene',
@@ -666,14 +695,14 @@ describe('projectAssets scene parsing', () => {
         tilesetPath: undefined,
         selectedTileIndex: 0,
         tool: 'brush',
+        windowY: 200,
         windowTopEnd: 3,
         windowBottomStart: 1
       })
     ).toMatchObject({
       kind: 'window',
       tilesetPath: null,
-      windowTopEnd: 3,
-      windowBottomStart: 4
+      windowVisibilityBands: []
     })
   })
 

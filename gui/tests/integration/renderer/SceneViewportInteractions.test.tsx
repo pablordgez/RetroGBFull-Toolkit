@@ -223,8 +223,10 @@ describe('<SceneViewport /> integration', () => {
       windowDocument: {
         width: 20,
         height: 18,
-        windowTopEnd: 2,
-        windowBottomStart: 16
+        windowVisibilityBands: [
+          { start: 0, end: 16 },
+          { start: 128, end: 144 }
+        ]
       }
     })
 
@@ -232,8 +234,7 @@ describe('<SceneViewport /> integration', () => {
       expect(rendered.props.drawTilemap).toHaveBeenCalledWith(expect.any(HTMLCanvasElement))
       expect(rendered.props.drawWindow).toHaveBeenCalledWith(expect.any(HTMLCanvasElement))
     })
-    expect(document.querySelector('.scene-viewport__window-region--top')).not.toBeNull()
-    expect(document.querySelector('.scene-viewport__window-region--bottom')).not.toBeNull()
+    expect(document.querySelectorAll('.scene-viewport__window-region')).toHaveLength(2)
     expect(screen.getByTitle('Camera follow target')).toBeInTheDocument()
     expect(
       document.querySelector<HTMLDivElement>('.scene-viewport__screen-outline')?.style.left

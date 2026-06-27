@@ -573,9 +573,10 @@ export const buildProjectCode = async (
     const files = buildMapResourceFiles(
       windowResource,
       tileset,
-      document.windowTopEnd,
-      document.windowBottomStart,
-      canReuseSharedTilesetForMap(windowResource, tileset)
+      0,
+      0,
+      canReuseSharedTilesetForMap(windowResource, tileset),
+      document.windowVisibilityBands
     )
     managedResourceDirectories.add(dirname(files.headerPath).replace(/\\/g, '/'))
     writtenFiles.push(

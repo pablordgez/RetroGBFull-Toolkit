@@ -9,6 +9,9 @@ import {
   MUSIC_NOTE_COUNT,
   MUSIC_NOTE_REST,
   MUSIC_PATTERN_LENGTH,
+  WINDOW_VISIBILITY_MAX_BANDS,
+  WINDOW_VISIBILITY_SCREEN_HEIGHT,
+  WINDOW_VISIBILITY_TILE_SIZE,
   normalizeSceneCameraDeadzone,
   type ActorAssetDocument,
   type MusicChannelKey,
@@ -23,12 +26,21 @@ import {
   type SpriteAssetDocument,
   type TilemapAssetDocument,
   type TilesetAssetDocument,
-  type WindowAssetDocument
+  type WindowAssetDocument,
+  type WindowVisibilityBand
 } from './projectAssetTypes'
 
 export interface WindowSplitSettings {
   windowTopEnd: number
   windowBottomStart: number
+}
+
+const clampWindowScanline = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(WINDOW_VISIBILITY_SCREEN_HEIGHT, Math.trunc(value)))
 }
 
 export const normalizeWindowSplitSettings = (
@@ -78,6 +90,104 @@ export const normalizeWindowSplitSettings = (
     windowTopEnd: nextWindowTopEnd,
     windowBottomStart: normalizedBottomStart
   }
+}
+
+export const normalizeWindowVisibilityBands = (
+  value: unknown,
+  maxBands = WINDOW_VISIBILITY_MAX_BANDS
+): WindowVisibilityBand[] => {
+  if (!Array.isArray(value)) {
+    return [{ start: 0, end: WINDOW_VISIBILITY_SCREEN_HEIGHT }]
+  }
+
+  const sortedBands = value
+    .flatMap((entry): WindowVisibilityBand[] => {
+      if (
+        !isRecord(entry) ||
+        !Number.isInteger(entry.start) ||
+        !Number.isInteger(entry.end)
+      ) {
+        return []
+      }
+
+      const start = clampWindowScanline(Number(entry.start))
+      const end = clampWindowScanline(Number(entry.end))
+      return start < end ? [{ start, end }] : []
+    })
+    .sort((left, right) => left.start - right.start || left.end - right.end)
+
+  const mergedBands: WindowVisibilityBand[] = []
+
+  for (const band of sortedBands) {
+    const previousBand = mergedBands[mergedBands.length - 1]
+
+    if (previousBand && band.start <= previousBand.end) {
+      previousBand.end = Math.max(previousBand.end, band.end)
+    } else if (mergedBands.length < maxBands) {
+      mergedBands.push({ ...band })
+    }
+  }
+
+  return mergedBands
+}
+
+export const normalizeWindowVisibilityTileBands = (
+  value: unknown,
+  maxBands = WINDOW_VISIBILITY_MAX_BANDS
+): WindowVisibilityBand[] => {
+  const snappedBands = normalizeWindowVisibilityBands(value, maxBands).map((band) => ({
+    start: Math.max(
+      0,
+      Math.min(
+        WINDOW_VISIBILITY_SCREEN_HEIGHT,
+        Math.floor(band.start / WINDOW_VISIBILITY_TILE_SIZE) * WINDOW_VISIBILITY_TILE_SIZE
+      )
+    ),
+    end: Math.max(
+      0,
+      Math.min(
+        WINDOW_VISIBILITY_SCREEN_HEIGHT,
+        Math.ceil(band.end / WINDOW_VISIBILITY_TILE_SIZE) * WINDOW_VISIBILITY_TILE_SIZE
+      )
+    )
+  }))
+
+  return normalizeWindowVisibilityBands(snappedBands, maxBands)
+}
+
+export const normalizeLegacyWindowVisibilityBands = (
+  windowTopEnd: number,
+  windowBottomStart: number,
+  height: number,
+  windowY = 0
+): WindowVisibilityBand[] => {
+  const y = clampWindowScanline(windowY)
+
+  if (y > 0) {
+    return normalizeWindowVisibilityBands([{ start: y, end: WINDOW_VISIBILITY_SCREEN_HEIGHT }])
+  }
+
+  const splitSettings = normalizeWindowSplitSettings(windowTopEnd, windowBottomStart, height)
+
+  if (splitSettings.windowTopEnd === 0) {
+    return normalizeWindowVisibilityBands([{ start: 0, end: WINDOW_VISIBILITY_SCREEN_HEIGHT }])
+  }
+
+  const bands: WindowVisibilityBand[] = [
+    {
+      start: 0,
+      end: Math.min(WINDOW_VISIBILITY_SCREEN_HEIGHT, splitSettings.windowTopEnd << 3)
+    }
+  ]
+
+  if (splitSettings.windowBottomStart > splitSettings.windowTopEnd) {
+    bands.push({
+      start: Math.min(WINDOW_VISIBILITY_SCREEN_HEIGHT, splitSettings.windowBottomStart << 3),
+      end: WINDOW_VISIBILITY_SCREEN_HEIGHT
+    })
+  }
+
+  return normalizeWindowVisibilityBands(bands)
 }
 
 const asAssetDocument = <TDocument extends ProjectAssetDocument>(document: unknown): TDocument => {
@@ -402,22 +512,30 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
           typeof rawDocument.tilesetPath !== 'string') ||
         !Number.isInteger(rawDocument.selectedTileIndex) ||
         (rawDocument.tool !== 'brush' && rawDocument.tool !== 'fill') ||
-        !Number.isInteger(rawDocument.windowTopEnd) ||
-        !Number.isInteger(rawDocument.windowBottomStart)
+        (rawDocument.windowVisibilityBands !== undefined &&
+          !Array.isArray(rawDocument.windowVisibilityBands)) ||
+        (rawDocument.windowVisibilityBands === undefined &&
+          (!Number.isInteger(rawDocument.windowTopEnd) ||
+            !Number.isInteger(rawDocument.windowBottomStart))) ||
+        (rawDocument.windowY !== undefined && !Number.isInteger(rawDocument.windowY))
       ) {
         throw new Error('The window asset file is invalid.')
       }
 
-      const splitSettings = normalizeWindowSplitSettings(
-        Number(rawDocument.windowTopEnd),
-        Number(rawDocument.windowBottomStart),
-        Number(rawDocument.height)
-      )
+      const windowVisibilityBands =
+        rawDocument.windowVisibilityBands !== undefined
+          ? normalizeWindowVisibilityBands(rawDocument.windowVisibilityBands)
+          : normalizeLegacyWindowVisibilityBands(
+              Number(rawDocument.windowTopEnd),
+              Number(rawDocument.windowBottomStart),
+              Number(rawDocument.height),
+              Number(rawDocument.windowY ?? 0)
+            )
 
       return asAssetDocument<WindowAssetDocument>({
         ...rawDocument,
         tilesetPath: rawDocument.tilesetPath ?? null,
-        ...splitSettings
+        windowVisibilityBands
       })
     }
     case 'scene': {

@@ -2438,8 +2438,7 @@ describe('<ProjectWorkspace />', () => {
               tilesetPath: null,
               selectedTileIndex: 0,
               tool: 'brush' as const,
-              windowTopEnd: 2,
-              windowBottomStart: 0
+              windowVisibilityBands: [{ start: 0, end: 16 }]
             }
           }
         }
@@ -2581,8 +2580,7 @@ describe('<ProjectWorkspace />', () => {
               tilesetPath: null,
               selectedTileIndex: 0,
               tool: 'brush' as const,
-              windowTopEnd: 2,
-              windowBottomStart: 0
+              windowVisibilityBands: [{ start: 0, end: 16 }]
             }
           }
         }

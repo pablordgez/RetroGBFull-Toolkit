@@ -163,6 +163,16 @@ export interface TilemapAssetDocument {
   tool: 'brush' | 'fill'
 }
 
+export const WINDOW_VISIBILITY_SCREEN_HEIGHT = 144
+export const WINDOW_VISIBILITY_TILE_SIZE = 8
+export const WINDOW_VISIBILITY_TILE_ROWS = WINDOW_VISIBILITY_SCREEN_HEIGHT / WINDOW_VISIBILITY_TILE_SIZE
+export const WINDOW_VISIBILITY_MAX_BANDS = 8
+
+export interface WindowVisibilityBand {
+  start: number
+  end: number
+}
+
 export interface WindowAssetDocument {
   kind: 'window'
   version: 1
@@ -172,8 +182,7 @@ export interface WindowAssetDocument {
   tilesetPath: string | null
   selectedTileIndex: number
   tool: 'brush' | 'fill'
-  windowTopEnd: number
-  windowBottomStart: number
+  windowVisibilityBands: WindowVisibilityBand[]
 }
 
 export interface SceneAssetDocument {

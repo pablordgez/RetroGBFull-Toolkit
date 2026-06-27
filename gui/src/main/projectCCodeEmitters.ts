@@ -4,14 +4,20 @@ import { MANAGED_DEFAULT_ACTOR_IDENTIFIER } from './projectSceneCodeEmitter'
 import type { ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
 import { buildProjectTagEnumName, type ProjectTagEntry } from '../shared/projectTags'
+import {
+  normalizeLegacyWindowVisibilityBands,
+  normalizeWindowVisibilityTileBands,
+  WINDOW_VISIBILITY_SCREEN_HEIGHT,
+  type WindowVisibilityBand,
+  type WindowAssetDocument
+} from '../shared/projectAssets'
 import type {
   MusicAssetDocument,
   MusicChannelKey,
   MusicPattern,
   SpriteAssetDocument,
   TilemapAssetDocument,
-  TilesetAssetDocument,
-  WindowAssetDocument
+  TilesetAssetDocument
 } from '../shared/projectAssets'
 
 const formatHexByte = (value: number): string => {
@@ -374,11 +380,17 @@ export const buildMapResourceFiles = (
   tileset: ProjectAssetRecordLike,
   windowTopEnd: number,
   windowBottomStart: number,
-  usesSharedTileset: boolean
+  usesSharedTileset: boolean,
+  windowVisibilityBands?: WindowVisibilityBand[]
 ): { headerPath: string; sourcePath: string; headerContent: string; sourceContent: string } => {
   const document = resource.document as TilemapAssetDocument | WindowAssetDocument
   const tilesetDocument = tileset.document as TilesetAssetDocument
-  const runtimeGrid = buildRuntimeMapGrid(document, windowTopEnd, windowBottomStart)
+  const visibilityBands =
+    document.kind === 'window'
+      ? (windowVisibilityBands ??
+        normalizeLegacyWindowVisibilityBands(windowTopEnd, windowBottomStart, document.height))
+      : []
+  const runtimeGrid = buildRuntimeMapGrid(document, visibilityBands)
   const resourceDirectory = `res/${resource.identifier}`
   const headerPath = `${resourceDirectory}/${resource.identifier}.h`
   const sourcePath = `${resourceDirectory}/${resource.identifier}.c`
@@ -435,7 +447,7 @@ export const buildMapResourceFiles = (
         ]
       : []),
     '',
-    `/* window split: top=${windowTopEnd}, bottom=${windowBottomStart} */`,
+    `/* window visibility bands: ${visibilityBands.map((band) => `${band.start}-${band.end}`).join(',') || 'none'} */`,
     ''
   ]
 
@@ -447,14 +459,9 @@ export const buildMapResourceFiles = (
   }
 }
 
-const clampWindowRow = (value: number, height: number): number => {
-  return Math.max(0, Math.min(height, Math.trunc(value)))
-}
-
 const buildRuntimeMapGrid = (
   document: TilemapAssetDocument | WindowAssetDocument,
-  windowTopEnd: number,
-  windowBottomStart: number
+  windowVisibilityBands: WindowVisibilityBand[] = []
 ): { grid: number[]; height: number } => {
   if (document.kind !== 'window') {
     return {
@@ -463,35 +470,26 @@ const buildRuntimeMapGrid = (
     }
   }
 
-  const topEnd = clampWindowRow(windowTopEnd, document.height)
-  const bottomStart = clampWindowRow(windowBottomStart, document.height)
+  const visibilityBands = normalizeWindowVisibilityTileBands(windowVisibilityBands)
   const width = Math.max(1, document.width)
-
-  if (topEnd === 0 && bottomStart === 0) {
-    return {
-      grid: document.grid,
-      height: document.height
-    }
-  }
-
   const rows: number[] = []
+  let visibleLineCount = 0
 
-  for (let row = 0; row < topEnd; row += 1) {
-    rows.push(...document.grid.slice(row * width, (row + 1) * width))
-  }
+  for (const band of visibilityBands) {
+    const end = Math.min(WINDOW_VISIBILITY_SCREEN_HEIGHT, band.end)
 
-  if (bottomStart > topEnd) {
-    const screenTileRows = 18
-    const bottomEnd = Math.min(document.height, screenTileRows)
-
-    for (let row = bottomStart; row < bottomEnd; row += 1) {
-      rows.push(...document.grid.slice(row * width, (row + 1) * width))
+    for (let line = band.start; line < end; line += 1) {
+      if (visibleLineCount % 8 === 0) {
+        const row = Math.floor(line / 8)
+        rows.push(...document.grid.slice(row * width, (row + 1) * width))
+      }
+      visibleLineCount += 1
     }
   }
 
   return {
     grid: rows,
-    height: rows.length / width
+    height: Math.ceil(visibleLineCount / 8)
   }
 }
 
@@ -525,7 +523,9 @@ const assertValidMusicDocument = (music: ProjectAssetRecordLike): MusicAssetDocu
     document.instruments.some(
       (instrument) =>
         (instrument.sweep !== undefined &&
-          (!Number.isInteger(instrument.sweep) || instrument.sweep < 0 || instrument.sweep > 255)) ||
+          (!Number.isInteger(instrument.sweep) ||
+            instrument.sweep < 0 ||
+            instrument.sweep > 255)) ||
         !Number.isInteger(instrument.reg1) ||
         instrument.reg1 < 0 ||
         instrument.reg1 > 255 ||
@@ -765,9 +765,7 @@ export const buildSongRegistryFiles = (
 // builds the animation registry
 export const buildAnimationRegistryFiles = (
   sprites: ProjectAssetRecordLike[],
-  use8x16SpriteMode = sprites.some(
-    (sprite) => (sprite.document as SpriteAssetDocument).is8x16Mode
-  )
+  use8x16SpriteMode = sprites.some((sprite) => (sprite.document as SpriteAssetDocument).is8x16Mode)
 ): { headerContent: string; sourceContent: string } => {
   const includeLines = sprites.map(
     (sprite) => `#include "${sprite.identifier}/${sprite.identifier}.h"`
@@ -885,14 +883,26 @@ export const buildMapRegistryFiles = (
     ...tilemaps.map((resource) => ({
       ...resource,
       windowTopEnd: 0,
-      windowBottomStart: 0
+      windowBottomStart: 0,
+      windowVisibilityBands: [] as WindowVisibilityBand[]
     })),
     ...windows.map((resource) => {
       const document = resource.document as WindowAssetDocument
       return {
         ...resource,
-        windowTopEnd: document.windowTopEnd,
-        windowBottomStart: document.windowBottomStart
+        windowTopEnd: 0,
+        windowBottomStart: 0,
+        windowVisibilityBands:
+          document.windowVisibilityBands ??
+          normalizeLegacyWindowVisibilityBands(
+            Number((document as WindowAssetDocument & { windowTopEnd?: number }).windowTopEnd ?? 0),
+            Number(
+              (document as WindowAssetDocument & { windowBottomStart?: number }).windowBottomStart ??
+                0
+            ),
+            document.height,
+            Number((document as WindowAssetDocument & { windowY?: number }).windowY ?? 0)
+          )
       }
     })
   ].map((resource) => {
@@ -972,7 +982,7 @@ export const buildMapRegistryFiles = (
   // define the map_data array with entries for each map pointing to its bank and map data
   const mapDefinitionLines = maps.flatMap((map) => {
     const document = map.document as TilemapAssetDocument | WindowAssetDocument
-    const runtimeGrid = buildRuntimeMapGrid(document, map.windowTopEnd, map.windowBottomStart)
+    const runtimeGrid = buildRuntimeMapGrid(document, map.windowVisibilityBands)
     return [
       `Map _${map.identifier} = {`,
       `    .id = ${map.identifier},`,

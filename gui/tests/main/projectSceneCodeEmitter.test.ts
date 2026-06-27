@@ -201,7 +201,14 @@ describe('projectSceneCodeEmitter', () => {
     const windowResource = asset(
       'window',
       'DialogWindow',
-      { kind: 'window', tilesetPath: 'tileset', width: 2, height: 2, grid: [0, 1, 2, 3] },
+      {
+        kind: 'window',
+        tilesetPath: 'tileset',
+        width: 2,
+        height: 2,
+        grid: [0, 1, 2, 3],
+        windowVisibilityBands: [{ start: 0, end: 144 }]
+      },
       2,
       'window'
     )
@@ -282,6 +289,52 @@ describe('projectSceneCodeEmitter', () => {
         vi.fn()
       )
     ).toThrow('Scene "Broken" references a missing window resource: missing')
+  })
+
+  it('emits window visibility bands for non-full windows', () => {
+    const lines = buildSceneInitializationLines(
+      asset(
+        'scene',
+        'BandScene',
+        sceneDocument({
+          windowPath: 'window'
+        })
+      ),
+      new Map(),
+      new Map([
+        [
+          'window',
+          asset(
+            'window',
+            'DialogWindow',
+            {
+              kind: 'window',
+              tilesetPath: null,
+              width: 20,
+              height: 18,
+              grid: new Array(20 * 18).fill(0),
+              windowVisibilityBands: [
+                { start: 0, end: 32 },
+                { start: 80, end: 144 }
+              ]
+            },
+            2,
+            'window'
+          )
+        ]
+      ]),
+      vi.fn()
+    )
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        '    set_scene_window(maps[DialogWindow]);',
+        '    window_visibility_clear_owner(WINDOW_VISIBILITY_OWNER_SCENE);',
+        '    window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, 0, 32);',
+        '    window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, 80, 144);',
+        '    window_visibility_apply();'
+      ])
+    )
   })
 
   it('uses configured sprite palette fallbacks before discovered sprite palettes', () => {

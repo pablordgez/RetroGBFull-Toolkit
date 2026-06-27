@@ -3,6 +3,8 @@ import type { ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
 import {
   normalizeSceneCameraDeadzone,
+  normalizeWindowVisibilityTileBands,
+  WINDOW_VISIBILITY_SCREEN_HEIGHT,
   type SceneActorPhysicsMode,
   type SceneAssetCollisionNode,
   type SceneAssetDocument,
@@ -394,6 +396,23 @@ export const buildSceneInitializationLines = (
     }
 
     lines.push(`    set_scene_window(maps[${windowResource.identifier}]);`)
+
+    const windowDocument = windowResource.document as WindowAssetDocument
+    const visibilityBands = normalizeWindowVisibilityTileBands(windowDocument.windowVisibilityBands)
+    const isFullWindow =
+      visibilityBands.length === 1 &&
+      visibilityBands[0].start === 0 &&
+      visibilityBands[0].end === WINDOW_VISIBILITY_SCREEN_HEIGHT
+
+    if (!isFullWindow) {
+      lines.push('    window_visibility_clear_owner(WINDOW_VISIBILITY_OWNER_SCENE);')
+      visibilityBands.forEach((band) => {
+        lines.push(
+          `    window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, ${band.start}, ${band.end});`
+        )
+      })
+      lines.push('    window_visibility_apply();')
+    }
   }
 
   const counters = { actor: 0 }

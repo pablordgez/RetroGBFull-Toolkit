@@ -509,8 +509,7 @@ describe('project asset editors', () => {
             tilesetPath: 'Main.rgbtileset.json',
             selectedTileIndex: 0,
             tool: 'brush',
-            windowTopEnd: 2,
-            windowBottomStart: 0
+            windowVisibilityBands: [{ start: 0, end: 16 }]
           }
         }
       }
@@ -546,9 +545,8 @@ describe('project asset editors', () => {
       )
     })
 
-    const bottomInput = screen.getByRole('spinbutton', { name: /bottom rows/i })
-    fireEvent.change(bottomInput, { target: { value: '1' } })
-    fireEvent.blur(bottomInput)
+    expect(await screen.findByText('Bands: 1 / 8')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tile row 3' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Save*' }))
 
@@ -558,8 +556,10 @@ describe('project asset editors', () => {
         'UI/Main.rgbwindow.json',
         expect.objectContaining({
           kind: 'window',
-          windowTopEnd: 2,
-          windowBottomStart: 3
+          windowVisibilityBands: [
+            { start: 0, end: 16 },
+            { start: 24, end: 32 }
+          ]
         })
       )
     })

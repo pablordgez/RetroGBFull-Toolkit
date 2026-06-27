@@ -8,8 +8,10 @@ import {
   useState
 } from 'react'
 import {
+  normalizeWindowVisibilityTileBands,
   normalizeSceneCameraDeadzone,
-  type SceneAssetActorNode
+  type SceneAssetActorNode,
+  type WindowVisibilityBand
 } from '../../../../shared/projectAssets'
 import { RetroActorIcon } from '../Docking/ResourceIcons'
 import { useViewport } from '../hooks/viewport/useViewport'
@@ -53,8 +55,7 @@ interface SceneViewportProps {
   windowDocument: {
     width: number
     height: number
-    windowTopEnd: number
-    windowBottomStart: number
+    windowVisibilityBands: WindowVisibilityBand[]
   } | null
   windowTilesetDocumentLoaded: boolean
   onActorSelect: (nodeId: string) => void
@@ -120,9 +121,9 @@ interface CollisionResizeState {
 type DragState = ActorDragState | CollisionMoveState | CollisionResizeState
 
 interface WindowVisibleBand {
-  key: 'top' | 'bottom'
-  startRow: number
-  rowCount: number
+  key: string
+  startLine: number
+  lineCount: number
 }
 
 const DEFAULT_SCENE_SIZE = {
@@ -334,25 +335,13 @@ export const SceneViewport = ({
       return []
     }
 
-    const bands: WindowVisibleBand[] = []
-
-    if (windowDocument.windowTopEnd > 0) {
-      bands.push({
-        key: 'top',
-        startRow: 0,
-        rowCount: windowDocument.windowTopEnd
+    return normalizeWindowVisibilityTileBands(windowDocument.windowVisibilityBands).map(
+      (band, index): WindowVisibleBand => ({
+        key: `${band.start}-${band.end}-${index}`,
+        startLine: band.start,
+        lineCount: band.end - band.start
       })
-    }
-
-    if (windowDocument.windowBottomStart > windowDocument.windowTopEnd) {
-      bands.push({
-        key: 'bottom',
-        startRow: windowDocument.windowBottomStart,
-        rowCount: Math.max(0, 18 - windowDocument.windowBottomStart)
-      })
-    }
-
-    return bands.filter((band) => band.rowCount > 0)
+    )
   }, [windowDocument])
 
   const mapPixelSize = useMemo(() => {
@@ -752,13 +741,13 @@ export const SceneViewport = ({
               {windowVisibleBands.map((band) => (
                 <div
                   key={band.key}
-                  className={`scene-viewport__window-region scene-viewport__window-region--${band.key}`}
+                  className="scene-viewport__window-region"
                   aria-hidden="true"
                   style={{
                     left: `${MAP_RENDER_OFFSET.x}px`,
-                    top: `${MAP_RENDER_OFFSET.y + band.startRow * 8}px`,
+                    top: `${MAP_RENDER_OFFSET.y + band.startLine}px`,
                     width: `${GAME_BOY_SCREEN_SIZE.width}px`,
-                    height: `${band.rowCount * 8}px`
+                    height: `${band.lineCount}px`
                   }}
                 />
               ))}

@@ -757,8 +757,10 @@ describe('projectCode integration', () => {
       height,
       grid,
       tilesetPath: tileset.resourcePath,
-      windowTopEnd: 2,
-      windowBottomStart: 15
+      windowVisibilityBands: [
+        { start: 0, end: 16 },
+        { start: 120, end: 144 }
+      ]
     })
 
     await buildProjectCode(project.path)
@@ -783,8 +785,8 @@ describe('projectCode integration', () => {
 
     expect(windowSource.replace(/\s/g, '')).toContain(compactMapData)
     expect(mapRegistrySource).toContain('.height = 5,')
-    expect(mapRegistrySource).toContain('.window_top_end = 2,')
-    expect(mapRegistrySource).toContain('.window_bottom_start = 15')
+    expect(mapRegistrySource).toContain('.window_top_end = 0,')
+    expect(mapRegistrySource).toContain('.window_bottom_start = 0')
   })
 
   it('keeps per-map tileset copies when the map and tileset banks differ', async () => {

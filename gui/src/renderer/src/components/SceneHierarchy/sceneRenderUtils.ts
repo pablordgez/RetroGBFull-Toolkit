@@ -4,6 +4,10 @@ import type {
   TilesetAssetDocument,
   WindowAssetDocument
 } from '../../../../shared/projectAssets'
+import {
+  normalizeWindowVisibilityTileBands,
+  WINDOW_VISIBILITY_SCREEN_HEIGHT
+} from '../../../../shared/projectAssets'
 import { normalizeProjectPalette } from '../../../../shared/projectPalettes'
 
 const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
@@ -121,8 +125,17 @@ export const drawWindowToCanvas = (
   canvas.height = 144
   context.clearRect(0, 0, canvas.width, canvas.height)
 
-  const drawTile = (tileX: number, tileY: number, destinationTileY: number): void => {
-    if (tileX >= 20 || destinationTileY >= 18) {
+  const visibleLines = new Set<number>()
+  normalizeWindowVisibilityTileBands(windowDocument.windowVisibilityBands).forEach((band) => {
+    for (let line = band.start; line < band.end; line += 1) {
+      visibleLines.add(line)
+    }
+  })
+
+  const drawTile = (tileX: number, tileY: number): void => {
+    const destinationY = tileY * 8
+
+    if (tileX >= 20 || destinationY >= WINDOW_VISIBILITY_SCREEN_HEIGHT) {
       return
     }
 
@@ -136,6 +149,8 @@ export const drawWindowToCanvas = (
     const imageData = context.createImageData(8, 8)
 
     for (let pixelIndex = 0; pixelIndex < tilePixels.length; pixelIndex += 1) {
+      const pixelY = Math.floor(pixelIndex / 8)
+      const isVisible = visibleLines.has(destinationY + pixelY)
       const paletteIndex = tilePixels[pixelIndex]
       const hex = palette[paletteIndex] ?? '#000000'
       const { r, g, b } = hexToRgb(hex)
@@ -144,26 +159,15 @@ export const drawWindowToCanvas = (
       imageData.data[dataIndex] = r
       imageData.data[dataIndex + 1] = g
       imageData.data[dataIndex + 2] = b
-      imageData.data[dataIndex + 3] = 255
+      imageData.data[dataIndex + 3] = isVisible ? 255 : 0
     }
 
-    context.putImageData(imageData, tileX * 8, destinationTileY * 8)
+    context.putImageData(imageData, tileX * 8, destinationY)
   }
 
   for (let tileY = 0; tileY < windowDocument.height; tileY += 1) {
-    const isFullWindow = windowDocument.windowTopEnd === 0
-    const isTopWindowRow = windowDocument.windowTopEnd > 0 && tileY < windowDocument.windowTopEnd
-    const isBottomWindowRow =
-      windowDocument.windowTopEnd > 0 &&
-      windowDocument.windowBottomStart > windowDocument.windowTopEnd &&
-      tileY >= windowDocument.windowBottomStart
-
-    if (!isFullWindow && !isTopWindowRow && !isBottomWindowRow) {
-      continue
-    }
-
     for (let tileX = 0; tileX < windowDocument.width; tileX += 1) {
-      drawTile(tileX, tileY, tileY)
+      drawTile(tileX, tileY)
     }
   }
 }

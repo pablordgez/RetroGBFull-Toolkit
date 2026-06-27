@@ -71,8 +71,7 @@ export const createDefaultProjectAssetDocument = (
         tilesetPath: null,
         selectedTileIndex: 0,
         tool: 'brush',
-        windowTopEnd: 0,
-        windowBottomStart: 0
+        windowVisibilityBands: [{ start: 0, end: 144 }]
       }
     case 'scene':
       return {

@@ -100,8 +100,10 @@ describe('useSceneAssetReferences', () => {
             tilesetPath: 'Tilesets/UI.rgbtileset.json',
             selectedTileIndex: 0,
             tool: 'brush' as const,
-            windowTopEnd: 2,
-            windowBottomStart: 15
+            windowVisibilityBands: [
+              { start: 0, end: 16 },
+              { start: 120, end: 144 }
+            ]
           }
         }
       }
@@ -267,8 +269,7 @@ describe('useSceneAssetReferences', () => {
             tilesetPath: null,
             selectedTileIndex: 0,
             tool: 'brush' as const,
-            windowTopEnd: 0,
-            windowBottomStart: 0
+            windowVisibilityBands: [{ start: 0, end: 144 }]
           }
         }
       }
