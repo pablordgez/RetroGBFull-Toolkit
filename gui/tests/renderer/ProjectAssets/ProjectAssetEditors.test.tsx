@@ -478,7 +478,7 @@ describe('project asset editors', () => {
     })
   })
 
-  it('loads and saves window assets and normalizes split settings', async () => {
+  it('loads and saves window assets and normalizes visibility settings', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
       projectPath: '/projects/Alpha',

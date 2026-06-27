@@ -428,7 +428,7 @@ export const buildMapResourceFiles = (
   // define the bank ref
   // define the map data array with the formatted byte array
   // define the tileset data array with the formatted byte array if not using a shared tileset
-  // add a comment with the window split if it's a window resource
+  // add a comment with the window visibility bands if it's a window resource
   const sourceLines = [
     `#pragma bank ${resource.bank}`,
     `#include "${resource.identifier}.h"`,
@@ -877,21 +877,16 @@ export const buildMapRegistryFiles = (
   windows: ProjectAssetRecordLike[],
   tilesetsByPath: Map<string, ProjectAssetRecordLike>
 ): { headerContent: string; sourceContent: string } => {
-  // first, combine tilemaps and windows into one list, setting window split properties to 0 for tilemaps
-  // and to the actual values for windows
+  // first, combine tilemaps and windows into one list, carrying visibility bands for generated window resources
   const maps = [
     ...tilemaps.map((resource) => ({
       ...resource,
-      windowTopEnd: 0,
-      windowBottomStart: 0,
       windowVisibilityBands: [] as WindowVisibilityBand[]
     })),
     ...windows.map((resource) => {
       const document = resource.document as WindowAssetDocument
       return {
         ...resource,
-        windowTopEnd: 0,
-        windowBottomStart: 0,
         windowVisibilityBands:
           document.windowVisibilityBands ??
           normalizeLegacyWindowVisibilityBands(
@@ -990,9 +985,7 @@ export const buildMapRegistryFiles = (
       `    .height = ${runtimeGrid.height},`,
       `    .tileset = ${map.usesSharedTileset ? map.tileset.identifier : map.identifier}_tileset,`,
       `    .num_tiles = ${map.usesSharedTileset ? map.tileset.identifier : map.identifier}_num_tiles,`,
-      '    .first_tile = 0,',
-      `    .window_top_end = ${map.windowTopEnd},`,
-      `    .window_bottom_start = ${map.windowBottomStart}`,
+      '    .first_tile = 0',
       '};',
       ''
     ]

@@ -552,7 +552,7 @@ export const buildProjectCode = async (
     )
   }
 
-  // generate window resources using their split configuration
+  // generate window resources using their tile-row visibility configuration
   for (const windowResource of windowAssets) {
     const document = windowResource.document as WindowAssetDocument
 

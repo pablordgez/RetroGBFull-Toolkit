@@ -7,12 +7,7 @@
 
 Scene* THIS_SCENE;
 
-static void configure_window_split(Map* map){
-    uint8_t top_end;
-    uint8_t bottom_start;
-    uint16_t top_ly;
-    uint16_t bottom_ly;
-
+static void configure_window_visibility(Map* map){
     window_visibility_clear_owner(WINDOW_VISIBILITY_OWNER_SCENE);
 
     if(map == NULL){
@@ -20,31 +15,7 @@ static void configure_window_split(Map* map){
         return;
     }
 
-    top_end = map->window_top_end;
-    bottom_start = map->window_bottom_start;
-    top_ly = ((uint16_t)top_end) << 3;
-    bottom_ly = ((uint16_t)bottom_start) << 3;
-
-    if(top_end == 0 && bottom_start == 0){
-        window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, 0, SCREEN_HEIGHT);
-        window_visibility_apply();
-        return;
-    }
-    if(top_end > 0 && bottom_start == 0 && top_ly < SCREEN_HEIGHT){
-        window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, 0, (uint8_t)top_ly);
-    }
-    else if(top_end > 0 && bottom_start > top_end && top_ly < SCREEN_HEIGHT){
-        window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, 0, (uint8_t)top_ly);
-        if(bottom_ly < SCREEN_HEIGHT){
-            window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, (uint8_t)bottom_ly, SCREEN_HEIGHT);
-        }
-    }
-    else{
-        window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, 0, SCREEN_HEIGHT);
-        window_visibility_apply();
-        return;
-    }
-
+    window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, 0, SCREEN_HEIGHT);
     window_visibility_apply();
 }
 
@@ -154,7 +125,7 @@ void set_scene_window(Map* map) BANKED{
     if(THIS_SCENE->window != NULL){
         load_map(1);
     }
-    configure_window_split(THIS_SCENE->window);
+    configure_window_visibility(THIS_SCENE->window);
     if(THIS_SCENE->map != NULL){
         THIS_MAP = THIS_SCENE->map;
     }

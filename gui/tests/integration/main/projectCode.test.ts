@@ -785,8 +785,8 @@ describe('projectCode integration', () => {
 
     expect(windowSource.replace(/\s/g, '')).toContain(compactMapData)
     expect(mapRegistrySource).toContain('.height = 5,')
-    expect(mapRegistrySource).toContain('.window_top_end = 0,')
-    expect(mapRegistrySource).toContain('.window_bottom_start = 0')
+    expect(mapRegistrySource).not.toContain('.window_top_end')
+    expect(mapRegistrySource).not.toContain('.window_bottom_start')
   })
 
   it('keeps per-map tileset copies when the map and tileset banks differ', async () => {

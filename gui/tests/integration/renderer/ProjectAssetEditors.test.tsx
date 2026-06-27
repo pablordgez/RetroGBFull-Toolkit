@@ -334,7 +334,7 @@ describe('project asset editor integration', () => {
     })
   })
 
-  it('loads and saves window split settings through the shared tile-grid editor', async () => {
+  it('loads and saves window visibility settings through the shared tile-grid editor', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
       projectPath: '/projects/Alpha',

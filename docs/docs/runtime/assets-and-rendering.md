@@ -61,8 +61,6 @@ Header: `core/src/Assets/Map/Map.h`
 | `tileset` | `uint8_t*` | Tile graphics data. |
 | `num_tiles` | `uint8_t` | Number of tiles in the tileset. |
 | `first_tile` | `uint8_t` | First allocated tile slot in VRAM. |
-| `window_top_end` | `uint8_t` | Optional top window cutoff, in tile rows. |
-| `window_bottom_start` | `uint8_t` | Optional lower window start, in tile rows. |
 
 ### Functions
 

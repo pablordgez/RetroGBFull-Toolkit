@@ -79,6 +79,6 @@ Header: `core/src/Window/WindowVisibility.h`
 
 ### Behavior notes
 
-- Bands are expressed in screen scanlines, not tile rows.
+- Bands are stored as screen scanline ranges, but code generation and the editor align these with tiles to avoid artifacts.
 - `window_visibility_apply()` hides the window if there are no active bands.
 - Overlapping or touching bands are merged.

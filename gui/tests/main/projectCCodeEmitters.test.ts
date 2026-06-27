@@ -287,8 +287,8 @@ describe('projectCCodeEmitters', () => {
     expect(populated.sourceContent).toContain('.tileset = Tiles_tileset')
     expect(populated.sourceContent).toContain('.tileset = WindowA_tileset')
     expect(populated.sourceContent).not.toContain('.window_y')
-    expect(populated.sourceContent).toContain('.window_top_end = 0')
-    expect(populated.sourceContent).toContain('.window_bottom_start = 0')
+    expect(populated.sourceContent).not.toContain('.window_top_end')
+    expect(populated.sourceContent).not.toContain('.window_bottom_start')
 
     expect(() =>
       buildMapRegistryFiles(
