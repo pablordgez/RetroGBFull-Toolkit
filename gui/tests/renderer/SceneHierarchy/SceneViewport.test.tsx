@@ -10,7 +10,15 @@ import { SceneViewport } from '../../../src/renderer/src/components/SceneHierarc
 import type { SceneDocumentEditor } from '../../../src/renderer/src/components/SceneHierarchy/useSceneDocumentEditor'
 import { PROJECT_ASSET_DRAG_MIME } from '../../../src/renderer/src/components/ProjectAssets/projectAssetDrag'
 
-const createMockDataTransfer = (payload?: unknown) => {
+interface MockDataTransfer {
+  dropEffect: string
+  effectAllowed: string
+  readonly types: string[]
+  setData: (type: string, value: string) => void
+  getData: (type: string) => string
+}
+
+const createMockDataTransfer = (payload?: unknown): MockDataTransfer => {
   const data = new Map<string, string>()
 
   if (payload !== undefined) {
@@ -77,7 +85,11 @@ const createEditor = (
 const renderViewport = (
   editor: SceneDocumentEditor,
   overrides: Partial<Parameters<typeof SceneViewport>[0]> = {}
-) => {
+): ReturnType<typeof render> & {
+  props: Parameters<typeof SceneViewport>[0]
+  surface: HTMLElement
+  world: HTMLDivElement
+} => {
   const props: Parameters<typeof SceneViewport>[0] = {
     editor,
     tilemapSize: { width: 20, height: 18 },
@@ -96,7 +108,7 @@ const renderViewport = (
     ...overrides
   }
 
-  const rendered = render(<SceneViewport {...props} />)
+  const rendered = render(React.createElement(SceneViewport, props))
   const surface = screen.getByTestId('scene-viewport-surface')
   const world = document.querySelector('.scene-viewport__world') as HTMLDivElement
 
@@ -141,7 +153,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('<SceneViewport /> integration', () => {
+describe('<SceneViewport /> component unit', () => {
   it('handles empty, error, reset, pan, zoom, background, and invalid drop states', async () => {
     const editor = createEditor([])
     const rendered = renderViewport(editor, {
@@ -169,7 +181,11 @@ describe('<SceneViewport /> integration', () => {
     const invalidDataTransfer = createMockDataTransfer({ kind: 'sprite', path: 'Hero.json' })
     fireEvent.dragEnter(rendered.surface, { dataTransfer: invalidDataTransfer })
     fireEvent.dragOver(rendered.surface, { dataTransfer: invalidDataTransfer })
-    fireEvent.drop(rendered.surface, { dataTransfer: invalidDataTransfer, clientX: 16, clientY: 16 })
+    fireEvent.drop(rendered.surface, {
+      dataTransfer: invalidDataTransfer,
+      clientX: 16,
+      clientY: 16
+    })
 
     expect(rendered.props.onProjectAssetDrop).not.toHaveBeenCalled()
   })
@@ -180,12 +196,21 @@ describe('<SceneViewport /> integration', () => {
         id: 'hero-node',
         spritePath: 'Sprites/Hero.rgbsprite.json',
         spritePaletteIndex: 1,
-        followCamera: true
+        x: 240 * 16,
+        followCamera: true,
+        cameraDeadzone: {
+          left: 20,
+          right: 40,
+          top: 20,
+          bottom: 20
+        }
       }),
       createActor({ id: 'plain-node', name: 'Plain', x: 12, y: 8 }),
       createCollision()
     ])
     const rendered = renderViewport(editor, {
+      tilemapSize: { width: 40, height: 36 },
+      tilemapDocument: { width: 40, height: 36 },
       spritePreviews: {
         'Sprites/Hero.rgbsprite.json': {
           path: 'Sprites/Hero.rgbsprite.json',
@@ -198,8 +223,10 @@ describe('<SceneViewport /> integration', () => {
       windowDocument: {
         width: 20,
         height: 18,
-        windowTopEnd: 2,
-        windowBottomStart: 16
+        windowVisibilityBands: [
+          { start: 0, end: 16 },
+          { start: 128, end: 144 }
+        ]
       }
     })
 
@@ -207,12 +234,14 @@ describe('<SceneViewport /> integration', () => {
       expect(rendered.props.drawTilemap).toHaveBeenCalledWith(expect.any(HTMLCanvasElement))
       expect(rendered.props.drawWindow).toHaveBeenCalledWith(expect.any(HTMLCanvasElement))
     })
-    expect(document.querySelector('.scene-viewport__window-region--top')).not.toBeNull()
-    expect(document.querySelector('.scene-viewport__window-region--bottom')).not.toBeNull()
+    expect(document.querySelectorAll('.scene-viewport__window-region')).toHaveLength(2)
     expect(screen.getByTitle('Camera follow target')).toBeInTheDocument()
-    expect(document.querySelector<HTMLImageElement>('.scene-viewport__actor-sprite')?.src).toContain(
-      'hero-b.png'
-    )
+    expect(
+      document.querySelector<HTMLDivElement>('.scene-viewport__screen-outline')?.style.left
+    ).toBe('128px')
+    expect(
+      document.querySelector<HTMLImageElement>('.scene-viewport__actor-sprite')?.src
+    ).toContain('hero-b.png')
     expect(document.querySelector('.scene-viewport__actor-placeholder')).not.toBeNull()
 
     const dataTransfer = createMockDataTransfer({
@@ -322,7 +351,11 @@ describe('<SceneViewport /> integration', () => {
       )
 
       expect(resizeHandles).toHaveLength(4)
-      fireEvent.mouseDown(resizeHandles[movement.handleIndex], { button: 0, clientX: 32, clientY: 40 })
+      fireEvent.mouseDown(resizeHandles[movement.handleIndex], {
+        button: 0,
+        clientX: 32,
+        clientY: 40
+      })
       fireEvent.pointerMove(window, movement.point)
       fireEvent.pointerUp(window)
       resizeRendered.unmount()

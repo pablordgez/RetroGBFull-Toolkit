@@ -79,6 +79,7 @@ export type ProjectResourceItem =
       name: string
       path: string
       parentPath: string | null
+      hasScriptDescendants?: boolean
     }
   | {
       type: 'file'

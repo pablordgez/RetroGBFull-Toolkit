@@ -7,7 +7,12 @@ import {
   useRef,
   useState
 } from 'react'
-import type { SceneAssetActorNode } from '../../../../shared/projectAssets'
+import {
+  normalizeWindowVisibilityTileBands,
+  normalizeSceneCameraDeadzone,
+  type SceneAssetActorNode,
+  type WindowVisibilityBand
+} from '../../../../shared/projectAssets'
 import { RetroActorIcon } from '../Docking/ResourceIcons'
 import { useViewport } from '../hooks/viewport/useViewport'
 import {
@@ -50,8 +55,7 @@ interface SceneViewportProps {
   windowDocument: {
     width: number
     height: number
-    windowTopEnd: number
-    windowBottomStart: number
+    windowVisibilityBands: WindowVisibilityBand[]
   } | null
   windowTilesetDocumentLoaded: boolean
   onActorSelect: (nodeId: string) => void
@@ -117,9 +121,9 @@ interface CollisionResizeState {
 type DragState = ActorDragState | CollisionMoveState | CollisionResizeState
 
 interface WindowVisibleBand {
-  key: 'top' | 'bottom'
-  startRow: number
-  rowCount: number
+  key: string
+  startLine: number
+  lineCount: number
 }
 
 const DEFAULT_SCENE_SIZE = {
@@ -138,6 +142,58 @@ const MAP_RENDER_OFFSET = {
 }
 
 const COLLISION_HANDLE_NAMES: Array<CollisionResizeState['handle']> = ['nw', 'ne', 'sw', 'se']
+
+const clampValue = (value: number, minimum: number, maximum: number): number => {
+  return Math.max(minimum, Math.min(maximum, value))
+}
+
+const getFollowedCameraViewport = (
+  actor: SceneAssetActorNode | null,
+  actorPosition: { x: number; y: number } | null,
+  actorSpriteSize: { width: number; height: number } | null,
+  mapPixelSize: { width: number; height: number } | null
+): { x: number; y: number; width: number; height: number } => {
+  if (!actor || !actorPosition || !mapPixelSize) {
+    return {
+      x: MAP_RENDER_OFFSET.x,
+      y: MAP_RENDER_OFFSET.y,
+      width: GAME_BOY_SCREEN_SIZE.width,
+      height: GAME_BOY_SCREEN_SIZE.height
+    }
+  }
+
+  const actorAnchorOffset = getSceneActorAnchorOffsetForSize(actorSpriteSize)
+  const deadzone = normalizeSceneCameraDeadzone(actor.cameraDeadzone)
+  const actorRuntimePixelX = Math.trunc((actorPosition.x + actorAnchorOffset.x) / 16)
+  const actorRuntimePixelY = Math.trunc((actorPosition.y + actorAnchorOffset.y) / 16)
+  let cameraX = 0
+  let cameraY = 0
+  const actorDrawX = actorRuntimePixelX - cameraX - 8
+  const actorDrawY = actorRuntimePixelY - cameraY - 16
+
+  if (actorDrawX > GAME_BOY_SCREEN_SIZE.width - deadzone.right) {
+    cameraX += actorDrawX - (GAME_BOY_SCREEN_SIZE.width - deadzone.right)
+  } else if (actorDrawX < deadzone.left) {
+    cameraX -= deadzone.left - actorDrawX
+  }
+
+  if (actorDrawY > GAME_BOY_SCREEN_SIZE.height - deadzone.bottom) {
+    cameraY += actorDrawY - (GAME_BOY_SCREEN_SIZE.height - deadzone.bottom)
+  } else if (actorDrawY < deadzone.top) {
+    cameraY -= deadzone.top - actorDrawY
+  }
+
+  return {
+    x:
+      MAP_RENDER_OFFSET.x +
+      clampValue(cameraX, 0, Math.max(0, mapPixelSize.width - GAME_BOY_SCREEN_SIZE.width)),
+    y:
+      MAP_RENDER_OFFSET.y +
+      clampValue(cameraY, 0, Math.max(0, mapPixelSize.height - GAME_BOY_SCREEN_SIZE.height)),
+    width: GAME_BOY_SCREEN_SIZE.width,
+    height: GAME_BOY_SCREEN_SIZE.height
+  }
+}
 
 const getResizeAnchorPoint = (
   rect: CollisionResizeState['startRect'],
@@ -234,9 +290,7 @@ export const SceneViewport = ({
     return new Map(
       actors.map((actor) => [
         actor.id,
-        getSceneActorAnchorOffsetForSize(
-          actor.spritePath ? spritePreviews[actor.spritePath] : null
-        )
+        getSceneActorAnchorOffsetForSize(actor.spritePath ? spritePreviews[actor.spritePath] : null)
       ])
     )
   }, [actors, spritePreviews])
@@ -281,33 +335,23 @@ export const SceneViewport = ({
       return []
     }
 
-    const bands: WindowVisibleBand[] = []
-
-    if (windowDocument.windowTopEnd > 0) {
-      bands.push({
-        key: 'top',
-        startRow: 0,
-        rowCount: windowDocument.windowTopEnd
+    return normalizeWindowVisibilityTileBands(windowDocument.windowVisibilityBands).map(
+      (band, index): WindowVisibleBand => ({
+        key: `${band.start}-${band.end}-${index}`,
+        startLine: band.start,
+        lineCount: band.end - band.start
       })
-    }
-
-    if (windowDocument.windowBottomStart > windowDocument.windowTopEnd) {
-      bands.push({
-        key: 'bottom',
-        startRow: windowDocument.windowBottomStart,
-        rowCount: Math.max(0, 18 - windowDocument.windowBottomStart)
-      })
-    }
-
-    return bands.filter((band) => band.rowCount > 0)
+    )
   }, [windowDocument])
 
-  const mapPixelSize = tilemapSize
-    ? {
-        width: tilemapSize.width * 8,
-        height: tilemapSize.height * 8
-      }
-    : null
+  const mapPixelSize = useMemo(() => {
+    return tilemapSize
+      ? {
+          width: tilemapSize.width * 8,
+          height: tilemapSize.height * 8
+        }
+      : null
+  }, [tilemapSize])
 
   const scenePixelSize = mapPixelSize
     ? {
@@ -321,6 +365,27 @@ export const SceneViewport = ({
         )
       }
     : DEFAULT_SCENE_SIZE
+
+  const followedActor = useMemo(() => {
+    return actors.find((actor) => actor.followCamera) ?? null
+  }, [actors])
+
+  const screenOutlineRect = useMemo(() => {
+    const followedActorPosition = followedActor
+      ? (dragPreviewPositions?.get(followedActor.id) ?? { x: followedActor.x, y: followedActor.y })
+      : null
+    const followedActorSpriteSize =
+      followedActor?.spritePath && spritePreviews[followedActor.spritePath]
+        ? spritePreviews[followedActor.spritePath]
+        : null
+
+    return getFollowedCameraViewport(
+      followedActor,
+      followedActorPosition,
+      followedActorSpriteSize,
+      mapPixelSize
+    )
+  }, [dragPreviewPositions, followedActor, mapPixelSize, spritePreviews])
 
   const { containerRef, fitToScreen, handlePan, handleZoom, pan, scale } = useViewport(
     scenePixelSize.width,
@@ -477,14 +542,7 @@ export const SceneViewport = ({
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [
-    actorAnchorOffsets,
-    dragState,
-    editor,
-    getWorldPointFromClient,
-    tilemapSize,
-    updateDragState
-  ])
+  }, [actorAnchorOffsets, dragState, editor, getWorldPointFromClient, tilemapSize, updateDragState])
 
   const buildActorStyle = (actor: SceneAssetActorNode): CSSProperties => {
     const preview =
@@ -499,9 +557,7 @@ export const SceneViewport = ({
     }
   }
 
-  const buildCollisionStyle = (
-    collision: (typeof collisions)[number]
-  ): CSSProperties => {
+  const buildCollisionStyle = (collision: (typeof collisions)[number]): CSSProperties => {
     const previewNodeId = dragState && dragState.kind !== 'actor' ? dragState.nodeId : null
     const activeRect =
       collisionPreviewRect && previewNodeId === collision.node.id
@@ -645,7 +701,16 @@ export const SceneViewport = ({
             onViewportBackgroundSelect()
           }}
         >
-          <div className="scene-viewport__screen-outline" aria-hidden="true" />
+          <div
+            className="scene-viewport__screen-outline"
+            aria-hidden="true"
+            style={{
+              left: `${screenOutlineRect.x}px`,
+              top: `${screenOutlineRect.y}px`,
+              width: `${screenOutlineRect.width}px`,
+              height: `${screenOutlineRect.height}px`
+            }}
+          />
 
           {tilemapDocument && (
             <canvas
@@ -676,13 +741,13 @@ export const SceneViewport = ({
               {windowVisibleBands.map((band) => (
                 <div
                   key={band.key}
-                  className={`scene-viewport__window-region scene-viewport__window-region--${band.key}`}
+                  className="scene-viewport__window-region"
                   aria-hidden="true"
                   style={{
                     left: `${MAP_RENDER_OFFSET.x}px`,
-                    top: `${MAP_RENDER_OFFSET.y + band.startRow * 8}px`,
+                    top: `${MAP_RENDER_OFFSET.y + band.startLine}px`,
                     width: `${GAME_BOY_SCREEN_SIZE.width}px`,
-                    height: `${band.rowCount * 8}px`
+                    height: `${band.lineCount}px`
                   }}
                 />
               ))}
@@ -740,10 +805,9 @@ export const SceneViewport = ({
               }}
             >
               {editor.selectedNodeId === collision.node.id &&
-                (
-                  dragState?.kind === 'collision-resize' && dragState.nodeId === collision.node.id
-                    ? [dragState.activeHandle]
-                    : COLLISION_HANDLE_NAMES
+                (dragState?.kind === 'collision-resize' && dragState.nodeId === collision.node.id
+                  ? [dragState.activeHandle]
+                  : COLLISION_HANDLE_NAMES
                 ).map((handle) => (
                   <button
                     key={handle}

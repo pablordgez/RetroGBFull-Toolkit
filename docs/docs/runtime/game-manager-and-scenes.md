@@ -77,7 +77,7 @@ Header: `core/src/Scene/SceneRegistry.h`
 
 | Name | Meaning |
 | --- | --- |
-| `SCENES` | Generated scene type list. The default placeholder contains `SampleScene`. |
+| `SCENES` | Scene type list generated into a managed block in `SceneRegistry.h`. The default placeholder contains `SampleScene`. |
 
 ### `SceneType`
 
@@ -87,6 +87,18 @@ Default values in the shipped core:
 
 - `_SampleScene`
 - `NUM_SCENES`
+
+### Functions
+
+| Function | Description |
+| --- | --- |
+| `struct Scene* create_scene(SceneType type) BANKED;` | Allocates the concrete scene struct for `type`, sets `scene->type`, and returns it as `Scene*`. Returns `NULL` for invalid types or allocation failure. Scene initialization still happens in `set_scene()`. |
+
+### Behavior notes
+
+- `create_scene()` is core registry logic that uses the generated `SCENES` list, so it knows the correct `sizeof(...)` for each scene wrapper or scene script type.
+- `create_scene()` does not change `THIS_SCENE`. The game manager updates the current scene context when `set_scene()` installs and initializes the returned scene.
+- Do not reuse one scene pointer across multiple scene changes. Scenes are mutable live instances and are owned by the game manager after `set_scene()` or `set_scene_deferred()`.
 
 ## `SampleScene.h`
 

@@ -63,7 +63,7 @@ const defaultProps = () => ({
   clipboardResource: null,
   selectedResourcePath: null,
   isInteractionDisabled: false,
-  canPasteClipboardResource: true,
+  canPasteClipboardResourceTo: vi.fn(() => true),
   renameInputRef: createRef<HTMLInputElement>(),
   shortcutLabels: { copy: 'Ctrl+C', cut: 'Ctrl+X', paste: 'Ctrl+V' },
   startingScenePath: null,
@@ -78,7 +78,8 @@ const defaultProps = () => ({
   onSetStartingScene: vi.fn(),
   onBeginResourceEditing: vi.fn(),
   onRequestDeleteResource: vi.fn(),
-  onRequestBankResource: vi.fn()
+  onRequestBankResource: vi.fn(),
+  onOpenParentDirectory: vi.fn()
 })
 
 describe('ResourceManagementGrid', () => {
@@ -129,7 +130,7 @@ describe('ResourceManagementGrid', () => {
 
     spriteProps.menuOptions?.find((option) => option.label === 'Copy')?.onSelect()
     spriteProps.menuOptions?.find((option) => option.label === 'Cut')?.onSelect()
-    spriteProps.menuOptions?.find((option) => option.label === 'Paste')?.onSelect()
+    folderProps.menuOptions?.find((option) => option.label === 'Paste')?.onSelect()
     spriteProps.menuOptions?.find((option) => option.label === 'Show In File Explorer')?.onSelect()
     spriteProps.menuOptions?.find((option) => option.label === 'Rename')?.onSelect()
     spriteProps.menuOptions?.find((option) => option.label === 'Delete')?.onSelect()
@@ -139,14 +140,20 @@ describe('ResourceManagementGrid', () => {
 
     expect(props.onPlaceClipboardResource).toHaveBeenNthCalledWith(1, spriteResource, 'copy')
     expect(props.onPlaceClipboardResource).toHaveBeenNthCalledWith(2, spriteResource, 'cut')
-    expect(props.onPasteClipboardResource).toHaveBeenCalled()
+    expect(props.onPasteClipboardResource).toHaveBeenCalledWith(folderResource.path)
     expect(props.onShowResourceInFileExplorer).toHaveBeenCalledWith(spriteResource)
-    expect(props.onBeginResourceEditing).toHaveBeenCalledWith(spriteResource.path, spriteResource.name, 'sprite')
+    expect(props.onBeginResourceEditing).toHaveBeenCalledWith(
+      spriteResource.path,
+      spriteResource.name,
+      'sprite',
+      null
+    )
     expect(props.onRequestDeleteResource).toHaveBeenCalledWith({
       path: spriteResource.path,
       name: spriteResource.name,
       resourceType: 'sprite',
-      scriptKind: null
+      scriptKind: null,
+      warningMessage: null
     })
     expect(props.onCommitRename).toHaveBeenCalledWith(spriteResource.path)
     expect(props.onCancelRename).toHaveBeenCalled()
@@ -156,12 +163,12 @@ describe('ResourceManagementGrid', () => {
   it('disables interaction options and sets starting scene for non-current scenes', () => {
     gridItemProps.splice(0)
     const props = defaultProps()
+    props.canPasteClipboardResourceTo.mockReturnValue(false)
     render(
       <ResourceManagementGrid
         {...props}
         resources={[sceneResource, spriteResource]}
         isInteractionDisabled
-        canPasteClipboardResource={false}
         startingScenePath={null}
       />
     )
@@ -171,7 +178,6 @@ describe('ResourceManagementGrid', () => {
       onCancelRename: () => void
     }>
     expect(sceneProps.menuOptions?.find((option) => option.label === 'Copy')?.disabled).toBe(true)
-    expect(sceneProps.menuOptions?.find((option) => option.label === 'Paste')?.disabled).toBe(true)
     sceneProps.menuOptions?.find((option) => option.label === 'Set As Starting Scene')?.onSelect()
     expect(props.onSetStartingScene).toHaveBeenCalledWith(sceneResource.path, sceneResource.name)
 

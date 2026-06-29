@@ -1,4 +1,4 @@
-import React from 'react'
+import * as React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,17 +10,19 @@ import {
   type MusicStep
 } from '../../../src/shared/projectAssets'
 
-const renderEditor = () => {
+const renderEditor = (): ReturnType<typeof render> => {
   return render(
-    <MemoryRouter
-      initialEntries={[
-        '/music-editor?projectPath=/projects/Alpha&assetPath=Audio/Battle.rgbmusic.json'
-      ]}
-    >
-      <Routes>
-        <Route path="/music-editor" element={<MusicEditor />} />
-      </Routes>
-    </MemoryRouter>
+    <React.Fragment>
+      <MemoryRouter
+        initialEntries={[
+          '/music-editor?projectPath=/projects/Alpha&assetPath=Audio/Battle.rgbmusic.json'
+        ]}
+      >
+        <Routes>
+          <Route path="/music-editor" element={<MusicEditor />} />
+        </Routes>
+      </MemoryRouter>
+    </React.Fragment>
   )
 }
 
@@ -264,6 +266,92 @@ describe('MusicEditor', () => {
 
     await screen.findByRole('button', { name: /Noise Lead/ })
     expect(screen.queryByText('No compatible instrument selected')).not.toBeInTheDocument()
+  })
+
+  it('shows channel compatibility and removes incompatible sequence placements when a pattern changes channel kind', async () => {
+    const document: MusicAssetDocument = {
+      kind: 'music',
+      version: 1,
+      speed: 8,
+      loop: true,
+      instruments: [
+        {
+          name: 'Pulse 0',
+          channelType: 'pulse',
+          reg1: 0x80,
+          reg2: 0xf2,
+          reg3: 0x00
+        },
+        {
+          name: 'Sweep 1',
+          channelType: 'pulse',
+          sweep: 0x12,
+          reg1: 0x80,
+          reg2: 0xf2,
+          reg3: 0x00
+        }
+      ],
+      patterns: [
+        {
+          id: 'pattern-0',
+          name: 'Theme',
+          channel: 'ch1',
+          steps: [
+            { noteIndex: 60, instrument: 0 },
+            ...createEmptySteps().slice(1)
+          ]
+        }
+      ],
+      sequence: {
+        ch1: ['pattern-0'],
+        ch2: ['pattern-0'],
+        ch4: [null]
+      }
+    }
+
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue({
+      assetKind: 'music',
+      resourcePath: 'Audio/Battle.rgbmusic.json',
+      document
+    })
+    vi.mocked(window.api.saveProjectAssetFile).mockImplementation(
+      async (_projectPath, resourcePath, savedDocument) => ({
+        assetKind: 'music',
+        resourcePath,
+        document: savedDocument
+      })
+    )
+
+    renderEditor()
+
+    expect(await screen.findByRole('heading', { name: 'Battle' })).toBeInTheDocument()
+    fireEvent.doubleClick(screen.getAllByRole('button', { name: /Theme/ })[0]!)
+
+    expect((await screen.findAllByText('CH1/CH2 Pulse')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('option', { name: 'CH4 Noise' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByDisplayValue('CH1 Pulse'), {
+      target: { value: 'ch4' }
+    })
+
+    expect((await screen.findAllByText('CH4 Noise')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /Pulse 0/ })).toHaveAttribute('aria-disabled', 'true')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0]!)
+
+    await waitFor(() => {
+      expect(window.api.saveProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Audio/Battle.rgbmusic.json',
+        expect.objectContaining({
+          sequence: expect.objectContaining({
+            ch1: [null],
+            ch2: [null],
+            ch4: [null]
+          })
+        })
+      )
+    })
   })
 
   it('moves notes and clips through drag and drop interactions', async () => {

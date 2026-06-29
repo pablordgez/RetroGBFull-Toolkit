@@ -26,10 +26,12 @@
 }
 
 .project-workspace__menu-cluster {
-  flex: 0 0 auto;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .project-workspace__project-summary {
+  flex: 0 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;

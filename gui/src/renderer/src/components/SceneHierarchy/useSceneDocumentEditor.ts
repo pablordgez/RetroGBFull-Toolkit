@@ -92,17 +92,20 @@ export interface SceneDocumentEditor {
     nextValues: Partial<
       Pick<
         SceneAssetActorNode,
-        'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode' | 'spritePaletteIndex'
+        | 'x'
+        | 'y'
+        | 'spritePath'
+        | 'scriptPath'
+        | 'physicsMode'
+        | 'spritePaletteIndex'
+        | 'cameraDeadzone'
       >
     >
   ) => void
   setSceneScriptProperty: (propertyName: string, propertyValue: ScriptPropertyValue) => void
   setSpritePalette: (paletteIndex: SceneSpritePaletteIndex, nextPalette: string[] | null) => void
   setBackgroundPalette: (nextPalette: string[] | null) => void
-  setActorSpritePaletteIndex: (
-    nodeId: string,
-    spritePaletteIndex: SceneSpritePaletteIndex
-  ) => void
+  setActorSpritePaletteIndex: (nodeId: string, spritePaletteIndex: SceneSpritePaletteIndex) => void
   setActorScriptProperty: (
     nodeId: string,
     propertyName: string,
@@ -469,7 +472,13 @@ export const useSceneDocumentEditor = ({
       nextValues: Partial<
         Pick<
           SceneAssetActorNode,
-          'x' | 'y' | 'spritePath' | 'scriptPath' | 'physicsMode' | 'spritePaletteIndex'
+          | 'x'
+          | 'y'
+          | 'spritePath'
+          | 'scriptPath'
+          | 'physicsMode'
+          | 'spritePaletteIndex'
+          | 'cameraDeadzone'
         >
       >
     ) => {

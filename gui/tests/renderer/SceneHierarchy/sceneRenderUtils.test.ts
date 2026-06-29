@@ -115,8 +115,10 @@ describe('sceneRenderUtils', () => {
       tilesetPath: 'Tilesets/Main.rgbtileset.json',
       selectedTileIndex: 0,
       tool: 'brush',
-      windowTopEnd: 2,
-      windowBottomStart: 15
+      windowVisibilityBands: [
+        { start: 0, end: 16 },
+        { start: 120, end: 144 }
+      ]
     }
 
     drawWindowToCanvas(canvas, windowDocument, tileset)
@@ -126,17 +128,20 @@ describe('sceneRenderUtils', () => {
 
     expect(putImageDataCalls.some(([, x, y]) => x === 0 && y === 0)).toBe(true)
     expect(putImageDataCalls.some(([, x, y]) => x === 0 && y === 8)).toBe(true)
-    expect(putImageDataCalls.some(([, x, y]) => x === 0 && y === 16)).toBe(false)
-    expect(putImageDataCalls.some(([, x, y]) => x === 0 && y === 14 * 8)).toBe(false)
+    expect(putImageDataCalls.some(([, x, y]) => x === 0 && y === 16)).toBe(true)
+    expect(putImageDataCalls.some(([, x, y]) => x === 0 && y === 14 * 8)).toBe(true)
     expect(putImageDataCalls.some(([, x, y]) => x === 0 && y === 15 * 8)).toBe(true)
     expect(putImageDataCalls.some(([, x, y]) => x === 0 && y === 17 * 8)).toBe(true)
 
     const topRowCall = putImageDataCalls.find(([, x, y]) => x === 0 && y === 0)
+    const hiddenRowCall = putImageDataCalls.find(([, x, y]) => x === 0 && y === 16)
     const bottomRowCall = putImageDataCalls.find(([, x, y]) => x === 0 && y === 15 * 8)
 
     expect(topRowCall).toBeDefined()
+    expect(hiddenRowCall).toBeDefined()
     expect(bottomRowCall).toBeDefined()
     expect(Array.from(topRowCall![0].data.slice(0, 4))).toEqual([255, 255, 255, 255])
+    expect(Array.from(hiddenRowCall![0].data.slice(0, 4))).toEqual([255, 255, 255, 0])
     expect(Array.from(bottomRowCall![0].data.slice(0, 4))).toEqual([0, 0, 0, 255])
   })
 
@@ -163,8 +168,7 @@ describe('sceneRenderUtils', () => {
       tilesetPath: 'Tilesets/Main.rgbtileset.json',
       selectedTileIndex: 0,
       tool: 'brush',
-      windowTopEnd: 0,
-      windowBottomStart: 0
+      windowVisibilityBands: [{ start: 0, end: 144 }]
     }
 
     drawWindowToCanvas(canvas, windowDocument, tileset)

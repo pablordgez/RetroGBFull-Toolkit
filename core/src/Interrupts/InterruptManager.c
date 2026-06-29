@@ -134,7 +134,7 @@ void init_interrupt_manager(void) BANKED{
         if(interrupt_manager_initialized == 0){
             add_VBL(master_vblank_isr);
             add_LCD(master_lcd_isr);
-            add_TIM(master_timer_isr);
+            add_low_priority_TIM(master_timer_isr);
             add_SIO(master_serial_isr);
             interrupt_manager_initialized = 1;
         }

@@ -217,6 +217,7 @@ export const TilesetEditor = () => {
                     ref={tilesetRef} 
                     onSelectTile={handleSelectTile}
                     onRemoveTile={handleRemoveTile}
+                    selectedIndex={selectedTileIndex}
                     className="sidebar-tileset"
                 />
                 
@@ -241,6 +242,7 @@ export const TilesetEditor = () => {
                     selectedColor={selectedColor}
                     onSelect={setSelectedColor}
                     onReorder={setPalette}
+                    showTransparentIndexHint={false}
                 />
 
                 <div className="toolbox">

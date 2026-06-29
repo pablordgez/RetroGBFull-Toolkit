@@ -6,7 +6,8 @@ import type { AddressInfo } from 'net'
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { getProjectLauncherErrorMessage, rememberRecentProject } from './projectLauncher'
+import { rememberRecentProject } from './projectLauncher'
+import { getProjectLauncherErrorMessage } from './projectLauncherPrimitives'
 import { clearDeletedProjectResources } from './projectResources'
 import { registerCodeIpcHandlers } from './ipcCodeHandlers'
 import { registerEditorIpcHandlers } from './ipcEditorHandlers'
@@ -47,6 +48,7 @@ interface AppPreferences {
 
 const APP_DISPLAY_NAME = 'RetroGBFull-Toolkit'
 const APP_USER_DATA_DIRECTORY = 'retrogbfull-toolkit'
+const DOCUMENTATION_URL = 'https://gbdocs.aernus.com/'
 const DEFAULT_APP_PREFERENCES: AppPreferences = {
   scriptEditorTheme: 'light',
   coordinateUnit: 'gui',
@@ -257,6 +259,17 @@ const registerProjectWindow = (projectWindow: BrowserWindow, projectPath: string
     if (isQuittingAfterCleanup || projectWindowsReadyToClose.has(windowId)) {
       projectWindowsReadyToClose.delete(windowId)
       projectWindowPaths.delete(windowId)
+      return
+    }
+
+    const hasCloseConfirmation = editorWindowsWaitingForCloseConfirmation.has(windowId)
+    if (hasCloseConfirmation) {
+      editorWindowsWaitingForCloseConfirmation.delete(windowId)
+    }
+
+    if (!hasCloseConfirmation) {
+      event.preventDefault()
+      projectWindow.webContents.send('editor:close-requested')
       return
     }
 
@@ -471,6 +484,10 @@ const scheduleWindowReplacement = (
     nextWindow.show()
 
     if (currentWindow && !currentWindow.isDestroyed()) {
+      if (projectWindowPaths.has(currentWindow.webContents.id)) {
+        editorWindowsWaitingForCloseConfirmation.add(currentWindow.webContents.id)
+      }
+
       currentWindow.close()
     }
   })
@@ -569,6 +586,11 @@ const registerIpcHandlers = (): void => {
 
   ipcMain.handle('app:preferences:save', async (_, preferences: Partial<AppPreferences>) => {
     return saveAppPreferences(preferences)
+  })
+
+  ipcMain.handle('app:documentation:open', async () => {
+    await shell.openExternal(DOCUMENTATION_URL)
+    return true
   })
 
   registerProjectIpcHandlers({

@@ -151,4 +151,37 @@ describe('AppMenuBar', () => {
       screen.getByRole('menuitemcheckbox', { name: 'Display GUI pixel coordinates' })
     ).toHaveAttribute('aria-checked', 'false')
   })
+
+  it('renders right-aligned action buttons and closes open menus before invoking them', () => {
+    const onAction = vi.fn()
+
+    render(
+      <React.Fragment>
+        <AppMenuBar
+          menus={[
+            {
+              label: 'File',
+              items: [{ label: 'Open', onSelect: vi.fn() }]
+            }
+          ]}
+          actions={[
+            {
+              id: 'docs',
+              label: 'Docs',
+              ariaLabel: 'Open documentation in browser',
+              onSelect: onAction
+            }
+          ]}
+        />
+      </React.Fragment>
+    )
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'File' }))
+    expect(screen.getByRole('menuitem', { name: 'Open' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open documentation in browser' }))
+
+    expect(onAction).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('menuitem', { name: 'Open' })).not.toBeInTheDocument()
+  })
 })

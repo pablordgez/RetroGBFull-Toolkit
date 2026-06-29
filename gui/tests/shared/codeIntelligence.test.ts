@@ -256,6 +256,53 @@ static inline UWORD compute_total(UWORD left, UWORD right) NONBANKED {
     )
   })
 
+  it('parses registry factory functions that return forward-declared struct pointers', () => {
+    const symbolIndex = parseProjectCodeSymbolIndexFromText(
+      `typedef enum {
+    _Hero,
+    NUM_ACTORS
+} ActorType;
+
+struct Actor;
+struct Actor* create_actor(ActorType type) BANKED;
+
+typedef enum {
+    _Intro,
+    NUM_SCENES
+} SceneType;
+
+struct Scene;
+struct Scene* create_scene(SceneType type) BANKED;
+`,
+      { declaredIn: 'src/Actor/ActorRegistry.h' }
+    )
+
+    expect(symbolIndex.functions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'create_actor',
+          returnType: { name: 'Actor', pointerDepth: 1 },
+          parameters: [
+            {
+              name: 'type',
+              type: { name: 'ActorType', pointerDepth: 0 }
+            }
+          ]
+        }),
+        expect.objectContaining({
+          name: 'create_scene',
+          returnType: { name: 'Scene', pointerDepth: 1 },
+          parameters: [
+            {
+              name: 'type',
+              type: { name: 'SceneType', pointerDepth: 0 }
+            }
+          ]
+        })
+      ])
+    )
+  })
+
   it('creates an empty symbol index and merges duplicate structs, enums, and source counts', () => {
     const emptyIndex = createEmptyProjectCodeSymbolIndex()
 

@@ -68,6 +68,49 @@ describe('ProjectAssetPickerModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('filters assets by name, path, type, and shows no-match states', () => {
+    render(
+      <ProjectAssetPickerModal
+        title="Select Asset"
+        description="Choose an asset."
+        options={[
+          {
+            kind: 'sprite',
+            name: 'Hero',
+            path: 'Sprites/Hero.rgbsprite.json'
+          },
+          {
+            kind: 'tilemap',
+            name: 'Dungeon',
+            path: 'Maps/Dungeon.rgbtilemap.json'
+          }
+        ]}
+        isLoading={false}
+        emptyMessage="No assets were found."
+        onRefresh={vi.fn()}
+        onClose={vi.fn()}
+        onSelect={vi.fn()}
+      />
+    )
+
+    fireEvent.change(screen.getByLabelText('Search assets'), {
+      target: { value: 'sprite' }
+    })
+    expect(screen.getByRole('button', { name: /Hero/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Dungeon/i })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Search assets'), {
+      target: { value: 'maps/dungeon' }
+    })
+    expect(screen.queryByRole('button', { name: /Hero/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Dungeon/i })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Search assets'), {
+      target: { value: 'missing' }
+    })
+    expect(screen.getByText('No assets match the current search.')).toBeInTheDocument()
+  })
+
   it('renders the empty state and disables actions while busy', () => {
     render(
       <ProjectAssetPickerModal

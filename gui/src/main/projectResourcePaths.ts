@@ -1,5 +1,5 @@
 import { isAbsolute, relative, resolve } from 'path'
-import { ProjectLauncherError } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 
 export const normalizeResourcePath = (resourcePath: string): string => {

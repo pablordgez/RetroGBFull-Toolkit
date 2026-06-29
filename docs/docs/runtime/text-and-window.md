@@ -45,6 +45,7 @@ Header: `core/src/Assets/Text/Text.h`
 | `void init_text_handle(TextHandle* handle) BANKED;` | Zero-initializes a caller-owned handle. |
 | `TextHandle* create_text_handle(void) BANKED;` | Allocates and initializes a new handle. |
 | `void destroy_text_handle(TextHandle* handle) BANKED;` | Removes active text, then frees the handle. |
+| `uint8_t draw_text(TextHandle* handle, TextLayer layer, uint8_t x, uint8_t y, const unsigned char* text);` | Draws text on the background or window layer. Returns nonzero on success. |
 | `void remove_text(TextHandle* handle) BANKED;` | Restores overwritten tiles and frees tile slots. |
 | `uint8_t move_text(TextHandle* handle, uint8_t x, uint8_t y) BANKED;` | Redraws an active handle at a new position. |
 | `uint8_t update_text(TextHandle* handle, const unsigned char* text);` | Redraws an active handle with new text at the same layer and tile position. Returns nonzero on success. |
@@ -79,6 +80,6 @@ Header: `core/src/Window/WindowVisibility.h`
 
 ### Behavior notes
 
-- Bands are expressed in screen scanlines, not tile rows.
+- Bands are stored as screen scanline ranges, but code generation and the editor align these with tiles to avoid artifacts.
 - `window_visibility_apply()` hides the window if there are no active bands.
 - Overlapping or touching bands are merged.

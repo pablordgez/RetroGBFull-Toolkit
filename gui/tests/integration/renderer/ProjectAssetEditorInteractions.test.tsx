@@ -5,7 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../src/renderer/src/components/PixelEditor/PixelCanvas', () => ({
   PixelCanvas: (props: {
-    onPixelInput: (x: number, y: number, type: 'down' | 'move' | 'up' | 'leave', button: number) => void
+    onPixelInput: (
+      x: number,
+      y: number,
+      type: 'down' | 'move' | 'up' | 'leave',
+      button: number
+    ) => void
     onPan: (deltaX: number, deltaY: number) => void
     onZoom: (factor: number, originX: number, originY: number) => void
   }) => (
@@ -142,7 +147,9 @@ describe('project asset editor interaction integration', () => {
   })
 
   it('records tileset paint, tile creation, tile removal, undo, redo, and save flows', async () => {
-    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue(tilesetPayload('Tilesets/Main.rgbtileset.json', 1))
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue(
+      tilesetPayload('Tilesets/Main.rgbtileset.json', 1)
+    )
     vi.mocked(window.api.saveProjectAssetFile).mockImplementation(
       async (_projectPath, _assetPath, document) => ({
         assetKind: 'tileset',
@@ -181,27 +188,31 @@ describe('project asset editor interaction integration', () => {
   })
 
   it('paints, fills, resizes, and handles picker errors in tilemaps', async () => {
-    vi.mocked(window.api.getProjectResources).mockRejectedValueOnce(new Error('Tilesets unavailable'))
-    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(async (_projectPath, assetPath) => {
-      if (assetPath === 'Maps/Room.rgbtilemap.json') {
-        return {
-          assetKind: 'tilemap',
-          resourcePath: assetPath,
-          document: {
-            kind: 'tilemap',
-            version: 1,
-            width: 2,
-            height: 2,
-            grid: [0, 0, 1, 1],
-            tilesetPath: 'Main.rgbtileset.json',
-            selectedTileIndex: 1,
-            tool: 'brush'
+    vi.mocked(window.api.getProjectResources).mockRejectedValueOnce(
+      new Error('Tilesets unavailable')
+    )
+    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(
+      async (_projectPath, assetPath) => {
+        if (assetPath === 'Maps/Room.rgbtilemap.json') {
+          return {
+            assetKind: 'tilemap',
+            resourcePath: assetPath,
+            document: {
+              kind: 'tilemap',
+              version: 1,
+              width: 2,
+              height: 2,
+              grid: [0, 0, 1, 1],
+              tilesetPath: 'Main.rgbtileset.json',
+              selectedTileIndex: 1,
+              tool: 'brush'
+            }
           }
         }
-      }
 
-      return tilesetPayload()
-    })
+        return tilesetPayload()
+      }
+    )
     vi.mocked(window.api.saveProjectAssetFile).mockImplementation(
       async (_projectPath, _assetPath, document) => ({
         assetKind: 'tilemap',
@@ -245,29 +256,30 @@ describe('project asset editor interaction integration', () => {
     })
   })
 
-  it('normalizes full, top-only, and top-and-bottom window split rows', async () => {
-    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(async (_projectPath, assetPath) => {
-      if (assetPath === 'UI/Main.rgbwindow.json') {
-        return {
-          assetKind: 'window',
-          resourcePath: assetPath,
-          document: {
-            kind: 'window',
-            version: 1,
-            width: 20,
-            height: 6,
-            grid: new Array(120).fill(0),
-            tilesetPath: 'Main.rgbtileset.json',
-            selectedTileIndex: 0,
-            tool: 'brush',
-            windowTopEnd: 0,
-            windowBottomStart: 0
+  it('saves window visibility bands from tile row toggles', async () => {
+    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(
+      async (_projectPath, assetPath) => {
+        if (assetPath === 'UI/Main.rgbwindow.json') {
+          return {
+            assetKind: 'window',
+            resourcePath: assetPath,
+            document: {
+              kind: 'window',
+              version: 1,
+              width: 20,
+              height: 6,
+              grid: new Array(120).fill(0),
+              tilesetPath: 'Main.rgbtileset.json',
+              selectedTileIndex: 0,
+              tool: 'brush',
+              windowVisibilityBands: [{ start: 0, end: 144 }]
+            }
           }
         }
-      }
 
-      return tilesetPayload()
-    })
+        return tilesetPayload()
+      }
+    )
     vi.mocked(window.api.saveProjectAssetFile).mockImplementation(
       async (_projectPath, _assetPath, document) => ({
         assetKind: 'window',
@@ -281,33 +293,26 @@ describe('project asset editor interaction integration', () => {
       <WindowEditor />
     )
 
-    await waitFor(() => {
-      expect(screen.getByText('Full window')).toBeInTheDocument()
-    })
+    expect(await screen.findByText('Bands: 1 / 8')).toBeInTheDocument()
 
-    const topInput = screen.getByRole('spinbutton', { name: /top rows/i })
-    const bottomInput = screen.getByRole('spinbutton', { name: /bottom rows/i })
-    fireEvent.change(topInput, { target: { value: '2' } })
-    fireEvent.blur(topInput)
-    expect(await screen.findByText('Top-only window')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'All Off' }))
+    expect(await screen.findByText('Bands: 0 / 8')).toBeInTheDocument()
 
-    fireEvent.change(bottomInput, { target: { value: '2' } })
-    fireEvent.blur(bottomInput)
-    expect(await screen.findByText('Top and bottom window')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tile row 0' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tile row 2' }))
+    expect(await screen.findByText('Bands: 2 / 8')).toBeInTheDocument()
 
-    fireEvent.change(topInput, { target: { value: '0' } })
-    fireEvent.blur(topInput)
-    expect(await screen.findByText('Full window')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Save\*?$/ }))
     await waitFor(() => {
       expect(window.api.saveProjectAssetFile).toHaveBeenCalledWith(
         '/projects/Alpha',
         'UI/Main.rgbwindow.json',
         expect.objectContaining({
           kind: 'window',
-          windowTopEnd: 0,
-          windowBottomStart: 0
+          windowVisibilityBands: [
+            { start: 0, end: 8 },
+            { start: 16, end: 24 }
+          ]
         })
       )
     })

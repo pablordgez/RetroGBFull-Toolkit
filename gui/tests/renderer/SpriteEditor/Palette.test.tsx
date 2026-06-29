@@ -34,6 +34,23 @@ describe('<Palette />', () => {
         expect(mockOnSelect).toHaveBeenCalledWith(1);
     });
 
+    it('shows the transparent index hint by default', () => {
+        renderPalette();
+
+        expect(screen.getByText((_, element) => (
+            element?.textContent === 'Drag to reorder.Index 0 is transparent.'
+        ))).toBeInTheDocument();
+    });
+
+    it('can hide the transparent index hint', () => {
+        renderPalette({ showTransparentIndexHint: false });
+
+        expect(screen.queryByText((_, element) => (
+            element?.textContent?.includes('Index 0 is transparent.') ?? false
+        ))).not.toBeInTheDocument();
+        expect(screen.getByText('Drag to reorder.')).toBeInTheDocument();
+    });
+
     it('handles Drag and Drop reordering correctly', () => {
         renderPalette();
         const swatches = document.querySelectorAll('.palette-swatch');

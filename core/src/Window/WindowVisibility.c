@@ -14,24 +14,35 @@ static WindowVisibilityBand window_visibility_merged_bands[WINDOW_VISIBILITY_MAX
 static uint8_t window_visibility_band_count = 0;
 static uint8_t window_visibility_merged_count = 0;
 
-#define WINDOW_VISIBILITY_WX 7
+// Hardware WX is biased by 7 pixels: WX_REG 7 places the window at screen X 0.
+#define WINDOW_VISIBILITY_VISIBLE_WX 7
+#define WINDOW_VISIBILITY_HIDDEN_WX 255
+#define WINDOW_VISIBILITY_STAT_MODE_MASK 0x03U
 
 static void window_visibility_vblank_isr(void) NONBANKED{
-    WX_REG = WINDOW_VISIBILITY_WX;
-    WY_REG = 0;
-    if(window_visibility_merged_count != 0 && window_visibility_merged_bands[0].start_ly == 0){
+    if(window_visibility_merged_count != 0){
+        WY_REG = window_visibility_merged_bands[0].start_ly;
+        WX_REG = WINDOW_VISIBILITY_VISIBLE_WX;
         SHOW_WIN;
     } else{
+        WY_REG = 0;
         HIDE_WIN;
     }
 }
 
+static void window_visibility_wait_for_hblank(void) NONBANKED{
+    while((STAT_REG & WINDOW_VISIBILITY_STAT_MODE_MASK) != STATF_HBL){
+    }
+}
+
 static void window_visibility_show_isr(void) NONBANKED{
-    SHOW_WIN;
+    window_visibility_wait_for_hblank();
+    WX_REG = WINDOW_VISIBILITY_VISIBLE_WX;
 }
 
 static void window_visibility_hide_isr(void) NONBANKED{
-    HIDE_WIN;
+    window_visibility_wait_for_hblank();
+    WX_REG = WINDOW_VISIBILITY_HIDDEN_WX;
 }
 
 static void window_visibility_clear_interrupts(void){
@@ -44,7 +55,7 @@ void init_window_visibility_system(void) BANKED{
     window_visibility_band_count = 0;
     window_visibility_merged_count = 0;
     window_visibility_clear_interrupts();
-    WX_REG = WINDOW_VISIBILITY_WX;
+    WX_REG = WINDOW_VISIBILITY_HIDDEN_WX;
     WY_REG = 0;
     HIDE_WIN;
 }
@@ -130,6 +141,10 @@ static void window_visibility_merge_bands(void){
     }
 }
 
+static uint8_t window_visibility_hblank_transition_ly(uint8_t target_ly) NONBANKED{
+    return target_ly > 1U ? (uint8_t)(target_ly - 2U) : 0;
+}
+
 uint8_t window_visibility_apply(void) BANKED{
     uint8_t band_index;
 
@@ -146,26 +161,34 @@ uint8_t window_visibility_apply(void) BANKED{
     for(band_index = 0; band_index < window_visibility_merged_count; band_index++){
         WindowVisibilityBand* band = &window_visibility_merged_bands[band_index];
 
-        if(band->start_ly != 0 && add_lcd_scanline_interrupt(band->start_ly, window_visibility_show_isr) == 0){
+        if(
+            band_index != 0 &&
+            add_lcd_scanline_interrupt(
+                window_visibility_hblank_transition_ly(band->start_ly),
+                window_visibility_show_isr
+            ) == 0
+        ){
             window_visibility_clear_interrupts();
             HIDE_WIN;
             return 0;
         }
 
-        if(band->end_ly < SCREEN_HEIGHT && add_lcd_scanline_interrupt(band->end_ly, window_visibility_hide_isr) == 0){
+        if(
+            band->end_ly < SCREEN_HEIGHT &&
+            add_lcd_scanline_interrupt(
+                window_visibility_hblank_transition_ly(band->end_ly),
+                window_visibility_hide_isr
+            ) == 0
+        ){
             window_visibility_clear_interrupts();
             HIDE_WIN;
             return 0;
         }
     }
 
-    WX_REG = WINDOW_VISIBILITY_WX;
-    WY_REG = 0;
-    if(window_visibility_merged_bands[0].start_ly == 0){
-        SHOW_WIN;
-    } else{
-        HIDE_WIN;
-    }
+    WY_REG = window_visibility_merged_bands[0].start_ly;
+    WX_REG = WINDOW_VISIBILITY_VISIBLE_WX;
+    SHOW_WIN;
 
     return 1;
 }

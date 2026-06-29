@@ -16,8 +16,12 @@ import {
   getPitchFromPointer,
   getSequenceLength,
   isInstrumentValidForChannel,
+  isPatternUsingSweep,
+  isPatternValidForChannel,
+  isPulseInstrumentUsingSweep,
   parseByteInput,
   readDragPayload,
+  sanitizeMusicSequenceCompatibility,
   updateNoiseInstrument,
   updatePulseInstrument,
   writeDragPayload
@@ -74,6 +78,8 @@ describe('musicEditorModel edge cases', () => {
     expect(getPatternChannel(document.patterns[0])).toBe('ch4')
     expect(getPatternChannel(null)).toBe('ch1')
     expect(isInstrumentValidForChannel({ channelType: 'noise', reg1: 0, reg2: 0, reg3: 0 }, 'ch4')).toBe(true)
+    expect(isInstrumentValidForChannel({ channelType: 'pulse', sweep: 0x11, reg1: 0, reg2: 0, reg3: 0 }, 'ch2')).toBe(false)
+    expect(isInstrumentValidForChannel({ channelType: 'pulse', sweep: 0x10, reg1: 0, reg2: 0, reg3: 0 }, 'ch2')).toBe(false)
     expect(isInstrumentValidForChannel(undefined, 'ch4')).toBe(false)
     expect(getSequenceLength(document)).toBe(3)
     expect(getPatternById(document, 'a')).toBe(document.patterns[0])
@@ -87,6 +93,49 @@ describe('musicEditorModel edge cases', () => {
     expect(getPitchFromPointer(element, 10)).toBe(71)
     expect(getPitchFromPointer(element, 110)).toBe(0)
     expect(getPitchFromPointer(documentElementWithBounds({ top: 0, height: 0 }), 20)).toBe(36)
+  })
+
+  it('allows pulse patterns on both channels until they use sweep', () => {
+    const document: MusicAssetDocument = {
+      ...asMusicDocument(),
+      instruments: [
+        { channelType: 'pulse', sweep: 0x00, reg1: 0x80, reg2: 0xf2, reg3: 0 },
+        { channelType: 'pulse', sweep: 0x12, reg1: 0x80, reg2: 0xf2, reg3: 0 }
+      ],
+      patterns: [
+        {
+          id: 'plain',
+          name: 'Plain',
+          channel: 'ch1',
+          steps: [{ noteIndex: 12, instrument: 0 }, ...createEmptySteps().slice(1)]
+        },
+        {
+          id: 'sweep',
+          name: 'Sweep',
+          channel: 'ch1',
+          steps: [{ noteIndex: 12, instrument: 1 }, ...createEmptySteps().slice(1)]
+        }
+      ],
+      sequence: {
+        ch1: ['plain', 'sweep'],
+        ch2: ['plain', 'sweep'],
+        ch4: ['plain']
+      }
+    }
+
+    expect(isPulseInstrumentUsingSweep(document.instruments[0])).toBe(false)
+    expect(isPulseInstrumentUsingSweep(document.instruments[1])).toBe(true)
+    expect(isPulseInstrumentUsingSweep({ ...document.instruments[0], sweep: 0x01 })).toBe(true)
+    expect(isPatternUsingSweep(document, document.patterns[0])).toBe(false)
+    expect(isPatternUsingSweep(document, document.patterns[1])).toBe(true)
+    expect(isPatternValidForChannel(document, document.patterns[0], 'ch2')).toBe(true)
+    expect(isPatternValidForChannel(document, document.patterns[1], 'ch1')).toBe(true)
+    expect(isPatternValidForChannel(document, document.patterns[1], 'ch2')).toBe(false)
+    expect(sanitizeMusicSequenceCompatibility(document).sequence).toEqual({
+      ch1: ['plain', 'sweep'],
+      ch2: ['plain', null],
+      ch4: [null]
+    })
   })
 
   it('writes and reads drag payloads safely', () => {
@@ -113,10 +162,19 @@ describe('musicEditorModel edge cases', () => {
   it('updates pulse and noise register fields with patch defaults and clamps', () => {
     const pulse = updatePulseInstrument(
       { name: 'Pulse', reg1: 0x80, reg2: 0xf2, reg3: 0 },
-      { duty: 9, length: 100, initialVolume: 20, envelopeDirection: 'increase', envelopePace: 9 }
+      {
+        duty: 9,
+        length: 100,
+        initialVolume: 20,
+        envelopeDirection: 'increase',
+        envelopePace: 9,
+        sweepPace: 9,
+        sweepDirection: 'decrease',
+        sweepShift: 9
+      }
     )
-    expect(pulse).toMatchObject({ channelType: 'pulse', reg1: 0xff, reg2: 0xff })
-    expect(updatePulseInstrument(pulse, {})).toMatchObject({ reg1: 0xff, reg2: 0xff })
+    expect(pulse).toMatchObject({ channelType: 'pulse', sweep: 0x7f, reg1: 0xff, reg2: 0xff })
+    expect(updatePulseInstrument(pulse, {})).toMatchObject({ sweep: 0x7f, reg1: 0xff, reg2: 0xff })
 
     const noise = updateNoiseInstrument(
       { name: 'Noise', reg1: 0x3f, reg2: 0xf1, reg3: 0x20 },

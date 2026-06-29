@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import * as React from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { MusicInstrument } from '../../../src/shared/projectAssets'
@@ -7,13 +8,22 @@ import { MusicInstrumentEditorPanel } from '../../../src/renderer/src/components
 const renderPanel = (
   initialInstrument: MusicInstrument | null,
   options: { index?: number | null; onSave?: () => void; onDiscard?: () => void } = {}
-) => {
-  let latestInstrument: MusicInstrument | null = initialInstrument
+): ReturnType<typeof render> & { getInstrument: () => MusicInstrument | null } => {
+  const latestInstrument = { current: initialInstrument }
 
-  const Harness = () => {
-    const [draftInstrument, setDraftInstrument] = useState<MusicInstrument | null>(initialInstrument)
+  const Harness = (): React.ReactElement => {
+    const [draftInstrument, setDraftInstrumentState] = React.useState<MusicInstrument | null>(initialInstrument)
+    const setDraftInstrument: Dispatch<SetStateAction<MusicInstrument | null>> = (value) => {
+      setDraftInstrumentState((current) => {
+        const nextInstrument =
+          typeof value === 'function'
+            ? (value as (current: MusicInstrument | null) => MusicInstrument | null)(current)
+            : value
 
-    latestInstrument = draftInstrument
+        latestInstrument.current = nextInstrument
+        return nextInstrument
+      })
+    }
 
     return (
       <MusicInstrumentEditorPanel
@@ -28,7 +38,7 @@ const renderPanel = (
 
   return {
     ...render(<Harness />),
-    getInstrument: () => latestInstrument
+    getInstrument: () => latestInstrument.current
   }
 }
 
@@ -49,18 +59,27 @@ describe('MusicInstrumentEditorPanel', () => {
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lead 2' } })
     expect(view.getInstrument()).toMatchObject({ name: 'Lead 2' })
+    expect(screen.getByLabelText('Type')).toHaveDisplayValue('Pulse (CH1/CH2)')
 
     fireEvent.change(screen.getByLabelText('REG1'), { target: { value: 'bad' } })
     expect(view.getInstrument()).toMatchObject({ reg1: 0x80 })
     fireEvent.change(screen.getByLabelText('REG1'), { target: { value: '0x40' } })
     expect(view.getInstrument()).toMatchObject({ reg1: 0x40 })
+    fireEvent.change(screen.getByLabelText('SWEEP'), { target: { value: '0x12' } })
+    expect(view.getInstrument()).toMatchObject({ sweep: 0x12 })
 
+    fireEvent.change(screen.getByLabelText('Sweep Pace'), { target: { value: '2' } })
+    expect(screen.getByLabelText('Type')).toHaveDisplayValue('Pulse (CH1 sweep)')
+    expect(screen.getByText('CH1 only: sweep is enabled.')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Sweep Shift'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Sweep'), { target: { value: 'decrease' } })
     fireEvent.change(screen.getByLabelText('Duty'), { target: { value: '3' } })
     fireEvent.change(screen.getByLabelText('Length'), { target: { value: '12' } })
     fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '8' } })
     fireEvent.change(screen.getByLabelText('Pace'), { target: { value: '4' } })
     fireEvent.change(screen.getByLabelText('Envelope'), { target: { value: 'increase' } })
-    expect(view.getInstrument()).toMatchObject({ channelType: 'pulse', reg1: 0xcc, reg2: 0x8c })
+    expect(view.getInstrument()).toMatchObject({ channelType: 'pulse', sweep: 0x2b, reg1: 0xcc, reg2: 0x8c })
+    expect(screen.getByLabelText('Type')).toHaveDisplayValue('Pulse (CH1 sweep)')
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }))

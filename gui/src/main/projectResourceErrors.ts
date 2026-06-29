@@ -1,4 +1,4 @@
-import { ProjectLauncherError, getProjectLauncherErrorMessage } from './projectLauncher'
+import { ProjectLauncherError, getProjectLauncherErrorMessage } from './projectLauncherPrimitives'
 
 type ProjectResourceAction = 'load' | 'create' | 'rename' | 'delete' | 'paste' | 'bank'
 

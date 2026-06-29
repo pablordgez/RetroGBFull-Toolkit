@@ -1,7 +1,9 @@
 import { randomUUID } from 'crypto'
-import { mkdir, rm, stat } from 'fs/promises'
-import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
-import { createProjectScriptFiles } from './projectCode'
+import { mkdir, rm, rmdir, stat } from 'fs/promises'
+import { dirname, relative } from 'path'
+import { validateProjectDirectory } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
+import { createProjectScriptFiles, writeGeneratedScriptEnvironment } from './projectCode'
 import { normalizeCodeIdentifier } from '../shared/codeIdentifiers'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 import {
@@ -9,7 +11,7 @@ import {
   PROJECT_SCRIPT_DIRECTORY_BY_KIND,
   PROJECT_SCRIPT_LABELS,
   buildProjectScriptFileName,
-  isProjectScriptPathWithinKindRoot
+  isProjectScriptPathWithinAllowedKindRoot
 } from '../shared/projectScripts'
 import {
   normalizeParentPath,
@@ -89,6 +91,16 @@ export type {
 const joinResourcePath = (parentPath: string | null, childName: string): string => {
   const normalizedParentPath = normalizeParentPath(parentPath)
   return normalizedParentPath ? `${normalizedParentPath}/${childName}` : childName
+}
+
+const MANAGED_CODE_ROOT_PATH = 'src'
+
+const isManagedCodeRootPath = (resourcePath: string): boolean => {
+  return normalizeResourcePath(resourcePath) === MANAGED_CODE_ROOT_PATH
+}
+
+const toProjectRelativeResourcePath = (projectPath: string, absolutePath: string): string => {
+  return normalizeResourcePath(relative(projectPath, absolutePath).replace(/\\/g, '/'))
 }
 
 // finds a tracked resource record by its path
@@ -183,6 +195,163 @@ const getTrackedResourceSubtree = (
 ): ProjectStoredResourceRecord[] => {
   const normalizedPath = normalizeResourcePath(resourcePath)
   return resources.filter((resource) => isSameOrDescendantPath(resource.path, normalizedPath))
+}
+
+const getSubtreeFileResources = (
+  resources: ProjectStoredResourceRecord[]
+): Extract<ProjectStoredResourceRecord, { type: 'file' }>[] => {
+  return resources.filter(
+    (resource): resource is Extract<ProjectStoredResourceRecord, { type: 'file' }> =>
+      resource.type === 'file'
+  )
+}
+
+const getSubtreeFolderResources = (
+  resources: ProjectStoredResourceRecord[]
+): Extract<ProjectStoredResourceRecord, { type: 'folder' }>[] => {
+  return resources.filter(
+    (resource): resource is Extract<ProjectStoredResourceRecord, { type: 'folder' }> =>
+      resource.type === 'folder'
+  )
+}
+
+const subtreeHasScripts = (resources: ProjectStoredResourceRecord[]): boolean => {
+  return resources.some(
+    (resource) => resource.type === 'file' && resource.resourceType === 'script'
+  )
+}
+
+const ensureTrackedFolderTargets = async (
+  state: ProjectResourceState,
+  resources: ProjectStoredResourceRecord[],
+  sourceRootPath: string,
+  targetRootPath: string
+): Promise<void> => {
+  const folders = getSubtreeFolderResources(resources).sort(
+    (left, right) => left.path.length - right.path.length
+  )
+
+  for (const folder of folders) {
+    const relocatedFolder = relocateTrackedResource(folder, sourceRootPath, targetRootPath)
+    await mkdir(resolveResourceDirectory(state.projectPath, relocatedFolder.path), {
+      recursive: true
+    })
+  }
+}
+
+const transferTrackedFileSubtree = async (
+  state: ProjectResourceState,
+  resources: ProjectStoredResourceRecord[],
+  sourceRootPath: string,
+  targetRootPath: string,
+  mode: ProjectResourceTransferMode
+): Promise<void> => {
+  await ensureTrackedFolderTargets(state, resources, sourceRootPath, targetRootPath)
+
+  for (const resource of getSubtreeFileResources(resources)) {
+    const relocatedResource = relocateTrackedResource(resource, sourceRootPath, targetRootPath)
+    const resourceTypeStrategy = getProjectResourceTypeStrategy(resource.resourceType)
+    const sourceAbsolutePath = resolveResourceDirectory(state.projectPath, resource.path)
+    const targetAbsolutePath = resolveResourceDirectory(state.projectPath, relocatedResource.path)
+    const sourceStats = await resourceTypeStrategy.readTransferSourceStats({
+      projectPath: state.projectPath,
+      resourcePath: resource.path,
+      sourceAbsolutePath
+    })
+
+    await mkdir(dirname(targetAbsolutePath), { recursive: true })
+    await resourceTypeStrategy.transfer({
+      projectPath: state.projectPath,
+      resourcePath: resource.path,
+      targetResourcePath: relocatedResource.path,
+      mode,
+      sourceAbsolutePath,
+      targetAbsolutePath,
+      sourceStats
+    })
+  }
+}
+
+const removeEmptyTrackedSourceFolders = async (
+  state: ProjectResourceState,
+  resources: ProjectStoredResourceRecord[]
+): Promise<void> => {
+  const folders = getSubtreeFolderResources(resources).sort(
+    (left, right) => right.path.length - left.path.length
+  )
+
+  for (const folder of folders) {
+    try {
+      await rmdir(resolveResourceDirectory(state.projectPath, folder.path))
+    } catch (error) {
+      const errorCode =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String(error.code)
+          : undefined
+
+      if (errorCode !== 'ENOENT' && errorCode !== 'ENOTEMPTY') {
+        throw error
+      }
+    }
+  }
+}
+
+const moveManagedCodeRootToDeleted = async (
+  state: ProjectResourceState,
+  resources: ProjectStoredResourceRecord[],
+  deletedContentPath: string
+): Promise<void> => {
+  const deletedContentResourcePath = toProjectRelativeResourcePath(
+    state.projectPath,
+    deletedContentPath
+  )
+  await transferTrackedFileSubtree(
+    state,
+    resources,
+    MANAGED_CODE_ROOT_PATH,
+    `${deletedContentResourcePath}/${MANAGED_CODE_ROOT_PATH}`,
+    'move'
+  )
+}
+
+const restoreManagedCodeRootFromDeleted = async (
+  state: ProjectResourceState,
+  resources: ProjectStoredResourceRecord[],
+  deletedContentPath: string
+): Promise<void> => {
+  const deletedContentResourcePath = toProjectRelativeResourcePath(
+    state.projectPath,
+    deletedContentPath
+  )
+
+  for (const folder of getSubtreeFolderResources(resources)) {
+    await mkdir(resolveResourceDirectory(state.projectPath, folder.path), {
+      recursive: true
+    })
+  }
+
+  for (const resource of getSubtreeFileResources(resources)) {
+    const deletedResourcePath = `${deletedContentResourcePath}/${resource.path}`
+    const resourceTypeStrategy = getProjectResourceTypeStrategy(resource.resourceType)
+    const sourceAbsolutePath = resolveResourceDirectory(state.projectPath, deletedResourcePath)
+    const targetAbsolutePath = resolveResourceDirectory(state.projectPath, resource.path)
+    const sourceStats = await resourceTypeStrategy.readTransferSourceStats({
+      projectPath: state.projectPath,
+      resourcePath: deletedResourcePath,
+      sourceAbsolutePath
+    })
+
+    await mkdir(dirname(targetAbsolutePath), { recursive: true })
+    await resourceTypeStrategy.transfer({
+      projectPath: state.projectPath,
+      resourcePath: deletedResourcePath,
+      targetResourcePath: resource.path,
+      mode: 'move',
+      sourceAbsolutePath,
+      targetAbsolutePath,
+      sourceStats
+    })
+  }
 }
 
 // ensures that all parent folders exist and are tracked, otherwise creates them and returns a new resource
@@ -587,7 +756,41 @@ export const renameProjectResource = async (
     buildResourceFileName(resourceType, normalizedResourceName)
   )
 
-  if (nextResourcePath !== normalizedResourcePath) {
+  const isManagedCodeRootRename =
+    resourceType === 'folder' && isManagedCodeRootPath(normalizedResourcePath)
+  const isManagedCodeRootTargetRename =
+    resourceType === 'folder' && isManagedCodeRootPath(nextResourcePath)
+  const subtree = getTrackedResourceSubtree(state.resources, normalizedResourcePath)
+
+  if (isManagedCodeRootTargetRename && !isManagedCodeRootRename) {
+    const targetResource = findTrackedResourceRecord(state.resources, nextResourcePath)
+
+    if (targetResource) {
+      throw new ProjectLauncherError('The engine src folder is already tracked.')
+    }
+
+    if (!subtreeHasScripts(subtree)) {
+      throw new ProjectLauncherError(
+        'Only a renamed code folder can be restored to the engine src folder.'
+      )
+    }
+  }
+
+  if (
+    nextResourcePath !== normalizedResourcePath &&
+    (isManagedCodeRootRename || isManagedCodeRootTargetRename)
+  ) {
+    await transferTrackedFileSubtree(
+      state,
+      subtree,
+      normalizedResourcePath,
+      nextResourcePath,
+      'move'
+    )
+    if (!isManagedCodeRootRename) {
+      await removeEmptyTrackedSourceFolders(state, subtree)
+    }
+  } else if (nextResourcePath !== normalizedResourcePath) {
     await getProjectResourceTypeStrategy(resourceType).rename({
       projectPath: state.projectPath,
       resourcePath: normalizedResourcePath,
@@ -617,6 +820,12 @@ export const renameProjectResource = async (
     )
   )
   const persistedResources = await writeProjectResources(state, relocatedResources)
+  if (
+    (isManagedCodeRootRename || isManagedCodeRootTargetRename) &&
+    subtreeHasScripts(persistedResources)
+  ) {
+    await writeGeneratedScriptEnvironment(state.projectPath)
+  }
   await updateProjectAssetReferencePaths(
     state.projectPath,
     persistedResources,
@@ -696,13 +905,24 @@ export const deleteProjectResource = async (
     resources: removedResources
   }
 
+  const isManagedCodeRootDelete =
+    resourceType === 'folder' && isManagedCodeRootPath(normalizedResourcePath)
+
   await writeDeletedResourceMetadata(state.projectPath, metadata)
-  await getProjectResourceTypeStrategy(resourceType).moveToDeleted({
-    projectPath: state.projectPath,
-    resourcePath: normalizedResourcePath,
-    deletedContentPath: getDeletedResourceContentPath(state.projectPath, nextDeletionId),
-    resolveResourceDirectory
-  })
+  if (isManagedCodeRootDelete) {
+    await moveManagedCodeRootToDeleted(
+      state,
+      removedResources,
+      getDeletedResourceContentPath(state.projectPath, nextDeletionId)
+    )
+  } else {
+    await getProjectResourceTypeStrategy(resourceType).moveToDeleted({
+      projectPath: state.projectPath,
+      resourcePath: normalizedResourcePath,
+      deletedContentPath: getDeletedResourceContentPath(state.projectPath, nextDeletionId),
+      resolveResourceDirectory
+    })
+  }
 
   if (
     currentStartingScenePath &&
@@ -717,6 +937,9 @@ export const deleteProjectResource = async (
       (resource) => !isSameOrDescendantPath(resource.path, normalizedResourcePath)
     )
   )
+  if (isManagedCodeRootDelete && subtreeHasScripts(removedResources)) {
+    await writeGeneratedScriptEnvironment(state.projectPath)
+  }
   await clearProjectAssetReferencePaths(state.projectPath, nextResources, normalizedResourcePath)
 
   return {
@@ -750,12 +973,23 @@ export const restoreDeletedProjectResource = async (
 
   await mkdir(resolveResourceDirectory(state.projectPath, metadata.parentPath), { recursive: true })
 
-  await getProjectResourceTypeStrategy(metadata.resourceType).restoreFromDeleted({
-    projectPath: state.projectPath,
-    resourcePath: metadata.resourcePath,
-    deletedContentPath: getDeletedResourceContentPath(state.projectPath, deletionId),
-    resolveResourceDirectory
-  })
+  const isManagedCodeRootRestore =
+    metadata.resourceType === 'folder' && isManagedCodeRootPath(metadata.resourcePath)
+
+  if (isManagedCodeRootRestore) {
+    await restoreManagedCodeRootFromDeleted(
+      state,
+      metadata.resources,
+      getDeletedResourceContentPath(state.projectPath, deletionId)
+    )
+  } else {
+    await getProjectResourceTypeStrategy(metadata.resourceType).restoreFromDeleted({
+      projectPath: state.projectPath,
+      resourcePath: metadata.resourcePath,
+      deletedContentPath: getDeletedResourceContentPath(state.projectPath, deletionId),
+      resolveResourceDirectory
+    })
+  }
 
   if (metadata.startingScenePath) {
     setStateStartingScenePath(state, metadata.startingScenePath)
@@ -765,6 +999,9 @@ export const restoreDeletedProjectResource = async (
     ...state.resources,
     ...metadata.resources
   ])
+  if (isManagedCodeRootRestore && subtreeHasScripts(metadata.resources)) {
+    await writeGeneratedScriptEnvironment(state.projectPath)
+  }
 
   return {
     view: buildProjectResourceView(state, nextResources, metadata.parentPath),
@@ -777,7 +1014,7 @@ export const restoreDeletedProjectResource = async (
   }
 }
 
-// moves or copies a resource to a new location, ensuring the destination path is unique and retracks the 
+// moves or copies a resource to a new location, ensuring the destination path is unique and retracks the
 // resource and its descendants
 export const transferProjectResource = async (
   projectPath: string,
@@ -823,7 +1060,11 @@ export const transferProjectResource = async (
     mode === 'move' &&
     trackedResource.type === 'file' &&
     trackedResource.resourceType === 'script' &&
-    !isProjectScriptPathWithinKindRoot(trackedResource.scriptKind, normalizedDestinationParentPath)
+    !isProjectScriptPathWithinAllowedKindRoot(
+      trackedResource.scriptKind,
+      trackedResource.path,
+      normalizedDestinationParentPath
+    )
   ) {
     throw new ProjectLauncherError('Scripts can only be moved inside their matching script folder.')
   }
@@ -848,17 +1089,43 @@ export const transferProjectResource = async (
   }
   const targetAbsolutePath = resolveResourceDirectory(state.projectPath, target.resourcePath)
 
-  await resourceTypeStrategy.transfer({
-    projectPath: state.projectPath,
-    resourcePath: normalizedResourcePath,
-    targetResourcePath: target.resourcePath,
-    mode,
-    sourceAbsolutePath,
-    targetAbsolutePath,
-    sourceStats
-  })
-
   const subtree = getTrackedResourceSubtree(state.resources, normalizedResourcePath)
+  const isManagedCodeRootTransfer =
+    resourceType === 'folder' && isManagedCodeRootPath(normalizedResourcePath)
+  const isManagedCodeRootTargetTransfer =
+    resourceType === 'folder' && isManagedCodeRootPath(target.resourcePath)
+
+  if (isManagedCodeRootTargetTransfer && !isManagedCodeRootTransfer) {
+    if (!subtreeHasScripts(subtree)) {
+      throw new ProjectLauncherError(
+        'Only a moved code folder can be restored to the engine src folder.'
+      )
+    }
+  }
+
+  if (isManagedCodeRootTransfer || isManagedCodeRootTargetTransfer) {
+    await transferTrackedFileSubtree(
+      state,
+      subtree,
+      normalizedResourcePath,
+      target.resourcePath,
+      mode
+    )
+    if (mode === 'move') {
+      await removeEmptyTrackedSourceFolders(state, subtree)
+    }
+  } else {
+    await resourceTypeStrategy.transfer({
+      projectPath: state.projectPath,
+      resourcePath: normalizedResourcePath,
+      targetResourcePath: target.resourcePath,
+      mode,
+      sourceAbsolutePath,
+      targetAbsolutePath,
+      sourceStats
+    })
+  }
+
   const nextResources =
     mode === 'copy'
       ? [
@@ -887,6 +1154,12 @@ export const transferProjectResource = async (
   }
 
   const persistedResources = await writeProjectResources(state, nextResources)
+  if (
+    (isManagedCodeRootTransfer || isManagedCodeRootTargetTransfer) &&
+    subtreeHasScripts(subtree)
+  ) {
+    await writeGeneratedScriptEnvironment(state.projectPath)
+  }
   if (mode === 'move') {
     await updateProjectAssetReferencePaths(
       state.projectPath,

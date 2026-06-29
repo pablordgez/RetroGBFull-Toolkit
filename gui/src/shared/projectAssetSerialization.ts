@@ -3,7 +3,11 @@ import {
   normalizeSceneSpritePalettes,
   normalizeSpritePaletteIndex
 } from './projectPalettes'
-import type { ProjectAssetDocument, SceneAssetNode } from './projectAssetTypes'
+import {
+  normalizeSceneCameraDeadzone,
+  type ProjectAssetDocument,
+  type SceneAssetNode
+} from './projectAssetTypes'
 
 const serializeSceneAssetNode = (
   node: SceneAssetNode,
@@ -58,9 +62,7 @@ const serializeSceneAssetNode = (
     name: node.name,
     isCollapsed: node.isCollapsed,
     spritePath: node.spritePath,
-    ...(includeResourcePath &&
-    typeof node.resourcePath === 'string' &&
-    node.resourcePath.length > 0
+    ...(includeResourcePath && typeof node.resourcePath === 'string' && node.resourcePath.length > 0
       ? { resourcePath: node.resourcePath }
       : {}),
     ...(typeof node.scriptPath === 'string' && node.scriptPath.length > 0
@@ -75,6 +77,7 @@ const serializeSceneAssetNode = (
     y: node.y,
     physicsMode: node.physicsMode,
     followCamera: node.followCamera,
+    cameraDeadzone: normalizeSceneCameraDeadzone(node.cameraDeadzone),
     children: childNodes.map((childNode) => serializeSceneAssetNode(childNode, includeResourcePath))
   }
 }
@@ -101,8 +104,7 @@ export const serializeProjectAssetDocument = (assetDocument: ProjectAssetDocumen
           ? normalizeProjectPalette(assetDocument.backgroundPalette)
           : null,
         scriptPath: assetDocument.scriptPath ?? null,
-        ...(assetDocument.scriptProperties &&
-        Object.keys(assetDocument.scriptProperties).length > 0
+        ...(assetDocument.scriptProperties && Object.keys(assetDocument.scriptProperties).length > 0
           ? { scriptProperties: assetDocument.scriptProperties }
           : {}),
         nodes: sceneNodes.map((node) => serializeSceneAssetNode(node, true))

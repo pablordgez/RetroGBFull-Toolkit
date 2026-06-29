@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ProjectLauncherError } from '../../src/main/projectLauncher'
+import { ProjectLauncherError } from '../../src/main/projectLauncherPrimitives'
 import type { ProjectAssetRecordLike } from '../../src/main/projectBuildCodeTypes'
 import type { ProjectScriptRecordResolved } from '../../src/main/projectCodeScripts'
 import {
@@ -30,7 +30,7 @@ const script = (path: string, identifier: string, bank = 3): ProjectScriptRecord
   bank
 })
 
-const actorNode = (overrides: Record<string, unknown> = {}) => ({
+const actorNode = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 'actor-1',
   type: 'actor',
   name: 'Hero',
@@ -47,7 +47,7 @@ const actorNode = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-const collisionNode = (overrides: Record<string, unknown> = {}) => ({
+const collisionNode = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 'collision-1',
   type: 'collision',
   name: 'Hitbox',
@@ -64,7 +64,7 @@ const collisionNode = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-const sceneDocument = (overrides: Record<string, unknown> = {}) => ({
+const sceneDocument = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   kind: 'scene',
   version: 1,
   tilemapPath: null,
@@ -124,6 +124,12 @@ describe('projectSceneCodeEmitter', () => {
             y: 5,
             physicsMode: 'highFidelity',
             followCamera: true,
+            cameraDeadzone: {
+              left: 8,
+              right: 24,
+              top: 12,
+              bottom: 28
+            },
             tags: ['solid', 'danger'],
             children: [
               actorNode({ id: 'child', name: 'Child', physicsMode: 'highPerf', x: 1, y: 1 }),
@@ -142,10 +148,14 @@ describe('projectSceneCodeEmitter', () => {
     )
 
     expect(emitted).toBeNull()
-    expect(lines.join('\n')).toContain('Actor* generated_actor_0 = (Actor*) malloc(sizeof(HeroActor));')
+    expect(lines.join('\n')).toContain('Actor* generated_actor_0 = create_actor(_HeroActor);')
     expect(lines.join('\n')).toContain('generated_actor_0->physics_mode = HIGH_FIDELITY;')
     expect(lines.join('\n')).toContain('set_actor_position(260, 389);')
     expect(lines.join('\n')).toContain('set_animation_props(S_PALETTE, 16, 24);')
+    expect(lines.join('\n')).toContain('deadzone_left = 8;')
+    expect(lines.join('\n')).toContain('deadzone_right = 24;')
+    expect(lines.join('\n')).toContain('deadzone_top = 12;')
+    expect(lines.join('\n')).toContain('deadzone_bottom = 28;')
     expect(lines.join('\n')).toContain('generated_actor_0->followed = 1;')
     expect(lines.join('\n')).toContain('set_tag(TAG_SOLID, 0);')
     expect(lines.join('\n')).not.toContain('set_tag(TAG_DANGER_ZONE, 1);')
@@ -160,7 +170,9 @@ describe('projectSceneCodeEmitter', () => {
     const lines: string[] = []
     const actorVariable = emitNode(collisionNode() as never, null, lines, { actor: 0 })
     expect(actorVariable).toBe('generated_actor_0')
-    expect(lines.join('\n')).toContain('GeneratedDefaultActor')
+    expect(lines.join('\n')).toContain(
+      'Actor* generated_actor_0 = create_actor(_GeneratedDefaultActor);'
+    )
     expect(lines.join('\n')).toContain('set_actor_position(3, 4);')
 
     expect(() =>
@@ -189,7 +201,14 @@ describe('projectSceneCodeEmitter', () => {
     const windowResource = asset(
       'window',
       'DialogWindow',
-      { kind: 'window', tilesetPath: 'tileset', width: 2, height: 2, grid: [0, 1, 2, 3] },
+      {
+        kind: 'window',
+        tilesetPath: 'tileset',
+        width: 2,
+        height: 2,
+        grid: [0, 1, 2, 3],
+        windowVisibilityBands: [{ start: 0, end: 144 }]
+      },
       2,
       'window'
     )
@@ -270,6 +289,52 @@ describe('projectSceneCodeEmitter', () => {
         vi.fn()
       )
     ).toThrow('Scene "Broken" references a missing window resource: missing')
+  })
+
+  it('emits window visibility bands for non-full windows', () => {
+    const lines = buildSceneInitializationLines(
+      asset(
+        'scene',
+        'BandScene',
+        sceneDocument({
+          windowPath: 'window'
+        })
+      ),
+      new Map(),
+      new Map([
+        [
+          'window',
+          asset(
+            'window',
+            'DialogWindow',
+            {
+              kind: 'window',
+              tilesetPath: null,
+              width: 20,
+              height: 18,
+              grid: new Array(20 * 18).fill(0),
+              windowVisibilityBands: [
+                { start: 0, end: 32 },
+                { start: 80, end: 144 }
+              ]
+            },
+            2,
+            'window'
+          )
+        ]
+      ]),
+      vi.fn()
+    )
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        '    set_scene_window(maps[DialogWindow]);',
+        '    window_visibility_clear_owner(WINDOW_VISIBILITY_OWNER_SCENE);',
+        '    window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, 0, 32);',
+        '    window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, 80, 144);',
+        '    window_visibility_apply();'
+      ])
+    )
   })
 
   it('uses configured sprite palette fallbacks before discovered sprite palettes', () => {

@@ -1,21 +1,31 @@
-import { ProjectLauncherError } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 import { MANAGED_DEFAULT_ACTOR_IDENTIFIER } from './projectSceneCodeEmitter'
-import type { ProjectScriptRecordResolved } from './projectCodeScripts'
+import { getProjectScriptHeaderPath, type ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
 import { buildProjectTagEnumName, type ProjectTagEntry } from '../shared/projectTags'
+import {
+  normalizeLegacyWindowVisibilityBands,
+  normalizeWindowVisibilityTileBands,
+  WINDOW_VISIBILITY_SCREEN_HEIGHT,
+  type WindowVisibilityBand,
+  type WindowAssetDocument
+} from '../shared/projectAssets'
 import type {
   MusicAssetDocument,
   MusicChannelKey,
   MusicPattern,
   SpriteAssetDocument,
   TilemapAssetDocument,
-  TilesetAssetDocument,
-  WindowAssetDocument
+  TilesetAssetDocument
 } from '../shared/projectAssets'
 
 const formatHexByte = (value: number): string => {
   return `0x${value.toString(16).toUpperCase().padStart(2, '0')}`
+}
+
+const toProjectSourceIncludePath = (resourcePath: string): string => {
+  return resourcePath.replace(/\\/g, '/').replace(/^src\//, '')
 }
 
 // formats an array of numbers (up to 255) to a string of hex bytes, with a given number of values per line
@@ -374,11 +384,17 @@ export const buildMapResourceFiles = (
   tileset: ProjectAssetRecordLike,
   windowTopEnd: number,
   windowBottomStart: number,
-  usesSharedTileset: boolean
+  usesSharedTileset: boolean,
+  windowVisibilityBands?: WindowVisibilityBand[]
 ): { headerPath: string; sourcePath: string; headerContent: string; sourceContent: string } => {
   const document = resource.document as TilemapAssetDocument | WindowAssetDocument
   const tilesetDocument = tileset.document as TilesetAssetDocument
-  const runtimeGrid = buildRuntimeMapGrid(document, windowTopEnd, windowBottomStart)
+  const visibilityBands =
+    document.kind === 'window'
+      ? (windowVisibilityBands ??
+        normalizeLegacyWindowVisibilityBands(windowTopEnd, windowBottomStart, document.height))
+      : []
+  const runtimeGrid = buildRuntimeMapGrid(document, visibilityBands)
   const resourceDirectory = `res/${resource.identifier}`
   const headerPath = `${resourceDirectory}/${resource.identifier}.h`
   const sourcePath = `${resourceDirectory}/${resource.identifier}.c`
@@ -416,7 +432,7 @@ export const buildMapResourceFiles = (
   // define the bank ref
   // define the map data array with the formatted byte array
   // define the tileset data array with the formatted byte array if not using a shared tileset
-  // add a comment with the window split if it's a window resource
+  // add a comment with the window visibility bands if it's a window resource
   const sourceLines = [
     `#pragma bank ${resource.bank}`,
     `#include "${resource.identifier}.h"`,
@@ -435,7 +451,7 @@ export const buildMapResourceFiles = (
         ]
       : []),
     '',
-    `/* window split: top=${windowTopEnd}, bottom=${windowBottomStart} */`,
+    `/* window visibility bands: ${visibilityBands.map((band) => `${band.start}-${band.end}`).join(',') || 'none'} */`,
     ''
   ]
 
@@ -447,14 +463,9 @@ export const buildMapResourceFiles = (
   }
 }
 
-const clampWindowRow = (value: number, height: number): number => {
-  return Math.max(0, Math.min(height, Math.trunc(value)))
-}
-
 const buildRuntimeMapGrid = (
   document: TilemapAssetDocument | WindowAssetDocument,
-  windowTopEnd: number,
-  windowBottomStart: number
+  windowVisibilityBands: WindowVisibilityBand[] = []
 ): { grid: number[]; height: number } => {
   if (document.kind !== 'window') {
     return {
@@ -463,35 +474,26 @@ const buildRuntimeMapGrid = (
     }
   }
 
-  const topEnd = clampWindowRow(windowTopEnd, document.height)
-  const bottomStart = clampWindowRow(windowBottomStart, document.height)
+  const visibilityBands = normalizeWindowVisibilityTileBands(windowVisibilityBands)
   const width = Math.max(1, document.width)
-
-  if (topEnd === 0 && bottomStart === 0) {
-    return {
-      grid: document.grid,
-      height: document.height
-    }
-  }
-
   const rows: number[] = []
+  let visibleLineCount = 0
 
-  for (let row = 0; row < topEnd; row += 1) {
-    rows.push(...document.grid.slice(row * width, (row + 1) * width))
-  }
+  for (const band of visibilityBands) {
+    const end = Math.min(WINDOW_VISIBILITY_SCREEN_HEIGHT, band.end)
 
-  if (bottomStart > topEnd) {
-    const screenTileRows = 18
-    const bottomEnd = Math.min(document.height, screenTileRows)
-
-    for (let row = bottomStart; row < bottomEnd; row += 1) {
-      rows.push(...document.grid.slice(row * width, (row + 1) * width))
+    for (let line = band.start; line < end; line += 1) {
+      if (visibleLineCount % 8 === 0) {
+        const row = Math.floor(line / 8)
+        rows.push(...document.grid.slice(row * width, (row + 1) * width))
+      }
+      visibleLineCount += 1
     }
   }
 
   return {
     grid: rows,
-    height: rows.length / width
+    height: Math.ceil(visibleLineCount / 8)
   }
 }
 
@@ -524,6 +526,10 @@ const assertValidMusicDocument = (music: ProjectAssetRecordLike): MusicAssetDocu
     document.instruments.length > 256 ||
     document.instruments.some(
       (instrument) =>
+        (instrument.sweep !== undefined &&
+          (!Number.isInteger(instrument.sweep) ||
+            instrument.sweep < 0 ||
+            instrument.sweep > 255)) ||
         !Number.isInteger(instrument.reg1) ||
         instrument.reg1 < 0 ||
         instrument.reg1 > 255 ||
@@ -642,9 +648,9 @@ export const buildMusicResourceFiles = (
     ...(document.instruments.length > 0
       ? document.instruments.map(
           (instrument) =>
-            `    { .reg1 = ${formatHexByte(instrument.reg1)}, .reg2 = ${formatHexByte(instrument.reg2)}, .reg3 = ${formatHexByte(instrument.reg3)} },`
+            `    { .sweep = ${formatHexByte(instrument.sweep ?? 0)}, .reg1 = ${formatHexByte(instrument.reg1)}, .reg2 = ${formatHexByte(instrument.reg2)}, .reg3 = ${formatHexByte(instrument.reg3)} },`
         )
-      : ['    { .reg1 = 0x00, .reg2 = 0x00, .reg3 = 0x00 },']),
+      : ['    { .sweep = 0x00, .reg1 = 0x00, .reg2 = 0x00, .reg3 = 0x00 },']),
     '};'
   ]
   const patternLines = document.patterns.flatMap((pattern, index) => [
@@ -763,9 +769,7 @@ export const buildSongRegistryFiles = (
 // builds the animation registry
 export const buildAnimationRegistryFiles = (
   sprites: ProjectAssetRecordLike[],
-  use8x16SpriteMode = sprites.some(
-    (sprite) => (sprite.document as SpriteAssetDocument).is8x16Mode
-  )
+  use8x16SpriteMode = sprites.some((sprite) => (sprite.document as SpriteAssetDocument).is8x16Mode)
 ): { headerContent: string; sourceContent: string } => {
   const includeLines = sprites.map(
     (sprite) => `#include "${sprite.identifier}/${sprite.identifier}.h"`
@@ -877,20 +881,27 @@ export const buildMapRegistryFiles = (
   windows: ProjectAssetRecordLike[],
   tilesetsByPath: Map<string, ProjectAssetRecordLike>
 ): { headerContent: string; sourceContent: string } => {
-  // first, combine tilemaps and windows into one list, setting window split properties to 0 for tilemaps
-  // and to the actual values for windows
+  // first, combine tilemaps and windows into one list, carrying visibility bands for generated window resources
   const maps = [
     ...tilemaps.map((resource) => ({
       ...resource,
-      windowTopEnd: 0,
-      windowBottomStart: 0
+      windowVisibilityBands: [] as WindowVisibilityBand[]
     })),
     ...windows.map((resource) => {
       const document = resource.document as WindowAssetDocument
       return {
         ...resource,
-        windowTopEnd: document.windowTopEnd,
-        windowBottomStart: document.windowBottomStart
+        windowVisibilityBands:
+          document.windowVisibilityBands ??
+          normalizeLegacyWindowVisibilityBands(
+            Number((document as WindowAssetDocument & { windowTopEnd?: number }).windowTopEnd ?? 0),
+            Number(
+              (document as WindowAssetDocument & { windowBottomStart?: number }).windowBottomStart ??
+                0
+            ),
+            document.height,
+            Number((document as WindowAssetDocument & { windowY?: number }).windowY ?? 0)
+          )
       }
     })
   ].map((resource) => {
@@ -970,7 +981,7 @@ export const buildMapRegistryFiles = (
   // define the map_data array with entries for each map pointing to its bank and map data
   const mapDefinitionLines = maps.flatMap((map) => {
     const document = map.document as TilemapAssetDocument | WindowAssetDocument
-    const runtimeGrid = buildRuntimeMapGrid(document, map.windowTopEnd, map.windowBottomStart)
+    const runtimeGrid = buildRuntimeMapGrid(document, map.windowVisibilityBands)
     return [
       `Map _${map.identifier} = {`,
       `    .id = ${map.identifier},`,
@@ -978,9 +989,7 @@ export const buildMapRegistryFiles = (
       `    .height = ${runtimeGrid.height},`,
       `    .tileset = ${map.usesSharedTileset ? map.tileset.identifier : map.identifier}_tileset,`,
       `    .num_tiles = ${map.usesSharedTileset ? map.tileset.identifier : map.identifier}_num_tiles,`,
-      '    .first_tile = 0,',
-      `    .window_top_end = ${map.windowTopEnd},`,
-      `    .window_bottom_start = ${map.windowBottomStart}`,
+      '    .first_tile = 0',
       '};',
       ''
     ]
@@ -1010,103 +1019,145 @@ export const buildMapRegistryFiles = (
   }
 }
 
-// build the actor registry header
+interface GeneratedRegistryFiles {
+  entriesContent: string
+  includesContent: string
+}
+
+const buildInvocationMacro = (
+  macroName: string,
+  invocationName: string,
+  identifiers: string[]
+): string[] => {
+  if (identifiers.length === 0) {
+    return [`#define ${macroName}`]
+  }
+
+  return [
+    `#define ${macroName} \\`,
+    ...identifiers.map(
+      (identifier, index) =>
+        `    ${invocationName}(${identifier})${index < identifiers.length - 1 ? ' \\' : ''}`
+    )
+  ]
+}
+
+const buildRawInvocationMacro = (macroName: string, invocations: string[]): string[] => {
+  if (invocations.length === 0) {
+    return [`#define ${macroName}`]
+  }
+
+  return [
+    `#define ${macroName} \\`,
+    ...invocations.map(
+      (invocation, index) => `    ${invocation}${index < invocations.length - 1 ? ' \\' : ''}`
+    )
+  ]
+}
+
+// build the generated project-specific actor registry fragments
+export const buildActorRegistryFiles = (
+  actorScripts: ProjectScriptRecordResolved[],
+  projectTags: ProjectTagEntry[] = []
+): GeneratedRegistryFiles => {
+  const actors = [
+    {
+      identifier: MANAGED_DEFAULT_ACTOR_IDENTIFIER,
+      headerPath: `src/CustomActors/${MANAGED_DEFAULT_ACTOR_IDENTIFIER}.h`
+    },
+    ...actorScripts.map((script) => ({
+      identifier: script.identifier,
+      headerPath: getProjectScriptHeaderPath(script.path)
+    }))
+  ]
+
+  const entriesContent = [
+    `#define ACTOR_REGISTRY_HAS_ACTORS ${actors.length > 0 ? 1 : 0}`,
+    '',
+    ...buildInvocationMacro(
+      'ACTORS',
+      '_ACTOR',
+      actors.map((actor) => actor.identifier)
+    ),
+    '',
+    ...buildInvocationMacro(
+      'ACTOR_TAGS',
+      '_TAG',
+      projectTags.map((tag) => buildProjectTagEnumName(tag.name))
+    ),
+    ''
+  ].join('\n')
+
+  const includesContent = [
+    ...actors.map((actor) => `#include "${toProjectSourceIncludePath(actor.headerPath)}"`),
+    ''
+  ].join('\n')
+
+  return { entriesContent, includesContent }
+}
+
 export const buildActorRegistryHeader = (
   actorScripts: ProjectScriptRecordResolved[],
   projectTags: ProjectTagEntry[] = []
-): string => {
-  const actors = [
-    { identifier: MANAGED_DEFAULT_ACTOR_IDENTIFIER },
-    ...actorScripts.map((script) => ({ identifier: script.identifier }))
-  ]
+): string => buildActorRegistryFiles(actorScripts, projectTags).entriesContent
 
-  // header:
-  // avoid redefinitions
-  // include MainDefinitions
-  // define the ACTORS macro with an entry for each actor script and a default actor entry
-  // define the ActorType enum using the ACTORS macro
-  // declare the actor update and init function arrays with NUM_ACTORS entries
-  // declare the init_actor_functions function
-  // declare the update and init functions for each actor script using the ACTORS macro
-  // define a Tags enum
-  return [
-    '#ifndef ACTOR_REGISTRY_H',
-    '#define ACTOR_REGISTRY_H',
-    '#include "MainDefinitions.h"',
-    '#define ACTORS \\',
-    ...actors.map((actor) => `    _ACTOR(${actor.identifier}) \\`),
-    '',
-    '#define _ACTOR(name) _##name,',
-    'typedef enum {',
-    '    ACTORS',
-    '    NUM_ACTORS',
-    '} ActorType;',
-    '#undef _ACTOR',
-    '',
-    'extern FAR_PTR actor_update_functions[NUM_ACTORS];',
-    'extern FAR_PTR actor_init_functions[NUM_ACTORS];',
-    '',
-    'void init_actor_functions(void);',
-    '',
-    '#define _ACTOR(name) \\',
-    '    BANKREF_EXTERN(name##_bankref) \\',
-    '    void Actor_Update_##name(void) BANKED; \\',
-    '    void Actor_Init_##name(void) BANKED;',
-    'ACTORS',
-    '#undef _ACTOR',
-    '',
-    'typedef enum {',
-    '    TAG_NONE,',
-    ...projectTags.map((tag) => `    ${buildProjectTagEnumName(tag.name)},`),
-    '} Tags;',
-    '',
-    '#endif // ACTOR_REGISTRY_H',
-    ''
-  ].join('\n')
+interface SceneRegistryEntry {
+  identifier: string
+  headerPath?: string
+  implementationIdentifier?: string
 }
 
-// build the scene registry header
-export const buildSceneRegistryHeader = (sceneIdentifiers: string[]): string => {
-  const scenes = Array.from(
-    new Set(sceneIdentifiers.length > 0 ? sceneIdentifiers : ['SampleScene'])
-  )
+const normalizeSceneRegistryEntries = (
+  sceneEntries: Array<string | SceneRegistryEntry>
+): Array<Required<SceneRegistryEntry>> => {
+  const nextEntries =
+    sceneEntries.length > 0
+      ? sceneEntries.map((sceneEntry) =>
+          typeof sceneEntry === 'string' ? { identifier: sceneEntry } : sceneEntry
+        )
+      : [{ identifier: 'SampleScene' }]
+  const entriesByIdentifier = new Map<string, Required<SceneRegistryEntry>>()
 
-  // header:
-  // avoid redefinitions
-  // include MainDefinitions
-  // define the SCENES macro with an entry for each scene identifier or a default SampleScene entry
-  // define the SceneType enum using the SCENES macro
-  // declare the scene update and init function arrays with NUM_SCENES entries
-  // declare the init_scene_functions function
-  // declare the update and init functions for each scene using the SCENES macro
-  return [
-    '#ifndef SCENE_REGISTRY_H',
-    '#define SCENE_REGISTRY_H',
-    '#include "../MainDefinitions.h"',
-    '',
-    '#define SCENES \\',
-    ...scenes.map((sceneIdentifier) => `    _SCENE(${sceneIdentifier}) \\`),
-    '',
-    '#define _SCENE(name) _##name,',
-    'typedef enum { ',
-    '    SCENES ',
-    '    NUM_SCENES ',
-    '} SceneType; ',
-    '#undef _SCENE',
-    '',
-    'extern FAR_PTR scene_init_state_functions[NUM_SCENES];',
-    'extern FAR_PTR scene_update_functions[NUM_SCENES]; ',
-    '',
-    'void init_scene_functions(void);',
-    '',
-    '#define _SCENE(name) \\',
-    '    BANKREF_EXTERN(name##_bankref) \\',
-    '    void scene_init_state_##name(void) BANKED; \\',
-    '    void scene_update_##name(void) BANKED; ',
-    '    SCENES ',
-    '#undef _SCENE',
-    '',
-    '#endif /* SCENE_REGISTRY_H */',
+  for (const sceneEntry of nextEntries) {
+    if (entriesByIdentifier.has(sceneEntry.identifier)) {
+      continue
+    }
+
+    entriesByIdentifier.set(sceneEntry.identifier, {
+      identifier: sceneEntry.identifier,
+      headerPath: sceneEntry.headerPath ?? `src/CustomScenes/${sceneEntry.identifier}.h`,
+      implementationIdentifier: sceneEntry.implementationIdentifier ?? sceneEntry.identifier
+    })
+  }
+
+  return [...entriesByIdentifier.values()]
+}
+
+// build the generated project-specific scene registry fragments
+export const buildSceneRegistryFiles = (
+  sceneEntries: Array<string | SceneRegistryEntry>
+): GeneratedRegistryFiles => {
+  const scenes = normalizeSceneRegistryEntries(sceneEntries)
+
+  const entriesContent = [
+    ...buildRawInvocationMacro(
+      'SCENES',
+      scenes.map((scene) =>
+        scene.implementationIdentifier === scene.identifier
+          ? `_SCENE(${scene.identifier})`
+          : `_SCENE_IMPL(${scene.identifier}, ${scene.implementationIdentifier})`
+      )
+    ),
     ''
   ].join('\n')
+
+  const includesContent = [
+    ...scenes.map((scene) => `#include "${toProjectSourceIncludePath(scene.headerPath)}"`),
+    ''
+  ].join('\n')
+
+  return { entriesContent, includesContent }
 }
+
+export const buildSceneRegistryHeader = (sceneIdentifiers: string[]): string =>
+  buildSceneRegistryFiles(sceneIdentifiers).entriesContent

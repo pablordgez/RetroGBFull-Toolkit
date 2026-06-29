@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../../src/shared/projectResourceModels'
-import { ProjectLauncherError } from '../../src/main/projectLauncher'
+import { ProjectLauncherError } from '../../src/main/projectLauncherPrimitives'
 import type { ProjectAssetRecordLike } from '../../src/main/projectBuildCodeTypes'
 import {
+  buildActorRegistryFiles,
   buildActorRegistryHeader,
   buildAnimationRegistryFiles,
   buildMapRegistryFiles,
   buildMapResourceFiles,
   buildMusicResourceFiles,
+  buildSceneRegistryFiles,
   buildSceneRegistryHeader,
   buildSongRegistryFiles,
   buildSpriteResourceFiles,
@@ -29,7 +31,7 @@ const asset = (
   document: document as ProjectAssetRecordLike['document']
 })
 
-const spriteDocument = (overrides: Record<string, unknown> = {}) => ({
+const spriteDocument = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   kind: 'sprite',
   version: 1,
   width: 8,
@@ -41,7 +43,7 @@ const spriteDocument = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-const tilesetDocument = (overrides: Record<string, unknown> = {}) => ({
+const tilesetDocument = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   kind: 'tileset',
   version: 1,
   palette: ['#ffffff', '#aaaaaa', '#555555', '#000000'],
@@ -49,7 +51,7 @@ const tilesetDocument = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-const tilemapDocument = (overrides: Record<string, unknown> = {}) => ({
+const tilemapDocument = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   kind: 'tilemap',
   version: 1,
   width: 2,
@@ -59,7 +61,7 @@ const tilemapDocument = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-const musicDocument = (overrides: Record<string, unknown> = {}) => ({
+const musicDocument = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   kind: 'music',
   version: 1,
   speed: 6,
@@ -98,13 +100,7 @@ describe('projectCCodeEmitters', () => {
           height: 16,
           is8x16Mode: true,
           fps: 7,
-          frames: [
-            [
-              ...new Array(64).fill(0),
-              ...new Array(64).fill(1),
-              ...new Array(128).fill(0)
-            ]
-          ]
+          frames: [[...new Array(64).fill(0), ...new Array(64).fill(1), ...new Array(128).fill(0)]]
         })
       )
     )
@@ -112,7 +108,10 @@ describe('projectCCodeEmitters', () => {
     expect(metasprite.sourceContent).toContain('const metasprite_t BigHero_metasprite_data[]')
     expect(metasprite.sourceContent).toContain('METASPR_TERM')
 
-    const globally8x16 = buildSpriteResourceFiles(asset('sprite', 'GlobalHero', spriteDocument()), true)
+    const globally8x16 = buildSpriteResourceFiles(
+      asset('sprite', 'GlobalHero', spriteDocument()),
+      true
+    )
     expect(globally8x16.headerContent).not.toContain('metasprite_t')
     expect(globally8x16.sourceContent).toContain(
       '0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00'
@@ -140,32 +139,37 @@ describe('projectCCodeEmitters', () => {
         width: 2,
         height: 4,
         tilesetPath: 'tileset',
-        windowTopEnd: 1,
-        windowBottomStart: 3,
+        windowVisibilityBands: [
+          { start: 8, end: 16 },
+          { start: 24, end: 32 }
+        ],
         grid: [0, 1, 2, 3, 4, 5, 6, 7]
       },
       5
     )
-    const windowFiles = buildMapResourceFiles(windowResource, tileset, 1.9, 3.2, false)
+    const windowFiles = buildMapResourceFiles(windowResource, tileset, 0, 0, false, [
+      { start: 8, end: 16 },
+      { start: 24, end: 32 }
+    ])
     expect(windowFiles.headerContent).toContain('extern const uint8_t DialogWindow_tileset[];')
-    expect(windowFiles.sourceContent).toContain('0x00,0x01,0x06,0x07')
-    expect(windowFiles.sourceContent).toContain('/* window split: top=1.9, bottom=3.2 */')
+    expect(windowFiles.sourceContent).toContain('0x02,0x03,0x06,0x07')
+    expect(windowFiles.sourceContent).toContain('/* window visibility bands: 8-16,24-32 */')
   })
 
   it('decides when a map can reuse a shared tileset', () => {
     const tileset = asset('tileset', 'Tiles', tilesetDocument(), 3)
-    expect(canReuseSharedTilesetForMap(asset('tilemap', 'MapA', tilemapDocument(), 3), tileset)).toBe(
-      true
-    )
+    expect(
+      canReuseSharedTilesetForMap(asset('tilemap', 'MapA', tilemapDocument(), 3), tileset)
+    ).toBe(true)
     expect(
       canReuseSharedTilesetForMap(
         asset('tilemap', 'MapB', tilemapDocument(), DEFAULT_PROJECT_RESOURCE_BANK),
         asset('tileset', 'Tiles', tilesetDocument(), DEFAULT_PROJECT_RESOURCE_BANK)
       )
     ).toBe(false)
-    expect(canReuseSharedTilesetForMap(asset('tilemap', 'MapC', tilemapDocument(), 4), tileset)).toBe(
-      false
-    )
+    expect(
+      canReuseSharedTilesetForMap(asset('tilemap', 'MapC', tilemapDocument(), 4), tileset)
+    ).toBe(false)
   })
 
   it('builds music files and validates malformed music documents', () => {
@@ -186,13 +190,21 @@ describe('projectCCodeEmitters', () => {
         })
       )
     )
-    expect(silent.sourceContent).toContain('{ .reg1 = 0x00, .reg2 = 0x00, .reg3 = 0x00 },')
+    expect(silent.sourceContent).toContain(
+      '{ .sweep = 0x00, .reg1 = 0x00, .reg2 = 0x00, .reg3 = 0x00 },'
+    )
 
     const invalidDocuments = [
       { kind: 'sprite' },
       musicDocument({ speed: 0 }),
+      musicDocument({ instruments: [{ sweep: 0x100, reg1: 1, reg2: 2, reg3: 3 }] }),
       musicDocument({ instruments: [{ reg1: -1, reg2: 2, reg3: 3 }] }),
-      musicDocument({ patterns: [{ id: 'dup', steps: [] }, { id: 'dup', steps: [] }] }),
+      musicDocument({
+        patterns: [
+          { id: 'dup', steps: [] },
+          { id: 'dup', steps: [] }
+        ]
+      }),
       musicDocument({ patterns: [{ id: 'bad-note', steps: [{ noteIndex: 72, instrument: 0 }] }] }),
       musicDocument({ patterns: [{ id: 'bad-inst', steps: [{ noteIndex: 1, instrument: 9 }] }] }),
       musicDocument({ sequence: { ch1: ['missing'], ch2: [], ch4: [] } }),
@@ -232,7 +244,9 @@ describe('projectCCodeEmitters', () => {
     expect(populated.headerContent).toContain('#define SPRITES_8X16_ENABLED 0')
     expect(populated.sourceContent).toContain('.metasprite = (void*) 0')
     expect(populated.sourceContent).toContain('.metasprite = BigHero_metasprite_data')
-    expect(populated.sourceContent).toContain('[BigHero] = {BANK(BigHero_bankref), BigHero_sprite_data}')
+    expect(populated.sourceContent).toContain(
+      '[BigHero] = {BANK(BigHero_bankref), BigHero_sprite_data}'
+    )
 
     const globally8x16 = buildAnimationRegistryFiles([
       asset('sprite', 'TinyHero', spriteDocument()),
@@ -260,8 +274,10 @@ describe('projectCCodeEmitters', () => {
             width: 2,
             height: 4,
             tilesetPath: 'tileset',
-            windowTopEnd: 1,
-            windowBottomStart: 3,
+            windowVisibilityBands: [
+              { start: 8, end: 16 },
+              { start: 24, end: 32 }
+            ],
             grid: [0, 1, 2, 3, 4, 5, 6, 7]
           },
           9
@@ -272,25 +288,49 @@ describe('projectCCodeEmitters', () => {
     expect(populated.headerContent).toContain('#include "MapA/MapA.h"')
     expect(populated.sourceContent).toContain('.tileset = Tiles_tileset')
     expect(populated.sourceContent).toContain('.tileset = WindowA_tileset')
-    expect(populated.sourceContent).toContain('.window_top_end = 1')
+    expect(populated.sourceContent).not.toContain('.window_y')
+    expect(populated.sourceContent).not.toContain('.window_top_end')
+    expect(populated.sourceContent).not.toContain('.window_bottom_start')
 
     expect(() =>
-      buildMapRegistryFiles([asset('tilemap', 'Missing', tilemapDocument({ tilesetPath: null }))], [], new Map())
+      buildMapRegistryFiles(
+        [asset('tilemap', 'Missing', tilemapDocument({ tilesetPath: null }))],
+        [],
+        new Map()
+      )
     ).toThrow('Map "Missing" references a missing tileset resource: none')
   })
 
-  it('builds actor and scene registry headers', () => {
-    const actorHeader = buildActorRegistryHeader(
-      [{ kind: 'actor', path: 'src/CustomActors/Hero.c', name: 'Hero', identifier: 'Hero', bank: 2 }],
+  it('builds actor and scene registry fragments', () => {
+    const actorRegistry = buildActorRegistryFiles(
+      [
+        {
+          kind: 'actor',
+          path: 'src/CustomActors/Hero.c',
+          name: 'Hero',
+          identifier: 'Hero',
+          bank: 2
+        }
+      ],
       [{ id: 'solid', name: 'Solid Block' }]
     )
-    expect(actorHeader).toContain('_ACTOR(GeneratedDefaultActor)')
-    expect(actorHeader).toContain('_ACTOR(Hero)')
-    expect(actorHeader).toContain('TAG_SOLID_BLOCK')
+    expect(actorRegistry.entriesContent).toContain('#define ACTOR_REGISTRY_HAS_ACTORS 1')
+    expect(actorRegistry.entriesContent).toContain('_ACTOR(GeneratedDefaultActor)')
+    expect(actorRegistry.entriesContent).toContain('_ACTOR(Hero)')
+    expect(actorRegistry.entriesContent).toContain('_TAG(TAG_SOLID_BLOCK)')
+    expect(actorRegistry.includesContent).toContain('#include "CustomActors/GeneratedDefaultActor.h"')
+    expect(actorRegistry.includesContent).toContain('#include "CustomActors/Hero.h"')
+    expect(buildActorRegistryHeader([], [])).toContain('_ACTOR(GeneratedDefaultActor)')
 
     expect(buildSceneRegistryHeader([])).toContain('_SCENE(SampleScene)')
-    const sceneHeader = buildSceneRegistryHeader(['Intro', 'Intro', 'Ending'])
-    expect(sceneHeader.match(/_SCENE\(Intro\)/g)).toHaveLength(1)
-    expect(sceneHeader).toContain('_SCENE(Ending)')
+    const sceneRegistry = buildSceneRegistryFiles([
+      { identifier: 'Intro', headerPath: 'src/CustomScenes/Intro.h' },
+      { identifier: 'Intro', headerPath: 'src/CustomScenes/Intro.h' },
+      { identifier: 'Ending', headerPath: 'src/CustomScenes/Ending.h' }
+    ])
+    expect(sceneRegistry.entriesContent.match(/_SCENE\(Intro\)/g)).toHaveLength(1)
+    expect(sceneRegistry.entriesContent).toContain('_SCENE(Ending)')
+    expect(sceneRegistry.includesContent).toContain('#include "CustomScenes/Intro.h"')
+    expect(sceneRegistry.includesContent).toContain('#include "CustomScenes/Ending.h"')
   })
 })

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import '../style/SpriteEditor.css'
 import { PixelCanvas } from '../PixelEditor/PixelCanvas'
 import { useViewport } from '../hooks/viewport/useViewport'
@@ -14,9 +14,13 @@ import {
   type TilemapAssetDocument,
   type TilesetAssetDocument,
   type WindowAssetDocument,
-  type WindowSplitSettings,
+  type WindowVisibilityBand,
+  WINDOW_VISIBILITY_MAX_BANDS,
+  WINDOW_VISIBILITY_SCREEN_HEIGHT,
+  WINDOW_VISIBILITY_TILE_ROWS,
+  WINDOW_VISIBILITY_TILE_SIZE,
   getProjectAssetDisplayName,
-  normalizeWindowSplitSettings
+  normalizeWindowVisibilityTileBands
 } from '../../../../shared/projectAssets'
 
 const DEFAULT_MAP_W = 20
@@ -42,76 +46,56 @@ interface TileGridAssetEditorProps {
   assetKind: TileGridAssetKind
 }
 
-const isWindowAssetDocument = (document: TileGridAssetDocument): document is WindowAssetDocument => {
+const isWindowAssetDocument = (
+  document: TileGridAssetDocument
+): document is WindowAssetDocument => {
   return document.kind === 'window'
 }
 
-const getSplitGuideStyles = (
-  row: number,
-  pan: { x: number; y: number },
-  scale: number,
-  width: number
-): CSSProperties => {
-  return {
-    left: `${pan.x}px`,
-    top: `${pan.y + row * scale}px`,
-    width: `${width * scale}px`
-  }
-}
+const getWindowVisibilityTileRows = (bands: WindowVisibilityBand[]): boolean[] => {
+  const rows = new Array(WINDOW_VISIBILITY_TILE_ROWS).fill(false)
 
-const getSplitBadgeStyles = (
-  row: number,
-  pan: { x: number; y: number },
-  scale: number
-): CSSProperties => {
-  return {
-    left: `${pan.x + 8}px`,
-    top: `${pan.y + row * scale + 8}px`
-  }
-}
-
-const getWindowBottomRows = (windowBottomStart: number, height: number): number => {
-  return windowBottomStart > 0 ? Math.max(0, height - windowBottomStart) : 0
-}
-
-const getWindowSplitInputState = (
-  windowTopEnd: number,
-  windowBottomStart: number,
-  height: number
-): { topRows: string; bottomRows: string } => {
-  return {
-    topRows: windowTopEnd.toString(),
-    bottomRows: getWindowBottomRows(windowBottomStart, height).toString()
-  }
-}
-
-const getWindowSplitSettingsFromEditorRows = (
-  topRows: number,
-  bottomRows: number,
-  height: number
-): WindowSplitSettings => {
-  const clampRowCount = (value: number): number => {
-    if (!Number.isFinite(value)) {
-      return 0
+  normalizeWindowVisibilityTileBands(bands).forEach((band) => {
+    for (
+      let row = band.start / WINDOW_VISIBILITY_TILE_SIZE;
+      row < band.end / WINDOW_VISIBILITY_TILE_SIZE;
+      row += 1
+    ) {
+      rows[row] = true
     }
+  })
 
-    return Math.max(0, Math.min(Math.max(0, Math.trunc(height)), Math.trunc(value)))
+  return rows
+}
+
+const getWindowVisibilityBandsFromTileRows = (rows: boolean[]): WindowVisibilityBand[] => {
+  const bands: WindowVisibilityBand[] = []
+  let start: number | null = null
+
+  for (let row = 0; row <= WINDOW_VISIBILITY_TILE_ROWS; row += 1) {
+    const isVisible = rows[row] ?? false
+
+    if (isVisible && start === null) {
+      start = row
+    } else if (!isVisible && start !== null) {
+      bands.push({
+        start: start * WINDOW_VISIBILITY_TILE_SIZE,
+        end: row * WINDOW_VISIBILITY_TILE_SIZE
+      })
+      start = null
+    }
   }
 
-  const nextTopRows = clampRowCount(topRows)
+  return normalizeWindowVisibilityTileBands(bands)
+}
 
-  if (nextTopRows === 0) {
-    return normalizeWindowSplitSettings(0, 0, height)
-  }
-
-  const nextBottomRows = clampRowCount(bottomRows)
-
-  if (nextBottomRows === 0) {
-    return normalizeWindowSplitSettings(nextTopRows, 0, height)
-  }
-
-  const nextBottomStart = Math.max(0, Math.trunc(height) - nextBottomRows)
-  return normalizeWindowSplitSettings(nextTopRows, nextBottomStart, height)
+const getWindowVisibilityBandCountAfterToggle = (
+  bands: WindowVisibilityBand[],
+  row: number
+): number => {
+  const rows = getWindowVisibilityTileRows(bands)
+  rows[row] = !rows[row]
+  return getWindowVisibilityBandsFromTileRows(rows).length
 }
 
 export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => {
@@ -124,12 +108,9 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
   const [tilesetTileCount, setTilesetTileCount] = useState(0)
   const [selectedTileIndex, setSelectedTileIndex] = useState(0)
   const [tool, setTool] = useState<'brush' | 'fill'>('brush')
-  const [windowTopEnd, setWindowTopEnd] = useState(0)
-  const [windowBottomStart, setWindowBottomStart] = useState(0)
-  const [windowSplitInput, setWindowSplitInput] = useState({
-    topRows: '0',
-    bottomRows: '0'
-  })
+  const [windowVisibilityBands, setWindowVisibilityBands] = useState<WindowVisibilityBand[]>([
+    { start: 0, end: WINDOW_VISIBILITY_SCREEN_HEIGHT }
+  ])
   const [inputSize, setInputSize] = useState({
     w: DEFAULT_MAP_W.toString(),
     h: DEFAULT_MAP_H.toString()
@@ -149,8 +130,6 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
 
   const assetDocument = useMemo((): TileGridAssetDocument => {
     if (assetKind === 'window') {
-      const splitSettings = normalizeWindowSplitSettings(windowTopEnd, windowBottomStart, mapHeight)
-
       return {
         kind: 'window',
         version: 1,
@@ -160,7 +139,7 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
         tilesetPath,
         selectedTileIndex,
         tool,
-        ...splitSettings
+        windowVisibilityBands: normalizeWindowVisibilityTileBands(windowVisibilityBands)
       }
     }
 
@@ -182,8 +161,7 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
     selectedTileIndex,
     tilesetPath,
     tool,
-    windowBottomStart,
-    windowTopEnd
+    windowVisibilityBands
   ])
 
   const applyDocument = useCallback((nextDocument: TileGridAssetDocument) => {
@@ -199,27 +177,9 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
     setTool(nextDocument.tool)
 
     if (isWindowAssetDocument(nextDocument)) {
-      const splitSettings = normalizeWindowSplitSettings(
-        nextDocument.windowTopEnd,
-        nextDocument.windowBottomStart,
-        nextDocument.height
-      )
-      setWindowTopEnd(splitSettings.windowTopEnd)
-      setWindowBottomStart(splitSettings.windowBottomStart)
-      setWindowSplitInput(
-        getWindowSplitInputState(
-          splitSettings.windowTopEnd,
-          splitSettings.windowBottomStart,
-          nextDocument.height
-        )
-      )
+      setWindowVisibilityBands(normalizeWindowVisibilityTileBands(nextDocument.windowVisibilityBands))
     } else {
-      setWindowTopEnd(0)
-      setWindowBottomStart(0)
-      setWindowSplitInput({
-        topRows: '0',
-        bottomRows: '0'
-      })
+      setWindowVisibilityBands([{ start: 0, end: WINDOW_VISIBILITY_SCREEN_HEIGHT }])
     }
   }, [])
 
@@ -268,9 +228,11 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
 
       const resourceView = await window.api.getProjectResources(projectPath, currentPath)
       const localTilesets = resourceView.items
-        .filter((resource): resource is typeof resource & { type: 'file'; resourceType: 'tileset' } => {
-          return resource.type === 'file' && resource.resourceType === 'tileset'
-        })
+        .filter(
+          (resource): resource is typeof resource & { type: 'file'; resourceType: 'tileset' } => {
+            return resource.type === 'file' && resource.resourceType === 'tileset'
+          }
+        )
         .map((resource) => ({
           name: resource.name,
           path: resource.path
@@ -474,7 +436,13 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
         return
       }
 
-      const pixelsToFill = floodFill(x, y, mapWidth, mapHeight, (gx, gy) => grid[gy * mapWidth + gx])
+      const pixelsToFill = floodFill(
+        x,
+        y,
+        mapWidth,
+        mapHeight,
+        (gx, gy) => grid[gy * mapWidth + gx]
+      )
 
       if (pixelsToFill.length === 0) {
         return
@@ -525,11 +493,13 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
           isDrawingRef.current = false
           if (historyBufferRef.current.size > 0) {
             const appliedButton = activeDrawButtonRef.current
-            const changes = Array.from(historyBufferRef.current.entries()).map(([index, oldTile]) => ({
-              index,
-              oldTile,
-              newTile: appliedButton === 2 ? 0 : selectedTileIndex
-            }))
+            const changes = Array.from(historyBufferRef.current.entries()).map(
+              ([index, oldTile]) => ({
+                index,
+                oldTile,
+                newTile: appliedButton === 2 ? 0 : selectedTileIndex
+              })
+            )
 
             record({
               undo: () => {
@@ -601,69 +571,44 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
     ? getProjectAssetDisplayName(tilesetPath.split('/').pop() ?? 'Tileset')
     : 'No tileset selected'
 
-  const applyWindowSplit = useCallback(
-    (nextTopRows: number, nextBottomRows: number) => {
-      const nextSplitSettings = getWindowSplitSettingsFromEditorRows(
-        nextTopRows,
-        nextBottomRows,
-        mapHeight
-      )
+  const applyWindowVisibilityBands = useCallback(
+    (nextBands: WindowVisibilityBand[]) => {
+      const normalizedBands = normalizeWindowVisibilityTileBands(nextBands)
+      const previousBands = normalizeWindowVisibilityTileBands(windowVisibilityBands)
 
-      if (
-        nextSplitSettings.windowTopEnd === windowTopEnd &&
-        nextSplitSettings.windowBottomStart === windowBottomStart
-      ) {
-        setWindowSplitInput(
-          getWindowSplitInputState(
-            nextSplitSettings.windowTopEnd,
-            nextSplitSettings.windowBottomStart,
-            mapHeight
-          )
-        )
+      if (JSON.stringify(normalizedBands) === JSON.stringify(previousBands)) {
         return
-      }
-
-      const previousSplitSettings = {
-        windowTopEnd,
-        windowBottomStart
       }
 
       record({
         undo: () => {
-          setWindowTopEnd(previousSplitSettings.windowTopEnd)
-          setWindowBottomStart(previousSplitSettings.windowBottomStart)
-          setWindowSplitInput(
-            getWindowSplitInputState(
-              previousSplitSettings.windowTopEnd,
-              previousSplitSettings.windowBottomStart,
-              mapHeight
-            )
-          )
+          setWindowVisibilityBands(previousBands)
         },
         redo: () => {
-          setWindowTopEnd(nextSplitSettings.windowTopEnd)
-          setWindowBottomStart(nextSplitSettings.windowBottomStart)
-          setWindowSplitInput(
-            getWindowSplitInputState(
-              nextSplitSettings.windowTopEnd,
-              nextSplitSettings.windowBottomStart,
-              mapHeight
-            )
-          )
+          setWindowVisibilityBands(normalizedBands)
         }
       })
 
-      setWindowTopEnd(nextSplitSettings.windowTopEnd)
-      setWindowBottomStart(nextSplitSettings.windowBottomStart)
-      setWindowSplitInput(
-        getWindowSplitInputState(
-          nextSplitSettings.windowTopEnd,
-          nextSplitSettings.windowBottomStart,
-          mapHeight
-        )
-      )
+      setWindowVisibilityBands(normalizedBands)
     },
-    [mapHeight, record, windowBottomStart, windowTopEnd]
+    [record, windowVisibilityBands]
+  )
+
+  const handleWindowTileRowToggle = useCallback(
+    (row: number) => {
+      const rows = getWindowVisibilityTileRows(windowVisibilityBands)
+      rows[row] = !rows[row]
+      const nextBands = getWindowVisibilityBandsFromTileRows(rows)
+
+      if (nextBands.length > WINDOW_VISIBILITY_MAX_BANDS) {
+        setStatusMessage(`Window visibility is limited to ${WINDOW_VISIBILITY_MAX_BANDS} bands.`)
+        return
+      }
+
+      setStatusMessage(null)
+      applyWindowVisibilityBands(nextBands)
+    },
+    [applyWindowVisibilityBands, setStatusMessage, windowVisibilityBands]
   )
 
   const handleResize = () => {
@@ -682,12 +627,6 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
     const previousHeight = mapHeight
     const previousGrid = [...grid]
     const nextGrid = Array.from(resizeGrid(grid, mapWidth, mapHeight, nextWidth, nextHeight, 0))
-    const previousSplitSettings = normalizeWindowSplitSettings(
-      windowTopEnd,
-      windowBottomStart,
-      previousHeight
-    )
-    const nextSplitSettings = normalizeWindowSplitSettings(windowTopEnd, windowBottomStart, nextHeight)
 
     record({
       undo: () => {
@@ -698,15 +637,6 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
           w: previousWidth.toString(),
           h: previousHeight.toString()
         })
-        setWindowTopEnd(previousSplitSettings.windowTopEnd)
-        setWindowBottomStart(previousSplitSettings.windowBottomStart)
-        setWindowSplitInput(
-          getWindowSplitInputState(
-            previousSplitSettings.windowTopEnd,
-            previousSplitSettings.windowBottomStart,
-            previousHeight
-          )
-        )
       },
       redo: () => {
         setMapWidth(nextWidth)
@@ -716,48 +646,22 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
           w: nextWidth.toString(),
           h: nextHeight.toString()
         })
-        setWindowTopEnd(nextSplitSettings.windowTopEnd)
-        setWindowBottomStart(nextSplitSettings.windowBottomStart)
-        setWindowSplitInput(
-          getWindowSplitInputState(
-            nextSplitSettings.windowTopEnd,
-            nextSplitSettings.windowBottomStart,
-            nextHeight
-          )
-        )
       }
     })
 
     setMapWidth(nextWidth)
     setMapHeight(nextHeight)
     setGrid(nextGrid)
-    setWindowTopEnd(nextSplitSettings.windowTopEnd)
-    setWindowBottomStart(nextSplitSettings.windowBottomStart)
-    setWindowSplitInput(
-      getWindowSplitInputState(
-        nextSplitSettings.windowTopEnd,
-        nextSplitSettings.windowBottomStart,
-        nextHeight
-      )
-    )
     fitToScreen()
   }
 
-  const windowSplitModeLabel = useMemo(() => {
-    if (windowTopEnd === 0) {
-      return 'Full window'
-    }
-
-    if (windowBottomStart === 0) {
-      return 'Top-only window'
-    }
-
-    return 'Top and bottom window'
-  }, [windowBottomStart, windowTopEnd])
-
-  const windowBottomRows = useMemo(
-    () => getWindowBottomRows(windowBottomStart, mapHeight),
-    [mapHeight, windowBottomStart]
+  const normalizedWindowVisibilityBands = useMemo(
+    () => normalizeWindowVisibilityTileBands(windowVisibilityBands),
+    [windowVisibilityBands]
+  )
+  const windowVisibilityTileRows = useMemo(
+    () => getWindowVisibilityTileRows(normalizedWindowVisibilityBands),
+    [normalizedWindowVisibilityBands]
   )
 
   return (
@@ -814,54 +718,27 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
 
         {assetKind === 'window' && (
           <div className="toolbox">
-            <h3>Window Split</h3>
-            <p className="editor-modal-copy tilemap-editor__split-copy">{windowSplitModeLabel}</p>
-            <div className="input-row">
-              <label>
-                Top Rows:{' '}
-                <input
-                  type="number"
-                  min="0"
-                  max={mapHeight.toString()}
-                  value={windowSplitInput.topRows}
-                  onChange={(event) => {
-                    setWindowSplitInput((currentState) => ({
-                      ...currentState,
-                      topRows: event.target.value
-                    }))
-                  }}
-                  onBlur={() => {
-                    applyWindowSplit(
-                      Number.parseInt(windowSplitInput.topRows || '0', 10),
-                      Number.parseInt(windowSplitInput.bottomRows || '0', 10)
-                    )
-                  }}
-                />
-              </label>
-              <label>
-                Bottom Rows:{' '}
-                <input
-                  type="number"
-                  min="0"
-                  max={mapHeight.toString()}
-                  value={windowSplitInput.bottomRows}
-                  onChange={(event) => {
-                    setWindowSplitInput((currentState) => ({
-                      ...currentState,
-                      bottomRows: event.target.value
-                    }))
-                  }}
-                  onBlur={() => {
-                    applyWindowSplit(
-                      Number.parseInt(windowSplitInput.topRows || '0', 10),
-                      Number.parseInt(windowSplitInput.bottomRows || '0', 10)
-                    )
-                  }}
-                />
-              </label>
+            <h3>Window Visibility</h3>
+            <p className="editor-modal-copy tilemap-editor__split-copy">
+              Bands: {normalizedWindowVisibilityBands.length} / {WINDOW_VISIBILITY_MAX_BANDS}
+            </p>
+            <div className="button-row">
+              <button
+                type="button"
+                onClick={() =>
+                  applyWindowVisibilityBands([
+                    { start: 0, end: WINDOW_VISIBILITY_SCREEN_HEIGHT }
+                  ])
+                }
+              >
+                All On
+              </button>
+              <button type="button" onClick={() => applyWindowVisibilityBands([])}>
+                All Off
+              </button>
             </div>
             <p className="tilemap-editor__split-hint">
-              Top and bottom rows count from their nearest edge. Zero top rows saves a full window.
+              Toggle tile rows in the rail beside the window preview.
             </p>
             <p className="tilemap-editor__split-hint">Fixed to 20x18.</p>
           </div>
@@ -906,7 +783,10 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
             </button>
           </div>
         </div>
-        <div className="toolbox" style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
+        <div
+          className="toolbox"
+          style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}
+        >
           <Tileset
             key={`${tilesetPath ?? 'no-tileset'}:${tilesetTileCount}`}
             ref={tilesetRef}
@@ -940,78 +820,56 @@ export const TileGridAssetEditor = ({ assetKind }: TileGridAssetEditorProps) => 
           eraserIndex={-1}
         />
 
-        {assetKind === 'window' && windowTopEnd > 0 && (
-          <div className="tilemap-editor__split-overlay" aria-hidden="true">
-            <div
-              className="tilemap-editor__split-section tilemap-editor__split-section--visible"
-              style={{
-                left: `${pan.x}px`,
-                top: `${pan.y}px`,
-                width: `${mapWidth * scale}px`,
-                height: `${windowTopEnd * scale}px`
-              }}
-            />
-
-            {windowBottomStart > windowTopEnd && (
-              <>
-                <div
-                  className="tilemap-editor__split-section tilemap-editor__split-section--hidden"
-                  style={{
-                    left: `${pan.x}px`,
-                    top: `${pan.y + windowTopEnd * scale}px`,
-                    width: `${mapWidth * scale}px`,
-                    height: `${(windowBottomStart - windowTopEnd) * scale}px`
-                  }}
-                />
-                <div
-                  className="tilemap-editor__split-section tilemap-editor__split-section--visible"
-                  style={{
-                    left: `${pan.x}px`,
-                    top: `${pan.y + windowBottomStart * scale}px`,
-                    width: `${mapWidth * scale}px`,
-                    height: `${Math.max(0, (mapHeight - windowBottomStart) * scale)}px`
-                  }}
-                />
-              </>
-            )}
-
-            {windowBottomStart === 0 && (
+        {assetKind === 'window' && (
+          <div className="tilemap-editor__split-overlay">
+            {normalizedWindowVisibilityBands.map((band, index) => (
               <div
-                className="tilemap-editor__split-section tilemap-editor__split-section--hidden"
+                key={`${band.start}-${band.end}-${index}`}
+                className="tilemap-editor__split-section tilemap-editor__split-section--visible"
                 style={{
                   left: `${pan.x}px`,
-                  top: `${pan.y + windowTopEnd * scale}px`,
+                  top: `${pan.y + (band.start / 8) * scale}px`,
                   width: `${mapWidth * scale}px`,
-                  height: `${Math.max(0, (mapHeight - windowTopEnd) * scale)}px`
+                  height: `${((band.end - band.start) / 8) * scale}px`
                 }}
               />
-            )}
+            ))}
 
             <div
-              className="tilemap-editor__split-guide tilemap-editor__split-guide--top"
-              style={getSplitGuideStyles(windowTopEnd, pan, scale, mapWidth)}
-            />
-            <div
-              className="tilemap-editor__split-badge tilemap-editor__split-badge--top"
-              style={getSplitBadgeStyles(windowTopEnd, pan, scale)}
+              className="tilemap-editor__tile-row-rail"
+              style={{
+                left: `${pan.x + mapWidth * scale + 12}px`,
+                top: `${pan.y}px`,
+                height: `${mapHeight * scale}px`
+              }}
             >
-              Top Rows: {windowTopEnd}
-            </div>
+              {Array.from({ length: WINDOW_VISIBILITY_TILE_ROWS }, (_, row) => {
+                const isVisible = windowVisibilityTileRows[row]
+                const wouldExceed =
+                  !isVisible &&
+                  getWindowVisibilityBandCountAfterToggle(
+                    normalizedWindowVisibilityBands,
+                    row
+                  ) > WINDOW_VISIBILITY_MAX_BANDS
 
-            {windowBottomStart > 0 && (
-              <>
-                <div
-                  className="tilemap-editor__split-guide tilemap-editor__split-guide--bottom"
-                  style={getSplitGuideStyles(windowBottomStart, pan, scale, mapWidth)}
-                />
-                <div
-                  className="tilemap-editor__split-badge tilemap-editor__split-badge--bottom"
-                  style={getSplitBadgeStyles(windowBottomStart, pan, scale)}
-                >
-                  Bottom Rows: {windowBottomRows}
-                </div>
-              </>
-            )}
+                return (
+                  <button
+                    key={row}
+                    type="button"
+                    className={`tilemap-editor__tile-row-toggle ${
+                      isVisible ? 'tilemap-editor__tile-row-toggle--visible' : ''
+                    }`}
+                    style={{
+                      top: `${(row / WINDOW_VISIBILITY_TILE_ROWS) * 100}%`
+                    }}
+                    aria-label={`Tile row ${row}`}
+                    title={`Tile row ${row}`}
+                    disabled={wouldExceed}
+                    onClick={() => handleWindowTileRowToggle(row)}
+                  />
+                )
+              })}
+            </div>
           </div>
         )}
       </div>

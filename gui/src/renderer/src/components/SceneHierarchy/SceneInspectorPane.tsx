@@ -7,16 +7,17 @@ import {
   useMemo,
   useState
 } from 'react'
-import type {
-  SceneAssetActorNode,
-  SceneAssetCollisionCallback,
-  SceneActorPhysicsMode,
-  SceneAssetNode
-} from '../../../../shared/projectAssets'
 import {
   SCENE_ACTOR_PHYSICS_MODES,
+  SCENE_CAMERA_DEADZONE_LIMITS,
   getProjectAssetDisplayName,
-  isSceneActorPhysicsMode
+  isSceneActorPhysicsMode,
+  normalizeSceneCameraDeadzone,
+  normalizeSceneCameraDeadzoneValue,
+  type SceneActorPhysicsMode,
+  type SceneAssetActorNode,
+  type SceneAssetCollisionCallback,
+  type SceneAssetNode
 } from '../../../../shared/projectAssets'
 import type {
   ParsedScriptPropertyDefinition,
@@ -526,6 +527,22 @@ export const SceneInspectorPane = ({
       : selectedTagIds.filter((currentTagId) => currentTagId !== tagId)
 
     editor.setNodeTags(selectedTaggableNode.id, nextTags)
+  }
+
+  const updateSelectedActorCameraDeadzone = (
+    edge: 'left' | 'right' | 'top' | 'bottom',
+    value: number
+  ): void => {
+    if (!selectedActor) {
+      return
+    }
+
+    editor.updateActor(selectedActor.id, {
+      cameraDeadzone: {
+        ...normalizeSceneCameraDeadzone(selectedActor.cameraDeadzone),
+        [edge]: normalizeSceneCameraDeadzoneValue(value, SCENE_CAMERA_DEADZONE_LIMITS[edge])
+      }
+    })
   }
 
   const renderTagControls = (): ReactElement | null => {
@@ -1115,6 +1132,40 @@ export const SceneInspectorPane = ({
                 />
                 <span>Follow camera</span>
               </label>
+
+              {selectedActor.followCamera && (
+                <>
+                  <div className="scene-inspector-pane__section-title">Camera Deadzone</div>
+                  <div className="scene-inspector-pane__coords scene-inspector-pane__coords--camera">
+                    {(
+                      [
+                        ['left', 'Left'],
+                        ['right', 'Right'],
+                        ['top', 'Top'],
+                        ['bottom', 'Bottom']
+                      ] as const
+                    ).map(([edge, label]) => {
+                      const deadzone = normalizeSceneCameraDeadzone(selectedActor.cameraDeadzone)
+
+                      return (
+                        <label key={edge}>
+                          {label}
+                          <input
+                            type="number"
+                            min={0}
+                            max={SCENE_CAMERA_DEADZONE_LIMITS[edge]}
+                            step={1}
+                            value={deadzone[edge]}
+                            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                              updateSelectedActorCameraDeadzone(edge, event.target.valueAsNumber)
+                            }}
+                          />
+                        </label>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
 
               <div className="scene-inspector-pane__field">
                 <label htmlFor="scene-inspector-actor-physics-mode">Physics Mode</label>

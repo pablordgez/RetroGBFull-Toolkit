@@ -46,6 +46,7 @@ export const createDefaultInstrument = (
 ): MusicInstrument => ({
   name: `${channelType === 'noise' ? 'Noise' : 'Pulse'} ${index}`,
   channelType,
+  ...(channelType === 'pulse' ? { sweep: 0x00 } : {}),
   reg1: channelType === 'noise' ? 0x3f : 0x80,
   reg2: 0xf2,
   reg3: channelType === 'noise' ? 0x20 : 0x00
@@ -63,11 +64,90 @@ export const getPatternChannel = (pattern: MusicPattern | null | undefined): Mus
   return pattern?.channel ?? 'ch1'
 }
 
+export const isPulseInstrumentUsingSweep = (
+  instrument: MusicInstrument | null | undefined
+): boolean => {
+  if (!instrument || getInstrumentKind(instrument) !== 'pulse') {
+    return false
+  }
+
+  const state = decodePulseInstrument(instrument)
+  return state.sweepEnabled
+}
+
 export const isInstrumentValidForChannel = (
   instrument: MusicInstrument | null | undefined,
   channel: MusicChannelKey
 ): boolean => {
-  return instrument ? getInstrumentKind(instrument) === getInstrumentKindForChannel(channel) : false
+  if (!instrument || getInstrumentKind(instrument) !== getInstrumentKindForChannel(channel)) {
+    return false
+  }
+
+  return channel !== 'ch2' || !isPulseInstrumentUsingSweep(instrument)
+}
+
+export const isPatternUsingSweep = (
+  document: MusicAssetDocument,
+  pattern: MusicPattern | null | undefined
+): boolean => {
+  if (!pattern) {
+    return false
+  }
+
+  return pattern.steps.some((step) => {
+    if (step.noteIndex === MUSIC_NOTE_REST) {
+      return false
+    }
+
+    return isPulseInstrumentUsingSweep(document.instruments[step.instrument])
+  })
+}
+
+export const isPatternValidForChannel = (
+  document: MusicAssetDocument,
+  pattern: MusicPattern | null | undefined,
+  channel: MusicChannelKey
+): boolean => {
+  if (!pattern) {
+    return false
+  }
+
+  const patternChannel = getPatternChannel(pattern)
+
+  if (patternChannel === 'ch4' || channel === 'ch4') {
+    return patternChannel === channel
+  }
+
+  return channel === 'ch1' || !isPatternUsingSweep(document, pattern)
+}
+
+export const sanitizeMusicSequenceCompatibility = (
+  document: MusicAssetDocument
+): MusicAssetDocument => {
+  const patternsById = new Map(document.patterns.map((pattern) => [pattern.id, pattern]))
+  let changed = false
+  const nextSequence = CHANNELS.reduce(
+    (sequence, channel) => {
+      sequence[channel] = document.sequence[channel].map((patternId) => {
+        if (!patternId) {
+          return null
+        }
+
+        const pattern = patternsById.get(patternId)
+
+        if (isPatternValidForChannel(document, pattern, channel)) {
+          return patternId
+        }
+
+        changed = true
+        return null
+      })
+      return sequence
+    },
+    {} as MusicAssetDocument['sequence']
+  )
+
+  return changed ? { ...document, sequence: nextSequence } : document
 }
 
 export const asMusicDocument = (): MusicAssetDocument => {
@@ -157,9 +237,15 @@ export const updatePulseInstrument = (
     initialVolume: number
     envelopeDirection: 'decrease' | 'increase'
     envelopePace: number
+    sweepPace: number
+    sweepDirection: 'increase' | 'decrease'
+    sweepShift: number
   }>
 ): MusicInstrument => {
   const state = decodePulseInstrument(instrument)
+  const sweepPace = patch.sweepPace ?? state.sweepPace
+  const sweepDirection = patch.sweepDirection ?? state.sweepDirection
+  const sweepShift = patch.sweepShift ?? state.sweepShift
   const duty = patch.duty ?? state.duty
   const length = patch.length ?? state.length
   const initialVolume = patch.initialVolume ?? state.initialVolume
@@ -169,6 +255,10 @@ export const updatePulseInstrument = (
   return {
     ...instrument,
     channelType: 'pulse',
+    sweep:
+      ((clamp(sweepPace, 0, 7) & 0x07) << 4) |
+      (sweepDirection === 'decrease' ? 0x08 : 0x00) |
+      (clamp(sweepShift, 0, 7) & 0x07),
     reg1: ((clamp(duty, 0, 3) & 0x03) << 6) | (clamp(length, 0, 63) & 0x3f),
     reg2:
       ((clamp(initialVolume, 0, 15) & 0x0f) << 4) |

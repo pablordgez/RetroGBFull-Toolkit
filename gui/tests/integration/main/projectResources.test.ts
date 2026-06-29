@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -35,6 +35,15 @@ import {
 import { loadProjectScriptResource } from '../../../src/main/projectCode'
 
 const tempDirectories: string[] = []
+
+const pathExists = async (path: string): Promise<boolean> => {
+  try {
+    await stat(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
 describe('projectResources integration', () => {
   afterEach(async () => {
@@ -263,6 +272,139 @@ describe('projectResources integration', () => {
     expect(environmentHeader).toContain('#include "CustomActors/Hero.h"')
     expect(environmentHeader).toContain('#include "CustomScenes/RoomLogic.h"')
     expect(environmentHeader).toContain('#include "Scripts/Shared.h"')
+  })
+
+  it('renames tracked src resources without moving bundled engine core files', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const actorScript = await createProjectScriptResource(project.path, 'actor', 'Hero')
+
+    await renameProjectResource(project.path, 'folder', 'src', 'Source')
+
+    expect(await pathExists(join(project.path, 'src', 'main.c'))).toBe(true)
+    expect(await pathExists(join(project.path, 'Source', 'main.c'))).toBe(false)
+    expect(await pathExists(join(project.path, actorScript.resourcePath))).toBe(false)
+    expect(await pathExists(join(project.path, 'Source', 'CustomActors', 'Hero.c'))).toBe(true)
+    expect(await pathExists(join(project.path, 'Source', 'CustomActors', 'Hero.h'))).toBe(true)
+
+    await renameProjectResource(project.path, 'folder', 'Source', 'src')
+
+    expect(await pathExists(join(project.path, 'src', 'main.c'))).toBe(true)
+    expect(await pathExists(join(project.path, 'Source'))).toBe(false)
+    expect(await pathExists(join(project.path, actorScript.resourcePath))).toBe(true)
+    expect(await readFile(join(project.path, 'src', 'ScriptEnvironment.h'), 'utf-8')).toContain(
+      '#include "CustomActors/Hero.h"'
+    )
+  })
+
+  it('does not rename random asset folders into the engine src folder', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    await createProjectResource(project.path, 'folder', '', 'Sprites')
+    await createProjectResource(project.path, 'sprite', 'Sprites', 'Hero')
+
+    await expect(renameProjectResource(project.path, 'folder', 'Sprites', 'src')).rejects.toThrow(
+      'Only a renamed code folder can be restored to the engine src folder.'
+    )
+
+    expect(await pathExists(join(project.path, 'src', 'main.c'))).toBe(true)
+    expect(await pathExists(join(project.path, 'src', 'Hero.rgbsprite.json'))).toBe(false)
+    expect(await pathExists(join(project.path, 'Sprites', 'Hero.rgbsprite.json'))).toBe(true)
+  })
+
+  it('moves scripts within renamed code roots and back to recreated canonical roots', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    await createProjectScriptResource(project.path, 'actor', 'Hero')
+    await renameProjectResource(project.path, 'folder', 'src', 'Source')
+    await createProjectResource(project.path, 'folder', 'Source/CustomActors', 'Archive')
+
+    const archivedScript = await transferProjectResource(
+      project.path,
+      'script',
+      'Source/CustomActors/Hero.c',
+      'Source/CustomActors/Archive',
+      'move'
+    )
+
+    expect(archivedScript.resourcePath).toBe('Source/CustomActors/Archive/Hero.c')
+    expect(
+      await pathExists(join(project.path, 'Source', 'CustomActors', 'Archive', 'Hero.c'))
+    ).toBe(true)
+
+    await createProjectScriptResource(project.path, 'actor', 'Temp')
+    const restoredScript = await transferProjectResource(
+      project.path,
+      'script',
+      archivedScript.resourcePath,
+      'src/CustomActors',
+      'move'
+    )
+
+    expect(restoredScript.resourcePath).toBe('src/CustomActors/Hero.c')
+    expect(await pathExists(join(project.path, 'src', 'CustomActors', 'Hero.c'))).toBe(true)
+    expect(
+      await pathExists(join(project.path, 'Source', 'CustomActors', 'Archive', 'Hero.c'))
+    ).toBe(false)
+  })
+
+  it('moves managed src into a folder and back without leaving empty script subfolders', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+
+    await createProjectScriptResource(project.path, 'actor', 'Hero')
+    await createProjectResource(project.path, 'folder', 'src/CustomActors', 'Enemies')
+    await transferProjectResource(
+      project.path,
+      'script',
+      'src/CustomActors/Hero.c',
+      'src/CustomActors/Enemies',
+      'move'
+    )
+    await createProjectResource(project.path, 'folder', '', 'src_old')
+
+    const movedSrc = await transferProjectResource(project.path, 'folder', 'src', 'src_old', 'move')
+
+    expect(movedSrc.resourcePath).toBe('src_old/src')
+    expect(
+      await pathExists(join(project.path, 'src_old', 'src', 'CustomActors', 'Enemies', 'Hero.c'))
+    ).toBe(true)
+    expect(await pathExists(join(project.path, 'src', 'CustomActors', 'Enemies'))).toBe(false)
+    expect(await pathExists(join(project.path, 'src', 'main.c'))).toBe(true)
+
+    const restoredSrc = await transferProjectResource(
+      project.path,
+      'folder',
+      movedSrc.resourcePath,
+      '',
+      'move'
+    )
+
+    expect(restoredSrc.resourcePath).toBe('src')
+    expect(await pathExists(join(project.path, 'src', 'CustomActors', 'Enemies', 'Hero.c'))).toBe(
+      true
+    )
+    expect(await pathExists(join(project.path, 'src_old', 'src'))).toBe(false)
+    expect(await pathExists(join(project.path, 'src', 'main.c'))).toBe(true)
+  })
+
+  it('deletes and restores tracked src resources without deleting bundled engine core files', async () => {
+    const workspaceDirectory = await createTempWorkspace()
+    const project = await createProjectStructure(workspaceDirectory, 'MyProject')
+    const actorScript = await createProjectScriptResource(project.path, 'actor', 'Hero')
+
+    const deletedSrc = await deleteProjectResource(project.path, 'folder', 'src')
+
+    expect(await pathExists(join(project.path, 'src', 'main.c'))).toBe(true)
+    expect(await pathExists(join(project.path, actorScript.resourcePath))).toBe(false)
+
+    await restoreDeletedProjectResource(project.path, deletedSrc.deletionId)
+
+    expect(await pathExists(join(project.path, 'src', 'main.c'))).toBe(true)
+    expect(await pathExists(join(project.path, actorScript.resourcePath))).toBe(true)
+    expect(await pathExists(join(project.path, 'src', 'CustomActors', 'Hero.h'))).toBe(true)
   })
 
   it('refreshes ScriptEnvironment.h when general scripts are deleted, restored, and moved', async () => {

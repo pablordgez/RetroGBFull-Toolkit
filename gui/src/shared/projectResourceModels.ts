@@ -9,6 +9,7 @@ export interface ProjectResourceFolderItem {
   name: string
   path: string
   parentPath: string | null
+  hasScriptDescendants?: boolean
 }
 
 export interface ProjectResourceFileItem {

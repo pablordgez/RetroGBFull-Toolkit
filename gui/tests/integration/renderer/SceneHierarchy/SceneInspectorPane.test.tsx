@@ -1,14 +1,14 @@
 import React from 'react'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { SceneAssetDocument } from '../../../src/shared/projectAssets'
+import type { SceneAssetDocument } from '../../../../src/shared/projectAssets'
 import type {
   ParsedScriptPropertyDefinition,
   ProjectScriptCallbackCandidate
-} from '../../../src/shared/projectCodeWorkspace'
-import type { CoordinateModelPreferences } from '../../../src/renderer/src/components/Preferences/coordinatePreferences'
-import { SceneInspectorPane } from '../../../src/renderer/src/components/SceneHierarchy/SceneInspectorPane'
-import { useSceneDocumentEditor } from '../../../src/renderer/src/components/SceneHierarchy/useSceneDocumentEditor'
+} from '../../../../src/shared/projectCodeWorkspace'
+import type { CoordinateModelPreferences } from '../../../../src/renderer/src/components/Preferences/coordinatePreferences'
+import { SceneInspectorPane } from '../../../../src/renderer/src/components/SceneHierarchy/SceneInspectorPane'
+import { useSceneDocumentEditor } from '../../../../src/renderer/src/components/SceneHierarchy/useSceneDocumentEditor'
 
 const createScene = (): SceneAssetDocument => ({
   kind: 'scene',
@@ -281,7 +281,7 @@ const renderInspector = (
   }
 }
 
-describe('SceneInspectorPane', () => {
+describe('SceneInspectorPane component integration', () => {
   it('shows folder metadata when a folder is selected', () => {
     renderInspector()
 
@@ -328,6 +328,12 @@ describe('SceneInspectorPane', () => {
     const followCameraCheckbox = screen.getByLabelText('Follow camera')
     fireEvent.click(followCameraCheckbox)
     expect(followCameraCheckbox).toBeChecked()
+    expect(screen.getByText('Camera Deadzone')).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'Right' })).toHaveValue(20)
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Right' }), {
+      target: { value: '42' }
+    })
+    expect(screen.getByRole('spinbutton', { name: 'Right' })).toHaveValue(42)
 
     const xInput = screen.getByRole('textbox', { name: 'X' })
     fireEvent.change(xInput, { target: { value: 'oops' } })

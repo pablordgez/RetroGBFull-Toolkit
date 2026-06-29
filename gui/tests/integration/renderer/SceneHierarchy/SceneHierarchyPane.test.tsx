@@ -1,9 +1,9 @@
 import React from 'react'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { SceneAssetDocument } from '../../../src/shared/projectAssets'
-import { SceneHierarchyPane } from '../../../src/renderer/src/components/SceneHierarchy/SceneHierarchyPane'
-import { useSceneDocumentEditor } from '../../../src/renderer/src/components/SceneHierarchy/useSceneDocumentEditor'
+import type { SceneAssetDocument } from '../../../../src/shared/projectAssets'
+import { SceneHierarchyPane } from '../../../../src/renderer/src/components/SceneHierarchy/SceneHierarchyPane'
+import { useSceneDocumentEditor } from '../../../../src/renderer/src/components/SceneHierarchy/useSceneDocumentEditor'
 
 const createScene = (): SceneAssetDocument => ({
   kind: 'scene',
@@ -86,7 +86,7 @@ const renderPaneWithoutScene = () => {
   render(<Harness />)
 }
 
-describe('SceneHierarchyPane', () => {
+describe('SceneHierarchyPane component integration', () => {
   it('hides the scene root tree item when no scene is loaded', () => {
     renderPaneWithoutScene()
 

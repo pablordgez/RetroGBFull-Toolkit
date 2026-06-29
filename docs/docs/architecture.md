@@ -43,13 +43,15 @@ Generated scene and actor code is registered through far pointers and dispatched
 
 ### Generated registries
 
-There are some registries were the user created resources are injected at build time:
+There are some registries where user-created resources are injected at build time:
 
-- `SceneRegistry.h` exposes the `SCENES` macro list and the `SceneType` enum.
-- `ActorRegistry.h` exposes the `ACTORS` macro list, the `ActorType` enum, and the `Tags` enum.
+- Managed blocks in `SceneRegistry.h` define the project `SCENES` macro list, while the surrounding core file owns the `SceneType` enum and `create_scene()` factory.
+- Managed blocks in `ActorRegistry.h` define the project `ACTORS` and `ACTOR_TAGS` macro lists, while the surrounding core file owns the `ActorType` enum, the `Tags` enum, and `create_actor()` factory.
 - Asset registries expose generated arrays for maps, animations, and songs.
 
-The shipped core includes placeholder values such as `NUMBER_OF_MAPS = 1` and `NUM_ACTORS = 1`. Real projects replace or extend those through generated code.
+The shipped core includes placeholder values such as `NUMBER_OF_MAPS = 1` and default registry blocks. Real projects replace or extend those blocks through generated code.
+
+Scenes and actors are live mutable objects, so their registries do not expose reusable instance arrays like maps or animations. Use the generated factory functions to create a fresh instance with the correct concrete struct size.
 
 ## `MainDefinitions.h`
 

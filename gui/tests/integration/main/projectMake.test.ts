@@ -57,7 +57,7 @@ vi.mock('child_process', async (importOriginal) => {
   }
 })
 
-vi.mock('../../src/main/projectCodeShared', () => ({
+vi.mock('../../../src/main/projectCodeShared', () => ({
   getBundledMakePath: projectCodeSharedMocks.getBundledMakePath,
   getBundledMakeSource: projectCodeSharedMocks.getBundledMakeSource
 }))
@@ -70,7 +70,7 @@ import {
   getMakeToolchainStatus,
   installLatestMakeToolchain,
   selectLatestMakeSourceArchive
-} from '../../src/main/projectMake'
+} from '../../../src/main/projectMake'
 
 const originalPath = process.env['PATH']
 const INSTALL_PATH = '/toolchains/make'

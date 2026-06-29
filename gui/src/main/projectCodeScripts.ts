@@ -5,7 +5,7 @@ import {
   readProjectTrackedResourceBank,
   readProjectTrackedResourceBanks
 } from './projectMetadata'
-import { ProjectLauncherError } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import { normalizeCodeIdentifier } from '../shared/codeIdentifiers'
 import type {
   ProjectScriptBankingOptions,
@@ -467,7 +467,19 @@ export const removeLegacyGeneratedFiles = async (projectPath: string): Promise<v
   await Promise.all([
     rm(resolvePathWithinProject(projectPath, 'src/Generated/ProjectBindings.h'), { force: true }),
     rm(resolvePathWithinProject(projectPath, 'src/Generated/ProjectBindings.c'), { force: true }),
-    rm(resolvePathWithinProject(projectPath, 'src/Generated/ScriptEnvironment.h'), { force: true })
+    rm(resolvePathWithinProject(projectPath, 'src/Generated/ScriptEnvironment.h'), { force: true }),
+    rm(resolvePathWithinProject(projectPath, 'src/Generated/ActorRegistryEntries.h'), {
+      force: true
+    }),
+    rm(resolvePathWithinProject(projectPath, 'src/Generated/ActorRegistryIncludes.h'), {
+      force: true
+    }),
+    rm(resolvePathWithinProject(projectPath, 'src/Generated/SceneRegistryEntries.h'), {
+      force: true
+    }),
+    rm(resolvePathWithinProject(projectPath, 'src/Generated/SceneRegistryIncludes.h'), {
+      force: true
+    })
   ])
 
   try {
@@ -521,11 +533,14 @@ export const syncManagedSceneFiles = async (
 // writes the initialization of the first scene in main
 export const rewriteStartingSceneInMain = async (
   projectPath: string,
-  sceneIdentifier: string
+  sceneIdentifier: string,
+  sceneHeaderPath = `src/CustomScenes/${sceneIdentifier}.h`
 ): Promise<string> => {
   const mainAbsolutePath = resolvePathWithinProject(projectPath, MAIN_SOURCE_PATH)
   const mainContent = await readFile(mainAbsolutePath, 'utf-8')
   let nextMainContent = mainContent
+  const includePath = sceneHeaderPath.replace(/\\/g, '/').replace(/^src\//, '')
+  const nextStartingSceneInstantiation = `    Scene* ss = create_scene(_${sceneIdentifier});\n    if(ss != NULL){\n        set_scene(ss);\n    }\n`
 
   // includes:
   // try to replace within managed blocks first
@@ -537,13 +552,13 @@ export const rewriteStartingSceneInMain = async (
       nextMainContent,
       STARTING_SCENE_INCLUDE_BEGIN,
       STARTING_SCENE_INCLUDE_END,
-      [`#include "CustomScenes/${sceneIdentifier}.h"`]
+      [`#include "${includePath}"`]
     )
     // if not present, replace any imports from CustomScenes
   } else {
     nextMainContent = nextMainContent.replace(
       /#include\s+"CustomScenes\/[^"]+\.h"/,
-      `#include "CustomScenes/${sceneIdentifier}.h"`
+      `#include "${includePath}"`
     )
   }
 
@@ -557,29 +572,25 @@ export const rewriteStartingSceneInMain = async (
       nextMainContent,
       STARTING_SCENE_INSTANTIATION_BEGIN,
       STARTING_SCENE_INSTANTIATION_END,
-      [
-        `    ${sceneIdentifier}* ss = (${sceneIdentifier}*) malloc(sizeof(${sceneIdentifier}));`,
-        '    if(ss != NULL){',
-        `        ss->base.type = _${sceneIdentifier};`,
-        '        set_scene((Scene*) ss);',
-        '    }'
-      ]
+      nextStartingSceneInstantiation.trimEnd().split('\n')
     )
   } // if not present, tries to match declaration, assignment and set_scene call
   else {
     nextMainContent = nextMainContent.replace(
       /[ \t]*[A-Za-z_][A-Za-z0-9_]*\s+ss;\r?\n[ \t]*ss\.base\.type\s*=\s*_[A-Za-z_][A-Za-z0-9_]*;\r?\n(?:\r?\n)?[ \t]*set_scene\(\(Scene\*\)\s*&ss\);\r?\n/,
-      `    ${sceneIdentifier}* ss = (${sceneIdentifier}*) malloc(sizeof(${sceneIdentifier}));\n    if(ss != NULL){\n        ss->base.type = _${sceneIdentifier};\n        set_scene((Scene*) ss);\n    }\n`
+      nextStartingSceneInstantiation
+    )
+    nextMainContent = nextMainContent.replace(
+      /[ \t]*[A-Za-z_][A-Za-z0-9_]*\*\s+ss\s*=\s*\([A-Za-z_][A-Za-z0-9_]*\*\)\s*malloc\s*\(\s*sizeof\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\s*\)\s*\)\s*;\r?\n[ \t]*if\s*\(\s*ss\s*!=\s*NULL\s*\)\s*\{\r?\n[ \t]*ss->base\.type\s*=\s*_[A-Za-z_][A-Za-z0-9_]*;\r?\n[ \t]*set_scene\(\(Scene\*\)\s*ss\s*\);\r?\n[ \t]*\}\r?\n/,
+      nextStartingSceneInstantiation
     )
   }
 
   // check if no changes were made, and if so, check if the expected code is present
   if (nextMainContent === mainContent) {
-    const alreadyIncludesStartingScene = mainContent.includes(
-      `#include "CustomScenes/${sceneIdentifier}.h"`
-    )
+    const alreadyIncludesStartingScene = mainContent.includes(`#include "${includePath}"`)
     const alreadyInstantiatesStartingScene = mainContent.includes(
-      `ss->base.type = _${sceneIdentifier};`
+      `create_scene(_${sceneIdentifier})`
     )
 
     if (!alreadyIncludesStartingScene || !alreadyInstantiatesStartingScene) {
@@ -622,11 +633,7 @@ export const rewriteManagedProjectScriptSource = async (
       )
     : existingHeaderContent
 
-  await writeFile(
-    sourceAbsolutePath,
-    `${managedSourcePrefix}${nextEditableSourceContent}`,
-    'utf-8'
-  )
+  await writeFile(sourceAbsolutePath, `${managedSourcePrefix}${nextEditableSourceContent}`, 'utf-8')
   await writeFile(headerAbsolutePath, headerContent, 'utf-8')
 
   return script.path.replace(/\\/g, '/')
@@ -654,7 +661,7 @@ const buildScriptEnvironmentHeaderContent = (
   scriptHeaderIncludes: string[],
   scriptBankRefExterns: string[] = []
 ): string => {
-  return `#ifndef SCRIPT_ENVIRONMENT_H\n#define SCRIPT_ENVIRONMENT_H\n#include "MainDefinitions.h"\n#include "Actor/Actor.h"\n#include "Scene/Scene.h"\n#include "Collisions/CollisionManager.h"\n#include "Collisions/ColliderRegistry.h"\n#include "Assets/Animations/AnimationRegistry.h"\n#include "Assets/Map/MapRegistry.h"\n#include "Assets/Music/SongRegistry.h"\n#include "Assets/Text/Text.h"\n#include "Interrupts/InterruptManager.h"\n#include "Saves/SaveData.h"\n${scriptHeaderIncludes.length > 0 ? `${scriptHeaderIncludes.join('\n')}\n` : ''}${scriptBankRefExterns.length > 0 ? `${scriptBankRefExterns.join('\n')}\n` : ''}#include <gb/gb.h>\n#include <stdint.h>\n#include <stdlib.h>\n#include <stdio.h>\n#include <string.h>\n\n#endif // SCRIPT_ENVIRONMENT_H\n`
+  return `#ifndef SCRIPT_ENVIRONMENT_H\n#define SCRIPT_ENVIRONMENT_H\n#include "MainDefinitions.h"\n#include "Actor/Actor.h"\n#include "Scene/Scene.h"\n#include "Camera/Camera.h"\n#include "Collisions/CollisionManager.h"\n#include "Collisions/ColliderRegistry.h"\n#include "Assets/Animations/AnimationRegistry.h"\n#include "Assets/Map/MapRegistry.h"\n#include "Assets/Music/SongRegistry.h"\n#include "Assets/Text/Text.h"\n#include "Interrupts/InterruptManager.h"\n#include "Window/WindowVisibility.h"\n#include "Saves/SaveData.h"\n#include "GameManager/GameManager.h"\n${scriptHeaderIncludes.length > 0 ? `${scriptHeaderIncludes.join('\n')}\n` : ''}${scriptBankRefExterns.length > 0 ? `${scriptBankRefExterns.join('\n')}\n` : ''}#include <gb/gb.h>\n#include <stdint.h>\n#include <stdlib.h>\n#include <stdio.h>\n#include <string.h>\n\n#endif // SCRIPT_ENVIRONMENT_H\n`
 }
 
 // generates a header file that includes some base headers and detected script headers

@@ -23,9 +23,10 @@ interface UseSceneWorkspaceSessionResult {
   isSceneLoading: boolean
   isSceneClosePromptOpen: boolean
   openScene: (scenePath: string) => Promise<void>
+  requestActiveSceneClose: () => boolean
   updateSceneDocument: (nextDocument: SceneAssetDocument) => void
   saveActiveScene: () => Promise<boolean>
-  handleSceneCloseDecision: (decision: 'save' | 'discard' | 'cancel') => Promise<void>
+  handleSceneCloseDecision: (decision: 'save' | 'discard' | 'cancel') => Promise<boolean>
   handleTrackedResourceMutation: (event: ResourceMutationEvent) => void
 }
 
@@ -171,24 +172,35 @@ export const useSceneWorkspaceSession = ({
     [activeScenePath, isSceneDirty, loadScene]
   )
 
+  const requestActiveSceneClose = useCallback((): boolean => {
+    if (activeScenePath && isSceneDirty) {
+      setPendingScenePath(null)
+      setIsSceneClosePromptOpen(true)
+      return false
+    }
+
+    closeActiveScene()
+    return true
+  }, [activeScenePath, closeActiveScene, isSceneDirty])
+
   const updateSceneDocument = useCallback((nextDocument: SceneAssetDocument) => {
     setActiveSceneDocument(nextDocument)
     setSceneStatusMessage(null)
   }, [])
 
   const handleSceneCloseDecision = useCallback(
-    async (decision: 'save' | 'discard' | 'cancel') => {
+    async (decision: 'save' | 'discard' | 'cancel'): Promise<boolean> => {
       if (decision === 'cancel') {
         setIsSceneClosePromptOpen(false)
         setPendingScenePath(null)
-        return
+        return false
       }
 
       if (decision === 'save') {
         const didSave = await saveActiveScene()
 
         if (!didSave) {
-          return
+          return false
         }
       }
 
@@ -196,10 +208,11 @@ export const useSceneWorkspaceSession = ({
 
       if (pendingScenePath) {
         await loadScene(pendingScenePath)
-        return
+        return true
       }
 
       closeActiveScene()
+      return true
     },
     [closeActiveScene, loadScene, pendingScenePath, saveActiveScene]
   )
@@ -263,6 +276,7 @@ export const useSceneWorkspaceSession = ({
     isSceneLoading,
     isSceneClosePromptOpen,
     openScene,
+    requestActiveSceneClose,
     updateSceneDocument,
     saveActiveScene,
     handleSceneCloseDecision,

@@ -1,15 +1,18 @@
-import { ProjectLauncherError } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import type { ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
-import type {
-  SceneActorPhysicsMode,
-  SceneAssetCollisionNode,
-  SceneAssetDocument,
-  SceneAssetNode,
-  SpriteAssetDocument,
-  TilemapAssetDocument,
-  TilesetAssetDocument,
-  WindowAssetDocument
+import {
+  normalizeSceneCameraDeadzone,
+  normalizeWindowVisibilityTileBands,
+  WINDOW_VISIBILITY_SCREEN_HEIGHT,
+  type SceneActorPhysicsMode,
+  type SceneAssetCollisionNode,
+  type SceneAssetDocument,
+  type SceneAssetNode,
+  type SpriteAssetDocument,
+  type TilemapAssetDocument,
+  type TilesetAssetDocument,
+  type WindowAssetDocument
 } from '../shared/projectAssets'
 import { buildProjectTagEnumName, type ProjectTagEntry } from '../shared/projectTags'
 import {
@@ -228,12 +231,8 @@ export const createNodeEmitter = (
         : `${collisionNode.y}`
       // if it doesn't have a parent, we create one to attach the collider to
       if (!parentActor) {
-        lines.push(`    Actor* ${actorVariable} = (Actor*) malloc(sizeof(Actor));`)
-        lines.push(`    ${actorVariable}->type = _${MANAGED_DEFAULT_ACTOR_IDENTIFIER};`)
+        lines.push(`    Actor* ${actorVariable} = create_actor(_${MANAGED_DEFAULT_ACTOR_IDENTIFIER});`)
         lines.push(`    THIS_ACTOR = ${actorVariable};`)
-        lines.push(
-          `    FAR_CALL(actor_init_functions[${actorVariable}->type], RVoid_PVoid_BANKED);`
-        )
         lines.push(`    set_actor_position(${collisionNode.x}, ${collisionNode.y});`)
         lines.push(`    add_actor(${actorVariable});`)
       }
@@ -273,14 +272,11 @@ export const createNodeEmitter = (
     }
     // otherwise, it's an actor node, so we create an actor for it, set its properties and emit its children
     const script = node.scriptPath ? actorScriptsByPath.get(node.scriptPath) : null
-    const allocationType = script ? script.identifier : 'Actor'
     const actorType = script ? script.identifier : MANAGED_DEFAULT_ACTOR_IDENTIFIER
     const actorVariable = `generated_actor_${counters.actor}`
     counters.actor += 1
-    lines.push(`    Actor* ${actorVariable} = (Actor*) malloc(sizeof(${allocationType}));`)
-    lines.push(`    ${actorVariable}->type = _${actorType};`)
+    lines.push(`    Actor* ${actorVariable} = create_actor(_${actorType});`)
     lines.push(`    THIS_ACTOR = ${actorVariable};`)
-    lines.push(`    FAR_CALL(actor_init_functions[${actorVariable}->type], RVoid_PVoid_BANKED);`)
     lines.push(
       `    ${actorVariable}->physics_mode = ${PHYSICS_MODE_ENUM_BY_SCENE_VALUE[node.physicsMode]};`
     )
@@ -310,6 +306,11 @@ export const createNodeEmitter = (
     }
 
     if (node.followCamera) {
+      const cameraDeadzone = normalizeSceneCameraDeadzone(node.cameraDeadzone)
+      lines.push(`    deadzone_left = ${cameraDeadzone.left};`)
+      lines.push(`    deadzone_right = ${cameraDeadzone.right};`)
+      lines.push(`    deadzone_top = ${cameraDeadzone.top};`)
+      lines.push(`    deadzone_bottom = ${cameraDeadzone.bottom};`)
       lines.push(`    ${actorVariable}->followed = 1;`)
     }
 
@@ -388,6 +389,23 @@ export const buildSceneInitializationLines = (
     }
 
     lines.push(`    set_scene_window(maps[${windowResource.identifier}]);`)
+
+    const windowDocument = windowResource.document as WindowAssetDocument
+    const visibilityBands = normalizeWindowVisibilityTileBands(windowDocument.windowVisibilityBands)
+    const isFullWindow =
+      visibilityBands.length === 1 &&
+      visibilityBands[0].start === 0 &&
+      visibilityBands[0].end === WINDOW_VISIBILITY_SCREEN_HEIGHT
+
+    if (!isFullWindow) {
+      lines.push('    window_visibility_clear_owner(WINDOW_VISIBILITY_OWNER_SCENE);')
+      visibilityBands.forEach((band) => {
+        lines.push(
+          `    window_visibility_add_band(WINDOW_VISIBILITY_OWNER_SCENE, ${band.start}, ${band.end});`
+        )
+      })
+      lines.push('    window_visibility_apply();')
+    }
   }
 
   const counters = { actor: 0 }

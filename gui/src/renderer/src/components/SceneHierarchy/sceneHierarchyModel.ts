@@ -1,8 +1,9 @@
-import type {
-  SceneAssetActorNode,
-  SceneAssetCollisionNode,
-  SceneAssetDocument,
-  SceneAssetNode
+import {
+  DEFAULT_SCENE_CAMERA_DEADZONE,
+  type SceneAssetActorNode,
+  type SceneAssetCollisionNode,
+  type SceneAssetDocument,
+  type SceneAssetNode
 } from '../../../../shared/projectAssets'
 import type {
   ScriptPropertyMap,
@@ -518,6 +519,7 @@ export const buildDefaultSceneNode = (
     y: 0,
     physicsMode: 'balanced',
     followCamera: false,
+    cameraDeadzone: { ...DEFAULT_SCENE_CAMERA_DEADZONE },
     spritePaletteIndex: 0,
     children: []
   }

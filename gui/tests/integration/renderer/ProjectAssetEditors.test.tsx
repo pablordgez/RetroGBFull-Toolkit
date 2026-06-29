@@ -150,6 +150,81 @@ describe('project asset editor integration', () => {
     })
   })
 
+  it('uses save actions in tileset and tilemap editors', async () => {
+    vi.mocked(window.api.loadProjectAssetFile)
+      .mockResolvedValueOnce(tilesetPayload('Tilesets/Main.rgbtileset.json', 1))
+      .mockResolvedValueOnce({
+        assetKind: 'tilemap',
+        resourcePath: 'Maps/Room.rgbtilemap.json',
+        document: {
+          kind: 'tilemap',
+          version: 1,
+          width: 20,
+          height: 18,
+          grid: new Array(20 * 18).fill(0),
+          tilesetPath: null,
+          selectedTileIndex: 0,
+          tool: 'brush'
+        }
+      })
+
+    const { unmount } = renderEditor(
+      '/tileset-editor?projectPath=%2Fprojects%2FAlpha&assetPath=Tilesets%2FMain.rgbtileset.json',
+      <TilesetEditor />
+    )
+
+    await waitFor(() => {
+      expect(window.api.loadProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Tilesets/Main.rgbtileset.json'
+      )
+    })
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'EXPORT DATA' })).not.toBeInTheDocument()
+
+    unmount()
+
+    renderEditor(
+      '/tilemap-editor?projectPath=%2Fprojects%2FAlpha&assetPath=Maps%2FRoom.rgbtilemap.json',
+      <TilemapEditor />
+    )
+
+    await waitFor(() => {
+      expect(window.api.loadProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Maps/Room.rgbtilemap.json'
+      )
+    })
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'EXPORT DATA' })).not.toBeInTheDocument()
+  })
+
+  it('syncs the tileset sidebar selection with the loaded selected tile', async () => {
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue({
+      assetKind: 'tileset',
+      resourcePath: 'Tilesets/Main.rgbtileset.json',
+      document: {
+        ...tilesetPayload('Tilesets/Main.rgbtileset.json', 2).document,
+        selectedTileIndex: 1
+      }
+    })
+
+    renderEditor(
+      '/tileset-editor?projectPath=%2Fprojects%2FAlpha&assetPath=Tilesets%2FMain.rgbtileset.json',
+      <TilesetEditor />
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Tile 1')).toHaveClass('selected')
+    })
+    expect(screen.getByTitle('Tile 0')).not.toHaveClass('selected')
+
+    fireEvent.click(screen.getByTitle('Tile 1'))
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+  })
+
   it('requires a tileset for new tilemaps and persists the selection', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
@@ -334,7 +409,7 @@ describe('project asset editor integration', () => {
     })
   })
 
-  it('loads and saves window split settings through the shared tile-grid editor', async () => {
+  it('loads and saves window visibility settings through the shared tile-grid editor', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
       projectPath: '/projects/Alpha',
@@ -356,8 +431,7 @@ describe('project asset editor integration', () => {
             tilesetPath: 'Main.rgbtileset.json',
             selectedTileIndex: 0,
             tool: 'brush',
-            windowTopEnd: 2,
-            windowBottomStart: 0
+            windowVisibilityBands: [{ start: 0, end: 16 }]
           }
         }
       }
@@ -384,9 +458,8 @@ describe('project asset editor integration', () => {
       )
     })
 
-    const bottomInput = screen.getByRole('spinbutton', { name: /bottom rows/i })
-    fireEvent.change(bottomInput, { target: { value: '1' } })
-    fireEvent.blur(bottomInput)
+    expect(await screen.findByText('Bands: 1 / 8')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tile row 3' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save*' }))
 
     await waitFor(() => {
@@ -395,8 +468,10 @@ describe('project asset editor integration', () => {
         'UI/Main.rgbwindow.json',
         expect.objectContaining({
           kind: 'window',
-          windowTopEnd: 2,
-          windowBottomStart: 3
+          windowVisibilityBands: [
+            { start: 0, end: 16 },
+            { start: 24, end: 32 }
+          ]
         })
       )
     })

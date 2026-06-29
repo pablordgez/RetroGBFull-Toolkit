@@ -247,21 +247,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #8bac0f; 
     pointer-events: none;
 }
 
-.tilemap-editor__split-guide {
-    position: absolute;
-    height: 0;
-    border-top: 3px dashed rgba(196, 190, 187, 0.96);
-    box-shadow:
-        0 0 0 2px rgba(15, 56, 15, 0.72),
-        0 0 18px rgba(196, 190, 187, 0.38);
-}
-
-.tilemap-editor__split-guide--bottom {
-    border-top-style: solid;
-}
-
 .tilemap-editor__split-section {
     position: absolute;
+    pointer-events: none;
 }
 
 .tilemap-editor__split-section--visible {
@@ -269,37 +257,49 @@ button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #8bac0f; 
     outline: 1px solid rgba(155, 188, 15, 0.28);
 }
 
-.tilemap-editor__split-section--hidden {
-    background:
-        repeating-linear-gradient(
-            -45deg,
-            rgba(196, 131, 100, 0.28) 0px,
-            rgba(196, 131, 100, 0.28) 10px,
-            rgba(15, 56, 15, 0.16) 10px,
-            rgba(15, 56, 15, 0.16) 20px
-        );
-    outline: 2px solid rgba(196, 131, 100, 0.62);
-}
-
-.tilemap-editor__split-badge {
+.tilemap-editor__tile-row-rail {
     position: absolute;
-    padding: 4px 8px;
+    width: 22px;
     border: 2px solid #0f380f;
-    background-color: #c4bebb;
-    color: #0f380f;
-    font-size: 0.95em;
-    font-weight: bold;
-    line-height: 1;
-    white-space: nowrap;
+    background-color: rgba(15, 56, 15, 0.48);
     box-shadow: 3px 3px 0 rgba(15, 56, 15, 0.3);
+    pointer-events: auto;
 }
 
-.tilemap-editor__split-badge--top {
+.tilemap-editor__tile-row-toggle {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    min-width: 0;
+    height: calc(100% / 18);
+    min-height: 8px;
+    padding: 0;
+    border: 0;
+    background-color: #c98364;
+    box-shadow: none;
+    cursor: pointer;
+    transform: none;
+}
+
+.tilemap-editor__tile-row-toggle--visible {
     background-color: #9bbc0f;
 }
 
-.tilemap-editor__split-badge--bottom {
-    background-color: #c98364;
+.tilemap-editor__tile-row-toggle:hover,
+.tilemap-editor__tile-row-toggle:focus-visible {
+    outline: 2px solid #c4bebb;
+    outline-offset: 0;
+    z-index: 1;
+}
+
+.tilemap-editor__tile-row-toggle:active {
+    box-shadow: none;
+    transform: none;
+}
+
+.tilemap-editor__tile-row-toggle:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
 }
 
 .canvas-wrapper {

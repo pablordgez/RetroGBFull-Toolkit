@@ -15,9 +15,6 @@ typedef struct {
     uint8_t* tileset;
     uint8_t num_tiles;
     uint8_t first_tile;
-    // Window resources may have generated, compacted map rows; these keep the original screen split.
-    uint8_t window_top_end;
-    uint8_t window_bottom_start;
 
 } Map;
 

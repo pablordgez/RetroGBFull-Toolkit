@@ -13,6 +13,7 @@ vi.mock('electron', () => {
       removeListener: vi.fn()
     },
     shell: {
+      openExternal: vi.fn().mockResolvedValue(undefined),
       openPath: vi.fn().mockResolvedValue(''),
       showItemInFolder: vi.fn()
     }
@@ -47,6 +48,7 @@ Object.defineProperty(window, 'api', {
       childCoordinateOrigin: 'relative',
       autoBankScriptFunctions: true
     }),
+    openDocumentation: vi.fn().mockResolvedValue(true),
     getRuntimePlatform: vi.fn().mockResolvedValue('win32'),
     getGbdkToolchainStatus: vi.fn().mockResolvedValue({
       installed: true,
