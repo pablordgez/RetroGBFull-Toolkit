@@ -8,11 +8,12 @@ export default defineConfig(mergeConfig(sharedConfig, {
     testTimeout: 20000,
     coverage: {
       reportsDirectory: 'coverage/integration',
+      // Renderer integration uses the mocked Electron IPC bridge from tests/setup.ts.
+      // Main-process integration covers composed flows; external toolchain boundaries are mocked.
       include: [
         'src/main/projectAssetReferences.ts',
         'src/main/projectAssetFiles.ts',
         'src/main/projectBuildCode.ts',
-        'src/main/projectCode.ts',
         'src/main/projectCodeFiles.ts',
         'src/main/projectCodeIntelligence.ts',
         'src/main/projectCodeScripts.ts',
@@ -29,11 +30,16 @@ export default defineConfig(mergeConfig(sharedConfig, {
         'src/main/projectResourceTypeStrategies.ts',
         'src/renderer/src/components/Docking/ResourceManagementPane.tsx',
         'src/renderer/src/components/ProjectLauncher/ProjectLauncher.tsx',
+        'src/renderer/src/components/ProjectWorkspace/SceneEditorWorkspace.tsx',
         'src/renderer/src/components/ProjectWorkspace/ProjectWorkspace.tsx',
-        'src/renderer/src/components/SceneHierarchy/SceneViewport.tsx',
+        // Private scene-workspace hooks are exercised through the composed workspace flows above.
+        'src/renderer/src/components/SceneHierarchy/SceneHierarchyPane.tsx',
+        'src/renderer/src/components/SceneHierarchy/SceneInspectorPane.tsx',
+        'src/renderer/src/components/ScriptEditor/ScriptEditor.tsx',
         'src/renderer/src/components/SpriteEditor/SpriteEditor.tsx',
         'src/renderer/src/components/TilemapEditor/TileGridAssetEditor.tsx',
         'src/renderer/src/components/TilemapEditor/TilemapEditor.tsx',
+        'src/renderer/src/components/TilemapEditor/WindowEditor.tsx',
         'src/renderer/src/components/Tileset/TilesetEditor.tsx'
       ],
       // @ts-expect-error - ignore

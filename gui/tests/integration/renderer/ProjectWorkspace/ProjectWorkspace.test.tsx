@@ -12,6 +12,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PROJECT_ASSET_DRAG_MIME } from '../../../../src/renderer/src/components/ProjectAssets/projectAssetDrag'
 import { ProjectWorkspace } from '../../../../src/renderer/src/components/ProjectWorkspace/ProjectWorkspace'
+import type { ProjectCodeSymbolIndex } from '../../../../src/shared/projectCodeWorkspace'
 import type { SceneAssetDocument } from '../../../../src/shared/projectAssetTypes'
 
 interface MockDataTransfer {
@@ -109,6 +110,31 @@ const createSceneDocument = (
   ...overrides
 })
 
+const createScriptPropertySymbolIndex = (): ProjectCodeSymbolIndex => ({
+  structs: [
+    {
+      name: 'Room',
+      fields: [
+        { name: 'intro_animation', type: { name: 'Animation', pointerDepth: 1 } },
+        { name: 'gravity', type: { name: 'uint8_t', pointerDepth: 0 } }
+      ]
+    },
+    {
+      name: 'Hero',
+      fields: [
+        { name: 'idle_animation', type: { name: 'Animation', pointerDepth: 1 } },
+        { name: 'active', type: { name: 'BOOLEAN', pointerDepth: 0 } }
+      ]
+    }
+  ],
+  enums: [],
+  functions: [],
+  variables: [],
+  macros: [],
+  typeAliases: [],
+  sourceFilesScanned: 2
+})
+
 const openResourceFromPane = async (name: string): Promise<HTMLElement> => {
   const resourcePane = screen.getByTestId('resource-management-pane')
   const resourceLabel = await within(resourcePane).findByText(name)
@@ -120,6 +146,12 @@ const openResourceFromPane = async (name: string): Promise<HTMLElement> => {
 
   fireEvent.doubleClick(resourceButton)
   return resourcePane
+}
+
+const findPickerDialog = async (title: string): Promise<HTMLElement> => {
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).getByText(title)).toBeInTheDocument()
+  return dialog
 }
 
 const resetWorkspaceApiMocks = (): void => {
@@ -1839,7 +1871,7 @@ describe('<ProjectWorkspace />', () => {
     expect(await screen.findByText('Sprites 2')).toBeInTheDocument()
   })
 
-  it('shows copy, cut, and paste entries with shortcuts in the asset context menu', async () => {
+  it('shows copy and cut entries with shortcuts in the asset context menu', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',
       projectPath: '/projects/Alpha',
@@ -1868,10 +1900,9 @@ describe('<ProjectWorkspace />', () => {
 
     expect(await screen.findByRole('menuitem', { name: 'Copy' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Cut' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: 'Paste' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Paste' })).not.toBeInTheDocument()
     expect(screen.getByText(getShortcutLabel('C'))).toBeInTheDocument()
     expect(screen.getByText(getShortcutLabel('X'))).toBeInTheDocument()
-    expect(screen.getByText(getShortcutLabel('V'))).toBeInTheDocument()
   })
 
   it('copies a selected asset with the keyboard shortcut and pastes a duplicate into the current folder', async () => {
@@ -2675,6 +2706,409 @@ describe('<ProjectWorkspace />', () => {
           'No tilemap selected'
         )
       ).toBeInTheDocument()
+    })
+  })
+
+  it('selects and clears scene tilemap and window resources through the real inspector pickers', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        {
+          type: 'file',
+          name: 'Room Scene',
+          fileName: 'Room Scene.rgbscene.json',
+          path: 'Scenes/Room Scene.rgbscene.json',
+          extension: 'json',
+          resourceType: 'scene'
+        },
+        {
+          type: 'file',
+          name: 'Overworld',
+          fileName: 'Overworld.rgbtilemap.json',
+          path: 'Maps/Overworld.rgbtilemap.json',
+          extension: 'json',
+          resourceType: 'tilemap'
+        },
+        {
+          type: 'file',
+          name: 'HUD',
+          fileName: 'HUD.rgbwindow.json',
+          path: 'UI/HUD.rgbwindow.json',
+          extension: 'json',
+          resourceType: 'window'
+        }
+      ]
+    })
+    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(
+      async (_projectPath, assetPath) => {
+        if (assetPath === 'Scenes/Room Scene.rgbscene.json') {
+          return {
+            assetKind: 'scene' as const,
+            resourcePath: assetPath,
+            document: createSceneDocument()
+          }
+        }
+
+        if (assetPath === 'Maps/Overworld.rgbtilemap.json') {
+          return {
+            assetKind: 'tilemap' as const,
+            resourcePath: assetPath,
+            document: {
+              kind: 'tilemap' as const,
+              version: 1,
+              width: 20,
+              height: 18,
+              grid: new Array(20 * 18).fill(0),
+              tilesetPath: null,
+              selectedTileIndex: 0,
+              tool: 'brush' as const
+            }
+          }
+        }
+
+        if (assetPath === 'UI/HUD.rgbwindow.json') {
+          return {
+            assetKind: 'window' as const,
+            resourcePath: assetPath,
+            document: {
+              kind: 'window' as const,
+              version: 1,
+              width: 20,
+              height: 4,
+              grid: new Array(80).fill(0),
+              tilesetPath: null,
+              selectedTileIndex: 0,
+              tool: 'brush' as const,
+              windowVisibilityBands: [{ start: 0, end: 16 }]
+            }
+          }
+        }
+
+        throw new Error(`Unexpected asset load: ${assetPath}`)
+      }
+    )
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+    await openResourceFromPane('Room Scene')
+    await screen.findByText('No tilemap selected')
+
+    const inspector = screen.getByTestId('project-workspace-scene-inspector')
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Select Tilemap' }))
+    const tilemapDialog = await findPickerDialog('Load Tilemap')
+    fireEvent.click(within(tilemapDialog).getByRole('button', { name: /Overworld/ }))
+
+    await waitFor(() => {
+      expect(within(inspector).getByText('Overworld')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Change Tilemap' }))
+    const clearTilemapDialog = await findPickerDialog('Load Tilemap')
+    fireEvent.click(within(clearTilemapDialog).getByRole('button', { name: /No Tilemap/ }))
+    await waitFor(() => {
+      expect(within(inspector).getByText('No tilemap selected')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Select Window' }))
+    const windowDialog = await findPickerDialog('Load Window')
+    fireEvent.click(within(windowDialog).getByRole('button', { name: /HUD/ }))
+
+    await waitFor(() => {
+      expect(within(inspector).getByText('HUD')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Change Window' }))
+    const clearWindowDialog = await findPickerDialog('Load Window')
+    fireEvent.click(within(clearWindowDialog).getByRole('button', { name: /No Window/ }))
+    await waitFor(() => {
+      expect(within(inspector).getByText('No window selected')).toBeInTheDocument()
+    })
+  })
+
+  it('loads actor resources through the real hierarchy picker', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        {
+          type: 'file',
+          name: 'Room Scene',
+          fileName: 'Room Scene.rgbscene.json',
+          path: 'Scenes/Room Scene.rgbscene.json',
+          extension: 'json',
+          resourceType: 'scene'
+        },
+        {
+          type: 'file',
+          name: 'Hero Resource',
+          fileName: 'Hero Resource.rgbactor.json',
+          path: 'Actors/Hero Resource.rgbactor.json',
+          extension: 'json',
+          resourceType: 'actor'
+        }
+      ]
+    })
+    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(
+      async (_projectPath, assetPath) => {
+        if (assetPath === 'Scenes/Room Scene.rgbscene.json') {
+          return {
+            assetKind: 'scene' as const,
+            resourcePath: assetPath,
+            document: createSceneDocument()
+          }
+        }
+
+        if (assetPath === 'Actors/Hero Resource.rgbactor.json') {
+          return {
+            assetKind: 'actor' as const,
+            resourcePath: assetPath,
+            document: {
+              kind: 'actor' as const,
+              version: 1,
+              root: {
+                id: 'hero-resource',
+                type: 'actor' as const,
+                name: 'Hero Resource',
+                isCollapsed: false,
+                spritePath: null,
+                x: 8,
+                y: 16,
+                followCamera: true,
+                children: []
+              }
+            }
+          }
+        }
+
+        throw new Error(`Unexpected asset load: ${assetPath}`)
+      }
+    )
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+    await openResourceFromPane('Room Scene')
+    await waitFor(() => {
+      expect(window.api.loadProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Scenes/Room Scene.rgbscene.json'
+      )
+    })
+
+    const sceneSidebar = screen.getByTestId('project-workspace-scene-sidebar')
+    const sceneItem = await within(sceneSidebar).findByRole('treeitem', { name: 'Room Scene' })
+    const sceneRow = sceneItem.closest('.scene-hierarchy-pane__row')
+
+    if (!sceneRow) {
+      throw new Error('Expected the open scene to be rendered as a hierarchy row.')
+    }
+
+    fireEvent.contextMenu(sceneRow)
+    fireEvent.mouseEnter(await screen.findByRole('menuitem', { name: 'Load...' }))
+    const actorMenuItems = await screen.findAllByRole('menuitem', { name: 'Actor' })
+    fireEvent.click(actorMenuItems[1])
+
+    const actorDialog = await findPickerDialog('Load Actor')
+    fireEvent.click(within(actorDialog).getByRole('button', { name: /Hero Resource/ }))
+
+    await waitFor(() => {
+      expect(within(sceneSidebar).getByText('Hero Resource')).toBeInTheDocument()
+      expect(window.api.loadProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Actors/Hero Resource.rgbactor.json'
+      )
+    })
+  })
+
+  it('selects scene scripts, actor scripts, sprites, and animation properties through real pickers', async () => {
+    vi.mocked(window.api.getProjectResources).mockResolvedValue({
+      projectName: 'Alpha',
+      projectPath: '/projects/Alpha',
+      currentPath: '',
+      parentPath: null,
+      items: [
+        {
+          type: 'file',
+          name: 'Room Scene',
+          fileName: 'Room Scene.rgbscene.json',
+          path: 'Scenes/Room Scene.rgbscene.json',
+          extension: 'json',
+          resourceType: 'scene'
+        },
+        {
+          type: 'file',
+          name: 'Room Intro',
+          fileName: 'Room Intro.rgbsprite.json',
+          path: 'Sprites/Room Intro.rgbsprite.json',
+          extension: 'json',
+          resourceType: 'sprite'
+        },
+        {
+          type: 'file',
+          name: 'Hero Idle',
+          fileName: 'Hero Idle.rgbsprite.json',
+          path: 'Sprites/Hero Idle.rgbsprite.json',
+          extension: 'json',
+          resourceType: 'sprite'
+        }
+      ]
+    })
+    vi.mocked(window.api.listProjectScriptResources).mockImplementation(
+      async (_projectPath, scriptKind) => {
+        if (scriptKind === 'scene') {
+          return [{ scriptKind, name: 'Room', path: 'src/CustomScenes/Room.c' }]
+        }
+
+        if (scriptKind === 'actor') {
+          return [{ scriptKind, name: 'Hero', path: 'src/CustomActors/Hero.c' }]
+        }
+
+        return []
+      }
+    )
+    vi.mocked(window.api.getProjectCodeSymbolIndex).mockResolvedValue(
+      createScriptPropertySymbolIndex()
+    )
+    vi.mocked(window.api.loadProjectAssetFile).mockImplementation(
+      async (_projectPath, assetPath) => {
+        if (assetPath === 'Scenes/Room Scene.rgbscene.json') {
+          return {
+            assetKind: 'scene' as const,
+            resourcePath: assetPath,
+            document: createSceneDocument({
+              nodes: [
+                {
+                  id: 'hero-node',
+                  type: 'actor' as const,
+                  name: 'Hero',
+                  isCollapsed: false,
+                  spritePath: null,
+                  x: 0,
+                  y: 0,
+                  followCamera: false,
+                  children: []
+                }
+              ]
+            })
+          }
+        }
+
+        if (
+          assetPath === 'Sprites/Room Intro.rgbsprite.json' ||
+          assetPath === 'Sprites/Hero Idle.rgbsprite.json'
+        ) {
+          return {
+            assetKind: 'sprite' as const,
+            resourcePath: assetPath,
+            document: {
+              kind: 'sprite' as const,
+              version: 1,
+              width: 8,
+              height: 8,
+              fps: 8,
+              is8x16Mode: false,
+              currentFrame: 0,
+              frames: [new Array(64).fill(1)],
+              palette: ['#9bbc0f', '#8bac0f', '#306230', '#0f380f'],
+              selectedColor: 0
+            }
+          }
+        }
+
+        throw new Error(`Unexpected asset load: ${assetPath}`)
+      }
+    )
+
+    await renderWorkspaceAndWait(
+      '/project-editor?projectName=Alpha&projectPath=%2Fprojects%2FAlpha'
+    )
+    await openResourceFromPane('Room Scene')
+    await screen.findByText('No scene script selected')
+
+    const inspector = screen.getByTestId('project-workspace-scene-inspector')
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Select Scene Script' }))
+    const sceneScriptDialog = await findPickerDialog('Select Scene Script')
+    fireEvent.click(within(sceneScriptDialog).getByRole('button', { name: /Room/ }))
+
+    await waitFor(() => {
+      expect(within(inspector).getByText('gravity')).toBeInTheDocument()
+      expect(within(inspector).getByText('intro_animation')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Select Animation' }))
+    const sceneAnimationDialog = await findPickerDialog('Select Animation')
+    fireEvent.click(within(sceneAnimationDialog).getByRole('button', { name: /Room Intro/ }))
+
+    await waitFor(() => {
+      expect(within(inspector).getByText('Room Intro')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Change Animation' }))
+    const clearSceneAnimationDialog = await findPickerDialog('Select Animation')
+    fireEvent.click(
+      within(clearSceneAnimationDialog).getByRole('button', { name: /No Animation/ })
+    )
+    await waitFor(() => {
+      expect(within(inspector).getByText('No animation selected')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Change Scene Script' }))
+    const clearSceneScriptDialog = await findPickerDialog('Select Scene Script')
+    fireEvent.click(
+      within(clearSceneScriptDialog).getByRole('button', { name: /No Scene Script/ })
+    )
+    await waitFor(() => {
+      expect(within(inspector).getByText('No scene script selected')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(screen.getByTestId('project-workspace-scene-sidebar')).getByText('Hero'))
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Select Actor Script' }))
+    const actorScriptDialog = await findPickerDialog('Select Actor Script')
+    fireEvent.click(within(actorScriptDialog).getByRole('button', { name: /Hero/ }))
+
+    await waitFor(() => {
+      expect(within(inspector).getByText('idle_animation')).toBeInTheDocument()
+      expect(within(inspector).getByText('active')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Select Sprite' }))
+    const spriteDialog = await findPickerDialog('Select Sprite')
+    fireEvent.click(within(spriteDialog).getByRole('button', { name: /Hero Idle/ }))
+    await waitFor(() => {
+      expect(within(inspector).getByText('Hero Idle')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Select Animation' }))
+    const actorAnimationDialog = await findPickerDialog('Select Animation')
+    fireEvent.click(within(actorAnimationDialog).getByRole('button', { name: /Hero Idle/ }))
+    await waitFor(() => {
+      expect(within(inspector).getAllByText('Hero Idle').length).toBeGreaterThan(1)
+    })
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Change Animation' }))
+    const clearActorAnimationDialog = await findPickerDialog('Select Animation')
+    fireEvent.click(
+      within(clearActorAnimationDialog).getByRole('button', { name: /No Animation/ })
+    )
+    await waitFor(() => {
+      expect(within(inspector).getByText('No animation selected')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Change Actor Script' }))
+    const clearActorScriptDialog = await findPickerDialog('Select Actor Script')
+    fireEvent.click(
+      within(clearActorScriptDialog).getByRole('button', { name: /No Actor Script/ })
+    )
+    await waitFor(() => {
+      expect(within(inspector).getByText('No actor script selected')).toBeInTheDocument()
     })
   })
 

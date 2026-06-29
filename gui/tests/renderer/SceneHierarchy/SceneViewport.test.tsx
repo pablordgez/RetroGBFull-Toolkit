@@ -153,7 +153,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('<SceneViewport /> integration', () => {
+describe('<SceneViewport /> component unit', () => {
   it('handles empty, error, reset, pan, zoom, background, and invalid drop states', async () => {
     const editor = createEditor([])
     const rendered = renderViewport(editor, {

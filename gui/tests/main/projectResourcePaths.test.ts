@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { resolve } from 'path'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../../src/shared/projectResourceModels'
-import { ProjectLauncherError } from '../../src/main/projectLauncher'
+import { ProjectLauncherError } from '../../src/main/projectLauncherPrimitives'
 import {
   isValidProjectResourceBank,
   normalizeParentPath,

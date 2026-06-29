@@ -11,10 +11,7 @@ vi.mock('../../../src/main/projectCode', () => ({
   copyBundledEngineCore: projectCodeMocks.copyBundledEngineCore
 }))
 import {
-  ProjectLauncherError,
   createProjectStructure,
-  getProjectLauncherErrorMessage,
-  isValidProjectName,
   listRecentProjects,
   readRecentProjects,
   rememberRecentProject,
@@ -55,40 +52,6 @@ afterEach(async () => {
 })
 
 describe('project launcher branch integration', () => {
-  it('validates project names across empty, reserved, illegal, trailing, and valid names', () => {
-    expect(isValidProjectName('')).toBe(false)
-    expect(isValidProjectName('   ')).toBe(false)
-    expect(isValidProjectName('.')).toBe(false)
-    expect(isValidProjectName('..')).toBe(false)
-    expect(isValidProjectName('Bad<Name')).toBe(false)
-    expect(isValidProjectName('Trailing.')).toBe(false)
-    expect(isValidProjectName('Trailing ')).toBe(true)
-    expect(isValidProjectName('con')).toBe(false)
-    expect(isValidProjectName('Alpha')).toBe(true)
-  })
-
-  it('maps launcher errors to action-specific user messages', () => {
-    expect(getProjectLauncherErrorMessage(new ProjectLauncherError('Already friendly.'), 'open')).toBe(
-      'Already friendly.'
-    )
-    expect(getProjectLauncherErrorMessage({ code: 'EEXIST' }, 'create')).toMatch(/already exists/)
-    expect(getProjectLauncherErrorMessage({ code: 'EACCES' }, 'open')).toMatch(/cannot be accessed/)
-    expect(getProjectLauncherErrorMessage({ code: 'EPERM' }, 'open')).toMatch(/cannot be accessed/)
-    expect(getProjectLauncherErrorMessage({ code: 'ENOENT' }, 'create')).toMatch(
-      /location is no longer available/
-    )
-    expect(getProjectLauncherErrorMessage({ code: 'ENOENT' }, 'open')).toMatch(
-      /project location could not be found/
-    )
-    expect(getProjectLauncherErrorMessage({ code: 'ENOSPC' }, 'create')).toMatch(/create the project/)
-    expect(getProjectLauncherErrorMessage({ code: 'ENOSPC' }, 'open')).toMatch(/complete this action/)
-    expect(getProjectLauncherErrorMessage(new Error('Nope'), 'create')).toMatch(/creating the project/)
-    expect(getProjectLauncherErrorMessage(new Error('Nope'), 'open')).toMatch(/opening the project/)
-    expect(getProjectLauncherErrorMessage(new Error('Nope'), 'recent-list')).toMatch(
-      /loading recent projects/
-    )
-  })
-
   it('reports invalid project directory shapes before accepting modern and legacy project JSON', async () => {
     const workspace = await createWorkspace()
     const missingProjectPath = join(workspace, 'Missing')

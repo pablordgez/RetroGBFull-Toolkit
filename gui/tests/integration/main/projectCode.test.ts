@@ -897,31 +897,31 @@ describe('projectCode integration', () => {
 
     const mainSource = await readFile(join(project.path, 'src', 'main.c'), 'utf-8')
     const roomLogicSource = await readFile(join(project.path, sceneScript.resourcePath), 'utf-8')
-    const roomSceneSource = await readFile(
-      join(project.path, 'src', 'CustomScenes', 'room.c'),
+    const sceneRegistry = await readFile(
+      join(project.path, 'src', 'Scene', 'SceneRegistry.h'),
       'utf-8'
     )
-    const roomSceneHeader = await readFile(
-      join(project.path, 'src', 'CustomScenes', 'room.h'),
+    const sceneRegistrySource = await readFile(
+      join(project.path, 'src', 'Scene', 'SceneRegistry.c'),
       'utf-8'
     )
+    const roomSceneSourcePath = join(project.path, 'src', 'CustomScenes', 'room.c')
+    const roomSceneHeaderPath = join(project.path, 'src', 'CustomScenes', 'room.h')
     const projectBindingsPath = join(project.path, 'src', 'Generated', 'ProjectBindings.c')
 
-    expect(mainSource).toContain('#include "CustomScenes/room.h"')
-    expect(mainSource).toContain('room* ss = (room*) malloc(sizeof(room));')
-    expect(mainSource).toContain('ss->base.type = _room;')
-    expect(mainSource).toContain('set_scene((Scene*) ss);')
-    expect(roomLogicSource).not.toContain('// BEGIN GENERATED SCENE INITIALIZATION')
-    expect(roomSceneHeader).toContain('#include "CustomScenes/RoomLogic.h"')
-    expect(roomSceneHeader).toContain('typedef RoomLogic room;')
-    expect(roomSceneSource).toContain(
-      'FAR_CALL(TO_FAR_PTR(scene_init_state_RoomLogic, BANK(RoomLogic_bankref)), RVoid_PVoid_BANKED);'
+    expect(mainSource).toContain('#include "CustomScenes/RoomLogic.h"')
+    expect(mainSource).toContain('Scene* ss = create_scene(_room);')
+    expect(mainSource).toContain('set_scene(ss);')
+    expect(roomLogicSource).toContain('// BEGIN GENERATED SCENE INITIALIZATION')
+    expect(roomLogicSource).toContain('set_scene_map(maps[dungeon]);')
+    expect(sceneRegistry).toContain('_SCENE_IMPL(room, RoomLogic)')
+    expect(sceneRegistrySource).toContain('#include "CustomScenes/RoomLogic.h"')
+    expect(sceneRegistrySource).toContain(
+      'scene_init_state_functions[_##name] = TO_FAR_PTR(scene_init_state_##implementation, BANK(implementation##_bankref));'
     )
-    expect(roomSceneSource).toContain(
-      'FAR_CALL(TO_FAR_PTR(scene_update_RoomLogic, BANK(RoomLogic_bankref)), RVoid_PVoid_BANKED);'
-    )
-    expect(roomSceneSource).toContain('// BEGIN GENERATED SCENE INITIALIZATION')
-    expect(roomSceneSource).toContain('set_scene_map(maps[dungeon]);')
+    expect(sceneRegistrySource).toContain('scene = (struct Scene*) malloc(sizeof(implementation));')
+    await expect(stat(roomSceneSourcePath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(stat(roomSceneHeaderPath)).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(stat(projectBindingsPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
@@ -1052,10 +1052,33 @@ describe('projectCode integration', () => {
       join(project.path, 'src', 'Actor', 'ActorRegistry.h'),
       'utf-8'
     )
+    const actorRegistrySource = await readFile(
+      join(project.path, 'src', 'Actor', 'ActorRegistry.c'),
+      'utf-8'
+    )
     const sceneSource = await readFile(join(project.path, 'src', 'CustomScenes', 'room.c'), 'utf-8')
 
-    expect(actorRegistry).toContain('TAG_PLAYER,')
-    expect(actorRegistry).toContain('TAG_HURT_BOX,')
+    expect(actorRegistry).toContain('// BEGIN GENERATED ACTOR REGISTRY ENTRIES')
+    expect(actorRegistry).toContain('#define ACTOR_REGISTRY_HAS_ACTORS 1')
+    expect(actorRegistry).toContain('_ACTOR(GeneratedDefaultActor)')
+    expect(actorRegistry).toContain('_ACTOR(Hero)')
+    expect(actorRegistry).toContain('_TAG(TAG_PLAYER)')
+    expect(actorRegistry).toContain('_TAG(TAG_HURT_BOX)')
+    expect(actorRegistry).toContain('ACTOR_TAGS')
+    expect(actorRegistry).toContain('struct Actor* create_actor(ActorType type) BANKED;')
+    expect(actorRegistrySource).toContain('// BEGIN GENERATED ACTOR REGISTRY INCLUDES')
+    expect(actorRegistrySource).toContain('#include "CustomActors/GeneratedDefaultActor.h"')
+    expect(actorRegistrySource).toContain('#include "CustomActors/Hero.h"')
+    expect(actorRegistrySource).toContain('actor = (struct Actor*) malloc(sizeof(name));')
+    expect(actorRegistrySource).toContain('struct Actor* previous_actor = NULL;')
+    expect(actorRegistrySource).toContain('previous_actor = THIS_ACTOR;')
+    expect(actorRegistrySource).toContain(
+      'FAR_CALL(actor_init_functions[type], RVoid_PVoid_BANKED);'
+    )
+    expect(actorRegistrySource).toContain('THIS_ACTOR = previous_actor;')
+    expect(sceneSource).toContain(
+      'Actor* generated_actor_0 = create_actor(_GeneratedDefaultActor);'
+    )
     expect(sceneSource).toContain('generated_actor_0->physics_mode = HIGH_PERF;')
     expect(sceneSource).toContain('set_tag(TAG_PLAYER, 0);')
     expect(sceneSource).toContain('generated_actor_1_collider->tags[0] = TAG_HURT_BOX;')
@@ -1122,6 +1145,10 @@ describe('projectCode integration', () => {
       join(project.path, 'src', 'Scene', 'SceneRegistry.h'),
       'utf-8'
     )
+    const sceneRegistrySource = await readFile(
+      join(project.path, 'src', 'Scene', 'SceneRegistry.c'),
+      'utf-8'
+    )
     const sharedScriptSource = await readFile(join(project.path, sceneScript.resourcePath), 'utf-8')
 
     expect(firstSceneSource).toContain(
@@ -1132,8 +1159,15 @@ describe('projectCode integration', () => {
       'FAR_CALL(TO_FAR_PTR(scene_init_state_SharedRoomLogic, BANK(SharedRoomLogic_bankref)), RVoid_PVoid_BANKED);'
     )
     expect(secondSceneSource).toContain('set_scene_map(maps[second_dungeon]);')
+    expect(sceneRegistry).toContain('// BEGIN GENERATED SCENE REGISTRY ENTRIES')
+    expect(sceneRegistry).toContain('struct Scene* create_scene(SceneType type) BANKED;')
     expect(sceneRegistry).toContain('_SCENE(first_room)')
     expect(sceneRegistry).toContain('_SCENE(second_room)')
+    expect(sceneRegistrySource).toContain('// BEGIN GENERATED SCENE REGISTRY INCLUDES')
+    expect(sceneRegistrySource).toContain('#include "CustomScenes/first_room.h"')
+    expect(sceneRegistrySource).toContain('#include "CustomScenes/second_room.h"')
+    expect(sceneRegistrySource).toContain('scene = (struct Scene*) malloc(sizeof(implementation));')
+    expect(sceneRegistrySource).toContain('scene->type = type;')
     expect(sharedScriptSource).not.toContain('// BEGIN GENERATED SCENE INITIALIZATION')
   })
 

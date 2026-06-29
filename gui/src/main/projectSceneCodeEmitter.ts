@@ -1,4 +1,4 @@
-import { ProjectLauncherError } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import type { ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
 import {
@@ -231,12 +231,8 @@ export const createNodeEmitter = (
         : `${collisionNode.y}`
       // if it doesn't have a parent, we create one to attach the collider to
       if (!parentActor) {
-        lines.push(`    Actor* ${actorVariable} = (Actor*) malloc(sizeof(Actor));`)
-        lines.push(`    ${actorVariable}->type = _${MANAGED_DEFAULT_ACTOR_IDENTIFIER};`)
+        lines.push(`    Actor* ${actorVariable} = create_actor(_${MANAGED_DEFAULT_ACTOR_IDENTIFIER});`)
         lines.push(`    THIS_ACTOR = ${actorVariable};`)
-        lines.push(
-          `    FAR_CALL(actor_init_functions[${actorVariable}->type], RVoid_PVoid_BANKED);`
-        )
         lines.push(`    set_actor_position(${collisionNode.x}, ${collisionNode.y});`)
         lines.push(`    add_actor(${actorVariable});`)
       }
@@ -276,14 +272,11 @@ export const createNodeEmitter = (
     }
     // otherwise, it's an actor node, so we create an actor for it, set its properties and emit its children
     const script = node.scriptPath ? actorScriptsByPath.get(node.scriptPath) : null
-    const allocationType = script ? script.identifier : 'Actor'
     const actorType = script ? script.identifier : MANAGED_DEFAULT_ACTOR_IDENTIFIER
     const actorVariable = `generated_actor_${counters.actor}`
     counters.actor += 1
-    lines.push(`    Actor* ${actorVariable} = (Actor*) malloc(sizeof(${allocationType}));`)
-    lines.push(`    ${actorVariable}->type = _${actorType};`)
+    lines.push(`    Actor* ${actorVariable} = create_actor(_${actorType});`)
     lines.push(`    THIS_ACTOR = ${actorVariable};`)
-    lines.push(`    FAR_CALL(actor_init_functions[${actorVariable}->type], RVoid_PVoid_BANKED);`)
     lines.push(
       `    ${actorVariable}->physics_mode = ${PHYSICS_MODE_ENUM_BY_SCENE_VALUE[node.physicsMode]};`
     )

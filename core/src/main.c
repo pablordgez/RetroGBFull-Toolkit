@@ -37,10 +37,9 @@ void main(void)
     gm.pending_scene = NULL;
 
     // BEGIN STARTING SCENE INSTANTIATION
-    SampleScene* ss = (SampleScene*) malloc(sizeof(SampleScene));
+    Scene* ss = create_scene(_SampleScene);
     if(ss != NULL){
-        ss->base.type = _SampleScene;
-        set_scene((Scene*) ss);
+        set_scene(ss);
     }
     // END STARTING SCENE INSTANTIATION
     enable_interrupts();
@@ -54,7 +53,6 @@ void main(void)
     
     while(1) {
         update_game();
-
 
 
         vsync();

@@ -1,7 +1,7 @@
 import type { Stats } from 'fs'
 import { cp, mkdir, rename, stat, writeFile } from 'fs/promises'
 import { join, relative } from 'path'
-import { ProjectLauncherError } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import {
   createDefaultProjectAssetDocument,
   type ProjectAssetKind,

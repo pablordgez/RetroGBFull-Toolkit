@@ -5,7 +5,7 @@ import {
   loadProjectTagState,
   readProjectTrackedResourceBanks
 } from './projectMetadata'
-import { ProjectLauncherError } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import { normalizeCodeIdentifierStem } from '../shared/codeIdentifiers'
 import type {
   BuildProjectCodeResult,
@@ -23,9 +23,17 @@ import {
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../shared/projectResourceModels'
 import { copyBundledEngineCore, ensureBundledGbdkAvailableForProject } from './projectEngineBundle'
 import {
+  ACTOR_REGISTRY_ENTRIES_BEGIN,
+  ACTOR_REGISTRY_ENTRIES_END,
+  ACTOR_REGISTRY_INCLUDES_BEGIN,
+  ACTOR_REGISTRY_INCLUDES_END,
   CORE_PLACEHOLDER_SCENE_FILE_MARKER,
   IGNORED_PROJECT_RESOURCE_ROOT_DIRECTORIES,
   RESOURCE_GENERATION_MANIFEST_PATH,
+  SCENE_REGISTRY_ENTRIES_BEGIN,
+  SCENE_REGISTRY_ENTRIES_END,
+  SCENE_REGISTRY_INCLUDES_BEGIN,
+  SCENE_REGISTRY_INCLUDES_END,
   ensureProjectDirectory,
   resolvePathWithinProject,
   walkRelativePaths
@@ -40,17 +48,18 @@ import {
   readMaxTagSlots,
   removeLegacyGeneratedFiles,
   rewriteManagedProjectScriptSource,
+  rewriteScriptedSceneInitialization,
   rewriteStartingSceneInMain,
   syncManagedSceneFiles,
   writeProjectSaveDataFiles
 } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
 import {
-  buildActorRegistryHeader,
+  buildActorRegistryFiles,
   buildAnimationRegistryFiles,
   buildMapRegistryFiles,
   buildMapResourceFiles,
-  buildSceneRegistryHeader,
+  buildSceneRegistryFiles,
   buildMusicResourceFiles,
   buildSongRegistryFiles,
   buildSpriteResourceFiles,
@@ -66,10 +75,12 @@ import {
 interface BuiltSceneRecord {
   asset: ProjectAssetRecordLike
   identifier: string
-  sourcePath: string
+  implementationIdentifier: string
+  sourcePath: string | null
   headerPath: string
   bank: number
   sceneScript: ProjectScriptRecordResolved | null
+  usesManagedWrapper: boolean
 }
 
 interface ResourceGenerationManifest {
@@ -242,6 +253,19 @@ const buildSceneRecords = (
   sceneAssets: ProjectAssetRecordLike[],
   sceneScriptsByPath: Map<string, ProjectScriptRecordResolved>
 ): BuiltSceneRecord[] => {
+  const sceneScriptUseCounts = new Map<string, number>()
+
+  for (const scene of sceneAssets) {
+    const document = scene.document as SceneAssetDocument
+
+    if (document.scriptPath) {
+      sceneScriptUseCounts.set(
+        document.scriptPath,
+        (sceneScriptUseCounts.get(document.scriptPath) ?? 0) + 1
+      )
+    }
+  }
+
   return sceneAssets.map((scene) => {
     const document = scene.document as SceneAssetDocument
     const sceneScript = document.scriptPath ? sceneScriptsByPath.get(document.scriptPath) : null
@@ -253,23 +277,42 @@ const buildSceneRecords = (
     }
 
     if (sceneScript) {
+      const usesManagedWrapper = (sceneScriptUseCounts.get(sceneScript.path) ?? 0) > 1
+
+      if (!usesManagedWrapper) {
+        return {
+          asset: scene,
+          identifier: scene.identifier,
+          implementationIdentifier: sceneScript.identifier,
+          sourcePath: null,
+          headerPath: getProjectScriptHeaderPath(sceneScript.path),
+          bank: sceneScript.bank,
+          sceneScript,
+          usesManagedWrapper: false
+        }
+      }
+
       return {
         asset: scene,
         identifier: scene.identifier,
+        implementationIdentifier: scene.identifier,
         sourcePath: `src/CustomScenes/${scene.identifier}.c`,
         headerPath: `src/CustomScenes/${scene.identifier}.h`,
         bank: sceneScript.bank,
-        sceneScript
+        sceneScript,
+        usesManagedWrapper: true
       }
     }
 
     return {
       asset: scene,
       identifier: scene.identifier,
+      implementationIdentifier: scene.identifier,
       sourcePath: `src/CustomScenes/${scene.identifier}.c`,
       headerPath: `src/CustomScenes/${scene.identifier}.h`,
       bank: DEFAULT_PROJECT_RESOURCE_BANK,
-      sceneScript: null
+      sceneScript: null,
+      usesManagedWrapper: true
     }
   })
 }
@@ -354,6 +397,53 @@ const writeManagedTextFile = async (
   const absolutePath = resolvePathWithinProject(projectPath, resourcePath)
   await mkdir(dirname(absolutePath), { recursive: true })
   await writeFile(absolutePath, content, 'utf-8')
+  return resourcePath
+}
+
+const splitManagedSnippet = (content: string): string[] => {
+  const trimmedContent = content.trimEnd()
+  return trimmedContent.length > 0 ? trimmedContent.split(/\r?\n/) : []
+}
+
+const replaceManagedBlock = (
+  fileContent: string,
+  beginMarker: string,
+  endMarker: string,
+  nextLines: string[],
+  resourcePath: string
+): string => {
+  const beginIndex = fileContent.indexOf(beginMarker)
+  const endIndex = fileContent.indexOf(endMarker)
+
+  if (beginIndex < 0 || endIndex < 0 || endIndex < beginIndex) {
+    throw new ProjectLauncherError(`The managed markers could not be found in ${resourcePath}.`)
+  }
+
+  const beforeContent = fileContent.slice(0, beginIndex + beginMarker.length)
+  const afterContent = fileContent.slice(endIndex)
+  const insertedContent = nextLines.length > 0 ? `\n${nextLines.join('\n')}\n` : '\n'
+
+  return `${beforeContent}${insertedContent}${afterContent}`
+}
+
+const replaceManagedBlockInFile = async (
+  projectPath: string,
+  resourcePath: string,
+  beginMarker: string,
+  endMarker: string,
+  content: string
+): Promise<string> => {
+  const absolutePath = resolvePathWithinProject(projectPath, resourcePath)
+  const fileContent = await readFile(absolutePath, 'utf-8')
+  const nextContent = replaceManagedBlock(
+    fileContent,
+    beginMarker,
+    endMarker,
+    splitManagedSnippet(content),
+    resourcePath
+  )
+
+  await writeFile(absolutePath, nextContent, 'utf-8')
   return resourcePath
 }
 
@@ -453,6 +543,17 @@ export const buildProjectCode = async (
       spriteAssetsByPath,
       tilesetAssetsByPath
     )
+    if (sceneRecord.sceneScript && !sceneRecord.usesManagedWrapper) {
+      writtenFiles.push(
+        await rewriteScriptedSceneInitialization(
+          normalizedProjectPath,
+          sceneRecord.sceneScript,
+          initializationLines
+        )
+      )
+      continue
+    }
+
     const managedSceneFiles = sceneRecord.sceneScript
       ? buildManagedScriptedSceneFileContents(
           sceneRecord.identifier,
@@ -462,6 +563,10 @@ export const buildProjectCode = async (
           initializationLines
         )
       : buildManagedSceneFileContents(sceneRecord.identifier, sceneRecord.bank, initializationLines)
+    if (!sceneRecord.sourcePath) {
+      throw new ProjectLauncherError(`Scene "${sceneRecord.asset.name}" is missing a source path.`)
+    }
+
     writtenFiles.push(
       await writeManagedTextFile(
         normalizedProjectPath,
@@ -476,7 +581,9 @@ export const buildProjectCode = async (
         managedSceneFiles.sourceContent
       )
     )
-    managedScenePaths.push(sceneRecord.headerPath, sceneRecord.sourcePath)
+    if (sceneRecord.sourcePath) {
+      managedScenePaths.push(sceneRecord.headerPath, sceneRecord.sourcePath)
+    }
   }
 
   // remove core sample scene files when they are not needed
@@ -492,7 +599,8 @@ export const buildProjectCode = async (
   writtenFiles.push(
     await rewriteStartingSceneInMain(
       normalizedProjectPath,
-      startingScene?.identifier ?? 'SampleScene'
+      startingScene?.identifier ?? 'SampleScene',
+      startingScene?.headerPath
     )
   )
 
@@ -630,18 +738,48 @@ export const buildProjectCode = async (
       mapRegistryFiles.sourceContent
     )
   )
+  const actorRegistryFiles = buildActorRegistryFiles(actorScripts, projectTagState.entries)
   writtenFiles.push(
-    await writeManagedTextFile(
+    await replaceManagedBlockInFile(
       normalizedProjectPath,
       'src/Actor/ActorRegistry.h',
-      buildActorRegistryHeader(actorScripts, projectTagState.entries)
+      ACTOR_REGISTRY_ENTRIES_BEGIN,
+      ACTOR_REGISTRY_ENTRIES_END,
+      actorRegistryFiles.entriesContent
     )
   )
   writtenFiles.push(
-    await writeManagedTextFile(
+    await replaceManagedBlockInFile(
+      normalizedProjectPath,
+      'src/Actor/ActorRegistry.c',
+      ACTOR_REGISTRY_INCLUDES_BEGIN,
+      ACTOR_REGISTRY_INCLUDES_END,
+      actorRegistryFiles.includesContent
+    )
+  )
+  const sceneRegistryFiles = buildSceneRegistryFiles(
+    sceneRecords.map((scene) => ({
+      identifier: scene.identifier,
+      headerPath: scene.headerPath,
+      implementationIdentifier: scene.implementationIdentifier
+    }))
+  )
+  writtenFiles.push(
+    await replaceManagedBlockInFile(
       normalizedProjectPath,
       'src/Scene/SceneRegistry.h',
-      buildSceneRegistryHeader(sceneRecords.map((scene) => scene.identifier))
+      SCENE_REGISTRY_ENTRIES_BEGIN,
+      SCENE_REGISTRY_ENTRIES_END,
+      sceneRegistryFiles.entriesContent
+    )
+  )
+  writtenFiles.push(
+    await replaceManagedBlockInFile(
+      normalizedProjectPath,
+      'src/Scene/SceneRegistry.c',
+      SCENE_REGISTRY_INCLUDES_BEGIN,
+      SCENE_REGISTRY_INCLUDES_END,
+      sceneRegistryFiles.includesContent
     )
   )
   const songRegistryFiles = buildSongRegistryFiles(musicAssets)

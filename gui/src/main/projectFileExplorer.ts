@@ -1,6 +1,7 @@
 import { stat } from 'fs/promises'
 import { shell } from 'electron'
-import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
+import { validateProjectDirectory } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import { normalizeResourcePath, resolvePathWithinProject } from './projectResourcePaths'
 import { getTrackedProjectResource } from './projectResources'
 

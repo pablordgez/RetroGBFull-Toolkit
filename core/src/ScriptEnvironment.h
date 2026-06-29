@@ -11,6 +11,7 @@
 #include "Assets/Text/Text.h"
 #include "Interrupts/InterruptManager.h"
 #include "Saves/SaveData.h"
+#include "GameManager/GameManager.h"
 #include <gb/gb.h>
 #include <stdint.h>
 #include <stdlib.h>

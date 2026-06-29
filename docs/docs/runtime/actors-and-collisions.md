@@ -62,13 +62,14 @@ Header: `core/src/Actor/ActorRegistry.h`
 
 | Name | Meaning |
 | --- | --- |
-| `ACTORS` | Generated actor type list. The default placeholder is empty. |
+| `ACTORS` | Actor type list generated into a managed block in `ActorRegistry.h`. The default placeholder is empty. |
+| `ACTOR_TAGS` | Project tag list generated into a managed block in `ActorRegistry.h` and consumed by the `Tags` enum. The default placeholder is empty. |
 
 ### `ActorType`
 
 Default value in the shipped core:
 
-- `NUM_ACTORS = 1`
+- `NUM_ACTORS`
 
 Project code generation adds real actor type entries before `NUM_ACTORS`.
 
@@ -79,6 +80,29 @@ Default value in the shipped core:
 - `TAG_NONE`
 
 Projects extend this enum and reuse it for actor tags and collider tags.
+
+### Functions
+
+| Function | Description |
+| --- | --- |
+| `struct Actor* create_actor(ActorType type) BANKED;` | Allocates the concrete actor struct for `type`, sets `actor->type`, temporarily sets `THIS_ACTOR` while calling the actor init function, restores the previous `THIS_ACTOR`, and returns the new actor as `Actor*`. Returns `NULL` for invalid types or allocation failure. |
+
+### Creating actors from scripts
+
+Use `create_actor()` instead of manually allocating an actor. Actor scripts may extend the base `Actor` struct, so the registry factory is responsible for using the correct `sizeof(...)`.
+
+```c
+Actor* enemy = create_actor(_Enemy);
+if(enemy != NULL){
+    Actor* previous_actor = THIS_ACTOR;
+    THIS_ACTOR = enemy;
+    set_actor_position(80 * 16, 40 * 16);
+    add_actor(enemy);
+    THIS_ACTOR = previous_actor;
+}
+```
+
+`create_actor()` sets `THIS_ACTOR` only while the actor init function runs. If you need helper functions such as `set_actor_position()` to target the returned actor, save the current `THIS_ACTOR`, assign the new actor, then restore the saved value afterwards. Once added, the current scene owns the actor and will destroy it during scene cleanup.
 
 ## `Collider.h`
 

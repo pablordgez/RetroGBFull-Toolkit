@@ -1,6 +1,6 @@
 import { readFile, stat, writeFile } from 'fs/promises'
 import { basename, dirname, join } from 'path'
-import { ProjectLauncherError } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import type { CopyEngineCoreResult } from '../shared/projectCodeWorkspace'
 import {
   copyBundledDirectoryIntoTarget,

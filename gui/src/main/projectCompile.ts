@@ -11,7 +11,7 @@ import type {
 import { buildProjectCode } from './projectBuildCode'
 import { ensureProjectDirectory } from './projectCodeShared'
 import { ensureBundledGbdkAvailableForProject } from './projectEngineBundle'
-import { ProjectLauncherError } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import { getMakeToolchainStatus } from './projectMake'
 
 const summarizeCommandOutput = (stdout: string, stderr: string): string => {

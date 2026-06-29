@@ -2,8 +2,8 @@ import React from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ScriptEditor } from '../../../src/renderer/src/components/ScriptEditor/ScriptEditor'
-import type { ProjectScriptResourcePayload } from '../../../src/shared/projectCodeWorkspace'
+import { ScriptEditor } from '../../../../src/renderer/src/components/ScriptEditor/ScriptEditor'
+import type { ProjectScriptResourcePayload } from '../../../../src/shared/projectCodeWorkspace'
 
 const runtimeSessionMock = {
   setActiveTab: vi.fn(),
@@ -14,11 +14,11 @@ const runtimeSessionMock = {
 
 const createScriptEditorRuntimeMock = vi.fn().mockResolvedValue(runtimeSessionMock)
 
-vi.mock('../../../src/renderer/src/components/ScriptEditor/configureMonaco', () => ({
+vi.mock('../../../../src/renderer/src/components/ScriptEditor/configureMonaco', () => ({
   configureMonaco: vi.fn()
 }))
 
-vi.mock('../../../src/renderer/src/components/ScriptEditor/scriptEditorRuntime', () => ({
+vi.mock('../../../../src/renderer/src/components/ScriptEditor/scriptEditorRuntime', () => ({
   createScriptEditorRuntime: createScriptEditorRuntimeMock
 }))
 

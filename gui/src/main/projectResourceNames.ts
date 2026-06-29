@@ -1,5 +1,5 @@
 import { basename } from 'path'
-import { ProjectLauncherError, isValidProjectName } from './projectLauncher'
+import { ProjectLauncherError, isValidProjectName } from './projectLauncherPrimitives'
 import { getProjectAssetDisplayName } from '../shared/projectAssets'
 import { normalizeCodeIdentifier } from '../shared/codeIdentifiers'
 import { getProjectScriptDisplayName } from '../shared/projectScripts'

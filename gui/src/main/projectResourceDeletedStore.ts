@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
-import { ProjectLauncherError } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import type { ProjectAssetKind } from '../shared/projectAssets'
 import type { ProjectScriptKind } from '../shared/projectScripts'
 import { normalizeResourcePath } from './projectResourcePaths'

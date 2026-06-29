@@ -40,7 +40,7 @@ vi.mock('fs/promises', async (importOriginal) => {
   }
 })
 
-vi.mock('../../src/main/projectCodeShared', () => ({
+vi.mock('../../../src/main/projectCodeShared', () => ({
   getBundledGbdkPath: projectCodeSharedMocks.getBundledGbdkPath,
   getBundledGbdkSource: projectCodeSharedMocks.getBundledGbdkSource
 }))
@@ -57,7 +57,7 @@ import {
   getGbdkToolchainStatus,
   installLatestGbdkToolchain,
   selectGbdkReleaseAsset
-} from '../../src/main/projectGbdk'
+} from '../../../src/main/projectGbdk'
 
 const INSTALL_PATH = '/toolchains/gbdk'
 const EXECUTABLE_PATH = join(INSTALL_PATH, 'bin', process.platform === 'win32' ? 'lcc.exe' : 'lcc')

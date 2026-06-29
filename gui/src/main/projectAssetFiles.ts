@@ -1,6 +1,7 @@
 import { readFile, stat, writeFile } from 'fs/promises'
 import { basename } from 'path'
-import { ProjectLauncherError, validateProjectDirectory } from './projectLauncher'
+import { validateProjectDirectory } from './projectLauncher'
+import { ProjectLauncherError } from './projectLauncherPrimitives'
 import { getTrackedProjectResource, pruneMissingProjectResource } from './projectResources'
 import { normalizeResourcePath, resolvePathWithinProject } from './projectResourcePaths'
 import {

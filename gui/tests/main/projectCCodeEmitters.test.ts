@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PROJECT_RESOURCE_BANK } from '../../src/shared/projectResourceModels'
-import { ProjectLauncherError } from '../../src/main/projectLauncher'
+import { ProjectLauncherError } from '../../src/main/projectLauncherPrimitives'
 import type { ProjectAssetRecordLike } from '../../src/main/projectBuildCodeTypes'
 import {
+  buildActorRegistryFiles,
   buildActorRegistryHeader,
   buildAnimationRegistryFiles,
   buildMapRegistryFiles,
   buildMapResourceFiles,
   buildMusicResourceFiles,
+  buildSceneRegistryFiles,
   buildSceneRegistryHeader,
   buildSongRegistryFiles,
   buildSpriteResourceFiles,
@@ -299,8 +301,8 @@ describe('projectCCodeEmitters', () => {
     ).toThrow('Map "Missing" references a missing tileset resource: none')
   })
 
-  it('builds actor and scene registry headers', () => {
-    const actorHeader = buildActorRegistryHeader(
+  it('builds actor and scene registry fragments', () => {
+    const actorRegistry = buildActorRegistryFiles(
       [
         {
           kind: 'actor',
@@ -312,13 +314,23 @@ describe('projectCCodeEmitters', () => {
       ],
       [{ id: 'solid', name: 'Solid Block' }]
     )
-    expect(actorHeader).toContain('_ACTOR(GeneratedDefaultActor)')
-    expect(actorHeader).toContain('_ACTOR(Hero)')
-    expect(actorHeader).toContain('TAG_SOLID_BLOCK')
+    expect(actorRegistry.entriesContent).toContain('#define ACTOR_REGISTRY_HAS_ACTORS 1')
+    expect(actorRegistry.entriesContent).toContain('_ACTOR(GeneratedDefaultActor)')
+    expect(actorRegistry.entriesContent).toContain('_ACTOR(Hero)')
+    expect(actorRegistry.entriesContent).toContain('_TAG(TAG_SOLID_BLOCK)')
+    expect(actorRegistry.includesContent).toContain('#include "CustomActors/GeneratedDefaultActor.h"')
+    expect(actorRegistry.includesContent).toContain('#include "CustomActors/Hero.h"')
+    expect(buildActorRegistryHeader([], [])).toContain('_ACTOR(GeneratedDefaultActor)')
 
     expect(buildSceneRegistryHeader([])).toContain('_SCENE(SampleScene)')
-    const sceneHeader = buildSceneRegistryHeader(['Intro', 'Intro', 'Ending'])
-    expect(sceneHeader.match(/_SCENE\(Intro\)/g)).toHaveLength(1)
-    expect(sceneHeader).toContain('_SCENE(Ending)')
+    const sceneRegistry = buildSceneRegistryFiles([
+      { identifier: 'Intro', headerPath: 'src/CustomScenes/Intro.h' },
+      { identifier: 'Intro', headerPath: 'src/CustomScenes/Intro.h' },
+      { identifier: 'Ending', headerPath: 'src/CustomScenes/Ending.h' }
+    ])
+    expect(sceneRegistry.entriesContent.match(/_SCENE\(Intro\)/g)).toHaveLength(1)
+    expect(sceneRegistry.entriesContent).toContain('_SCENE(Ending)')
+    expect(sceneRegistry.includesContent).toContain('#include "CustomScenes/Intro.h"')
+    expect(sceneRegistry.includesContent).toContain('#include "CustomScenes/Ending.h"')
   })
 })

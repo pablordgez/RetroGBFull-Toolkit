@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ProjectLauncherError } from '../../src/main/projectLauncher'
+import { ProjectLauncherError } from '../../src/main/projectLauncherPrimitives'
 import { getProjectResourceErrorMessage } from '../../src/main/projectResourceErrors'
 
 describe('projectResourceErrors', () => {

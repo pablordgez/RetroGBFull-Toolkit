@@ -150,6 +150,81 @@ describe('project asset editor integration', () => {
     })
   })
 
+  it('uses save actions in tileset and tilemap editors', async () => {
+    vi.mocked(window.api.loadProjectAssetFile)
+      .mockResolvedValueOnce(tilesetPayload('Tilesets/Main.rgbtileset.json', 1))
+      .mockResolvedValueOnce({
+        assetKind: 'tilemap',
+        resourcePath: 'Maps/Room.rgbtilemap.json',
+        document: {
+          kind: 'tilemap',
+          version: 1,
+          width: 20,
+          height: 18,
+          grid: new Array(20 * 18).fill(0),
+          tilesetPath: null,
+          selectedTileIndex: 0,
+          tool: 'brush'
+        }
+      })
+
+    const { unmount } = renderEditor(
+      '/tileset-editor?projectPath=%2Fprojects%2FAlpha&assetPath=Tilesets%2FMain.rgbtileset.json',
+      <TilesetEditor />
+    )
+
+    await waitFor(() => {
+      expect(window.api.loadProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Tilesets/Main.rgbtileset.json'
+      )
+    })
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'EXPORT DATA' })).not.toBeInTheDocument()
+
+    unmount()
+
+    renderEditor(
+      '/tilemap-editor?projectPath=%2Fprojects%2FAlpha&assetPath=Maps%2FRoom.rgbtilemap.json',
+      <TilemapEditor />
+    )
+
+    await waitFor(() => {
+      expect(window.api.loadProjectAssetFile).toHaveBeenCalledWith(
+        '/projects/Alpha',
+        'Maps/Room.rgbtilemap.json'
+      )
+    })
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'EXPORT DATA' })).not.toBeInTheDocument()
+  })
+
+  it('syncs the tileset sidebar selection with the loaded selected tile', async () => {
+    vi.mocked(window.api.loadProjectAssetFile).mockResolvedValue({
+      assetKind: 'tileset',
+      resourcePath: 'Tilesets/Main.rgbtileset.json',
+      document: {
+        ...tilesetPayload('Tilesets/Main.rgbtileset.json', 2).document,
+        selectedTileIndex: 1
+      }
+    })
+
+    renderEditor(
+      '/tileset-editor?projectPath=%2Fprojects%2FAlpha&assetPath=Tilesets%2FMain.rgbtileset.json',
+      <TilesetEditor />
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Tile 1')).toHaveClass('selected')
+    })
+    expect(screen.getByTitle('Tile 0')).not.toHaveClass('selected')
+
+    fireEvent.click(screen.getByTitle('Tile 1'))
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+  })
+
   it('requires a tileset for new tilemaps and persists the selection', async () => {
     vi.mocked(window.api.getProjectResources).mockResolvedValue({
       projectName: 'Alpha',

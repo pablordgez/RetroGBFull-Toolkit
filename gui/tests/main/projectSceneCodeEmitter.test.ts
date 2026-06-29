@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ProjectLauncherError } from '../../src/main/projectLauncher'
+import { ProjectLauncherError } from '../../src/main/projectLauncherPrimitives'
 import type { ProjectAssetRecordLike } from '../../src/main/projectBuildCodeTypes'
 import type { ProjectScriptRecordResolved } from '../../src/main/projectCodeScripts'
 import {
@@ -148,9 +148,7 @@ describe('projectSceneCodeEmitter', () => {
     )
 
     expect(emitted).toBeNull()
-    expect(lines.join('\n')).toContain(
-      'Actor* generated_actor_0 = (Actor*) malloc(sizeof(HeroActor));'
-    )
+    expect(lines.join('\n')).toContain('Actor* generated_actor_0 = create_actor(_HeroActor);')
     expect(lines.join('\n')).toContain('generated_actor_0->physics_mode = HIGH_FIDELITY;')
     expect(lines.join('\n')).toContain('set_actor_position(260, 389);')
     expect(lines.join('\n')).toContain('set_animation_props(S_PALETTE, 16, 24);')
@@ -172,7 +170,9 @@ describe('projectSceneCodeEmitter', () => {
     const lines: string[] = []
     const actorVariable = emitNode(collisionNode() as never, null, lines, { actor: 0 })
     expect(actorVariable).toBe('generated_actor_0')
-    expect(lines.join('\n')).toContain('GeneratedDefaultActor')
+    expect(lines.join('\n')).toContain(
+      'Actor* generated_actor_0 = create_actor(_GeneratedDefaultActor);'
+    )
     expect(lines.join('\n')).toContain('set_actor_position(3, 4);')
 
     expect(() =>

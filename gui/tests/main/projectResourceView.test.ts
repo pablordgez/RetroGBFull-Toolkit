@@ -90,7 +90,8 @@ describe('projectResourceView', () => {
         id: 'folder-1',
         name: 'Actors',
         path: 'Actors',
-        parentPath: null
+        parentPath: null,
+        hasScriptDescendants: true
       },
       {
         type: 'file',
@@ -112,7 +113,8 @@ describe('projectResourceView', () => {
         id: 'folder-2',
         name: 'Nested',
         path: 'Actors/Nested',
-        parentPath: 'Actors'
+        parentPath: 'Actors',
+        hasScriptDescendants: false
       },
       {
         type: 'file',
