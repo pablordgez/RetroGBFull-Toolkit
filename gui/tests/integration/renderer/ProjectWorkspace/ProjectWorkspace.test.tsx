@@ -154,6 +154,10 @@ const findPickerDialog = async (title: string): Promise<HTMLElement> => {
   return dialog
 }
 
+const clickPickerOption = async (dialog: HTMLElement, name: string | RegExp): Promise<void> => {
+  fireEvent.click(await within(dialog).findByRole('button', { name }))
+}
+
 const resetWorkspaceApiMocks = (): void => {
   vi.mocked(window.api.openProjectAssetEditor).mockReset()
   vi.mocked(window.api.getRecentProjects).mockReset()
@@ -2801,7 +2805,7 @@ describe('<ProjectWorkspace />', () => {
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Select Tilemap' }))
     const tilemapDialog = await findPickerDialog('Load Tilemap')
-    fireEvent.click(within(tilemapDialog).getByRole('button', { name: /Overworld/ }))
+    await clickPickerOption(tilemapDialog, /Overworld/)
 
     await waitFor(() => {
       expect(within(inspector).getByText('Overworld')).toBeInTheDocument()
@@ -2809,14 +2813,14 @@ describe('<ProjectWorkspace />', () => {
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Change Tilemap' }))
     const clearTilemapDialog = await findPickerDialog('Load Tilemap')
-    fireEvent.click(within(clearTilemapDialog).getByRole('button', { name: /No Tilemap/ }))
+    await clickPickerOption(clearTilemapDialog, /No Tilemap/)
     await waitFor(() => {
       expect(within(inspector).getByText('No tilemap selected')).toBeInTheDocument()
     })
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Select Window' }))
     const windowDialog = await findPickerDialog('Load Window')
-    fireEvent.click(within(windowDialog).getByRole('button', { name: /HUD/ }))
+    await clickPickerOption(windowDialog, /HUD/)
 
     await waitFor(() => {
       expect(within(inspector).getByText('HUD')).toBeInTheDocument()
@@ -2824,7 +2828,7 @@ describe('<ProjectWorkspace />', () => {
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Change Window' }))
     const clearWindowDialog = await findPickerDialog('Load Window')
-    fireEvent.click(within(clearWindowDialog).getByRole('button', { name: /No Window/ }))
+    await clickPickerOption(clearWindowDialog, /No Window/)
     await waitFor(() => {
       expect(within(inspector).getByText('No window selected')).toBeInTheDocument()
     })
@@ -2916,7 +2920,7 @@ describe('<ProjectWorkspace />', () => {
     fireEvent.click(actorMenuItems[1])
 
     const actorDialog = await findPickerDialog('Load Actor')
-    fireEvent.click(within(actorDialog).getByRole('button', { name: /Hero Resource/ }))
+    await clickPickerOption(actorDialog, /Hero Resource/)
 
     await waitFor(() => {
       expect(within(sceneSidebar).getByText('Hero Resource')).toBeInTheDocument()
@@ -3036,7 +3040,7 @@ describe('<ProjectWorkspace />', () => {
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Select Scene Script' }))
     const sceneScriptDialog = await findPickerDialog('Select Scene Script')
-    fireEvent.click(within(sceneScriptDialog).getByRole('button', { name: /Room/ }))
+    await clickPickerOption(sceneScriptDialog, /Room/)
 
     await waitFor(() => {
       expect(within(inspector).getByText('gravity')).toBeInTheDocument()
@@ -3045,7 +3049,7 @@ describe('<ProjectWorkspace />', () => {
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Select Animation' }))
     const sceneAnimationDialog = await findPickerDialog('Select Animation')
-    fireEvent.click(within(sceneAnimationDialog).getByRole('button', { name: /Room Intro/ }))
+    await clickPickerOption(sceneAnimationDialog, /Room Intro/)
 
     await waitFor(() => {
       expect(within(inspector).getByText('Room Intro')).toBeInTheDocument()
@@ -3053,18 +3057,14 @@ describe('<ProjectWorkspace />', () => {
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Change Animation' }))
     const clearSceneAnimationDialog = await findPickerDialog('Select Animation')
-    fireEvent.click(
-      within(clearSceneAnimationDialog).getByRole('button', { name: /No Animation/ })
-    )
+    await clickPickerOption(clearSceneAnimationDialog, /No Animation/)
     await waitFor(() => {
       expect(within(inspector).getByText('No animation selected')).toBeInTheDocument()
     })
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Change Scene Script' }))
     const clearSceneScriptDialog = await findPickerDialog('Select Scene Script')
-    fireEvent.click(
-      within(clearSceneScriptDialog).getByRole('button', { name: /No Scene Script/ })
-    )
+    await clickPickerOption(clearSceneScriptDialog, /No Scene Script/)
     await waitFor(() => {
       expect(within(inspector).getByText('No scene script selected')).toBeInTheDocument()
     })
@@ -3072,7 +3072,7 @@ describe('<ProjectWorkspace />', () => {
     fireEvent.click(within(screen.getByTestId('project-workspace-scene-sidebar')).getByText('Hero'))
     fireEvent.click(within(inspector).getByRole('button', { name: 'Select Actor Script' }))
     const actorScriptDialog = await findPickerDialog('Select Actor Script')
-    fireEvent.click(within(actorScriptDialog).getByRole('button', { name: /Hero/ }))
+    await clickPickerOption(actorScriptDialog, /Hero/)
 
     await waitFor(() => {
       expect(within(inspector).getByText('idle_animation')).toBeInTheDocument()
@@ -3081,32 +3081,28 @@ describe('<ProjectWorkspace />', () => {
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Select Sprite' }))
     const spriteDialog = await findPickerDialog('Select Sprite')
-    fireEvent.click(within(spriteDialog).getByRole('button', { name: /Hero Idle/ }))
+    await clickPickerOption(spriteDialog, /Hero Idle/)
     await waitFor(() => {
       expect(within(inspector).getByText('Hero Idle')).toBeInTheDocument()
     })
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Select Animation' }))
     const actorAnimationDialog = await findPickerDialog('Select Animation')
-    fireEvent.click(within(actorAnimationDialog).getByRole('button', { name: /Hero Idle/ }))
+    await clickPickerOption(actorAnimationDialog, /Hero Idle/)
     await waitFor(() => {
       expect(within(inspector).getAllByText('Hero Idle').length).toBeGreaterThan(1)
     })
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Change Animation' }))
     const clearActorAnimationDialog = await findPickerDialog('Select Animation')
-    fireEvent.click(
-      within(clearActorAnimationDialog).getByRole('button', { name: /No Animation/ })
-    )
+    await clickPickerOption(clearActorAnimationDialog, /No Animation/)
     await waitFor(() => {
       expect(within(inspector).getByText('No animation selected')).toBeInTheDocument()
     })
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Change Actor Script' }))
     const clearActorScriptDialog = await findPickerDialog('Select Actor Script')
-    fireEvent.click(
-      within(clearActorScriptDialog).getByRole('button', { name: /No Actor Script/ })
-    )
+    await clickPickerOption(clearActorScriptDialog, /No Actor Script/)
     await waitFor(() => {
       expect(within(inspector).getByText('No actor script selected')).toBeInTheDocument()
     })
