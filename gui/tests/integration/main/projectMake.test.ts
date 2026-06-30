@@ -113,6 +113,22 @@ const createSuccessfulChild = (stdout = '', stderr = '') => {
   return child
 }
 
+const createErroredChild = (error = new Error('spawn failed')) => {
+  const child = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter
+    stderr: EventEmitter
+  }
+
+  child.stdout = new EventEmitter()
+  child.stderr = new EventEmitter()
+
+  queueMicrotask(() => {
+    child.emit('error', error)
+  })
+
+  return child
+}
+
 describe('projectMake', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -145,9 +161,9 @@ describe('projectMake', () => {
   })
 
   it('throws when the GNU download index contains no source archives', () => {
-    expect(() => selectLatestMakeSourceArchive('<html><body>No archives here</body></html>')).toThrow(
-      'Could not find any GNU Make source archives on the official GNU download page.'
-    )
+    expect(() =>
+      selectLatestMakeSourceArchive('<html><body>No archives here</body></html>')
+    ).toThrow('Could not find any GNU Make source archives on the official GNU download page.')
   })
 
   it('reports when the configured managed make directory is missing', async () => {
@@ -213,6 +229,25 @@ describe('projectMake', () => {
     expect(status.source).toBe('runtime-managed')
   })
 
+  it('falls back to the detected executable version when install metadata cannot be read', async () => {
+    process.env['PATH'] = ''
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (targetPath === MANAGED_EXECUTABLE_PATH) {
+        return createFileStats()
+      }
+
+      throw new Error(`Unexpected stat path: ${targetPath}`)
+    })
+    fsMocks.readFile.mockRejectedValue(new Error('missing metadata'))
+    spawnMock.mockImplementation(() => createSuccessfulChild('GNU Make 4.4.1\n'))
+
+    const status = await getMakeToolchainStatus()
+
+    expect(status.installed).toBe(true)
+    expect(status.version).toBe('4.4.1')
+    expect(status.source).toBe('runtime-managed')
+  })
+
   it('falls back to GNU Make found on PATH when no managed install exists', async () => {
     process.env['PATH'] = '/system/bin'
     fsMocks.stat.mockImplementation(async (targetPath: string) => {
@@ -231,6 +266,25 @@ describe('projectMake', () => {
     expect(status.source).toBe('system-path')
     expect(status.version).toBe('4.4.1')
     expect(status.executablePath).toBe(SYSTEM_EXECUTABLE_PATH)
+  })
+
+  it('ignores managed make candidates that cannot report a GNU version', async () => {
+    process.env['PATH'] = ''
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (targetPath === MANAGED_EXECUTABLE_PATH) {
+        return createFileStats()
+      }
+
+      throw new Error(`Unexpected stat path: ${targetPath}`)
+    })
+    fsMocks.readdir.mockRejectedValue(new Error('missing'))
+    spawnMock.mockImplementation(() => createErroredChild())
+
+    const status = await getMakeToolchainStatus()
+
+    expect(status.installed).toBe(false)
+    expect(status.version).toBeNull()
+    expect(spawnMock).toHaveBeenCalled()
   })
 
   it('skips non-GNU POSIX candidates on PATH until it finds GNU Make', async () => {
@@ -265,6 +319,53 @@ describe('projectMake', () => {
       expect(status.source).toBe('system-path')
       expect(status.executablePath).toBe(secondCandidatePath)
       expect(status.version).toBe('4.4.1')
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+  })
+
+  it('checks discovered Windows command shims through a shell', async () => {
+    const originalPlatform = process.platform
+    const commandShimPath = join(INSTALL_PATH, 'make.cmd')
+
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    process.env['PATH'] = ''
+
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (targetPath === commandShimPath) {
+        return createFileStats()
+      }
+
+      throw new Error(`Unexpected stat path: ${targetPath}`)
+    })
+    fsMocks.readdir.mockImplementation(async (targetPath: string) => {
+      if (targetPath === INSTALL_PATH) {
+        return [
+          {
+            name: 'make.cmd',
+            isDirectory: () => false,
+            isFile: () => true
+          }
+        ]
+      }
+
+      throw new Error(`Unexpected readdir path: ${targetPath}`)
+    })
+    fsMocks.readFile.mockRejectedValue(new Error('missing metadata'))
+    spawnMock.mockImplementation(() => createSuccessfulChild('GNU Make 4.4.1\n'))
+
+    try {
+      const status = await getMakeToolchainStatus()
+
+      expect(status.installed).toBe(true)
+      expect(status.executablePath).toBe(commandShimPath)
+      expect(status.version).toBe('4.4.1')
+      expect(spawnMock).toHaveBeenCalledWith(commandShimPath, ['--version'], {
+        cwd: expect.any(String),
+        shell: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
+      })
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform })
     }
@@ -308,6 +409,142 @@ describe('projectMake', () => {
     expect(FETCH_MOCK).toHaveBeenCalledTimes(1)
   })
 
+  it('reports the existing managed make when Windows automatic installation lacks a compiler', async () => {
+    const originalPlatform = process.platform
+    const managedExecutablePath = join(INSTALL_PATH, 'bin', 'make.exe')
+
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    process.env['PATH'] = '/compiler/bin'
+
+    FETCH_MOCK.mockResolvedValue({
+      ok: true,
+      text: async () => '<a href="make-4.5.tar.gz">make-4.5.tar.gz</a>'
+    })
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (targetPath === managedExecutablePath) {
+        return createFileStats()
+      }
+
+      throw new Error(`Unexpected stat path: ${targetPath}`)
+    })
+    fsMocks.readFile.mockResolvedValue(
+      `${JSON.stringify({
+        version: '4.4.1',
+        archiveName: 'make-4.4.1.tar.gz',
+        installedAt: '2026-05-26T00:00:00.000Z'
+      })}\n`
+    )
+    fsMocks.readdir.mockRejectedValue(new Error('missing'))
+    spawnMock.mockImplementation(() => createSuccessfulChild('GNU Make 4.4.1\n'))
+
+    try {
+      await expect(installLatestMakeToolchain()).rejects.toThrow(
+        `Automatic GNU Make installation from the official GNU source package on Windows requires a supported compiler environment such as MSVC or MinGW GCC, but none was found on PATH. Existing GNU Make remains available at ${managedExecutablePath}.`
+      )
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+
+    expect(fsMocks.mkdtemp).not.toHaveBeenCalled()
+  })
+
+  it('reports when the GNU Make download index cannot be fetched', async () => {
+    process.env['PATH'] = ''
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway'
+    })
+    fsMocks.stat.mockRejectedValue(new Error('missing'))
+    fsMocks.readdir.mockRejectedValue(new Error('missing'))
+
+    await expect(installLatestMakeToolchain()).rejects.toThrow(
+      'Could not fetch the GNU Make download index. (502 Bad Gateway)'
+    )
+    expect(fsMocks.mkdtemp).not.toHaveBeenCalled()
+  })
+
+  it('cleans up when the GNU Make archive download fails', async () => {
+    const originalPlatform = process.platform
+
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    process.env['PATH'] = ''
+    const stagingRootPath = '/toolchains/.retrogbfull-make-stage'
+    const archiveName = 'make-4.4.1.tar.gz'
+
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      text: async () => `<a href="${archiveName}">${archiveName}</a>`
+    }).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found'
+    })
+
+    fsMocks.stat.mockRejectedValue(new Error('missing'))
+    fsMocks.readdir.mockRejectedValue(new Error('missing'))
+    fsMocks.mkdir.mockResolvedValue(undefined)
+    fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
+    fsMocks.rm.mockResolvedValue(undefined)
+
+    try {
+      await expect(installLatestMakeToolchain()).rejects.toThrow(
+        `Could not download ${archiveName} from GNU. (404 Not Found)`
+      )
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+
+    expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
+  })
+
+  it('cleans up when the downloaded GNU Make archive has no source root', async () => {
+    const originalPlatform = process.platform
+
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    process.env['PATH'] = ''
+    const stagingRootPath = '/toolchains/.retrogbfull-make-stage'
+    const archiveName = 'make-4.4.1.tar.gz'
+    const extractRootPath = join(stagingRootPath, 'source')
+
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      text: async () => `<a href="${archiveName}">${archiveName}</a>`
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
+    })
+
+    fsMocks.stat.mockRejectedValue(new Error('missing'))
+    fsMocks.mkdir.mockResolvedValue(undefined)
+    fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
+    fsMocks.writeFile.mockResolvedValue(undefined)
+    fsMocks.rm.mockResolvedValue(undefined)
+    fsMocks.readdir.mockImplementation(async (targetPath: string) => {
+      if (targetPath === extractRootPath) {
+        return [
+          {
+            name: 'README',
+            isDirectory: () => false,
+            isFile: () => true
+          }
+        ]
+      }
+
+      throw new Error(`Missing directory: ${targetPath}`)
+    })
+
+    try {
+      await expect(installLatestMakeToolchain()).rejects.toThrow(
+        'The downloaded GNU Make archive did not contain a valid source directory.'
+      )
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+
+    expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
+  })
+
   it('downloads, builds, and installs the latest managed make toolchain', async () => {
     process.env['PATH'] = process.platform === 'win32' ? '/compiler/bin' : ''
 
@@ -330,15 +567,13 @@ describe('projectMake', () => {
     const builtWindowsExecutablePath = join(sourceRootPath, 'WinRel', 'gnumake.exe')
     let installationPromoted = false
 
-    FETCH_MOCK
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => `<a href="${archiveName}">${archiveName}</a>`
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
-      })
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      text: async () => `<a href="${archiveName}">${archiveName}</a>`
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
+    })
 
     fsMocks.mkdir.mockResolvedValue(undefined)
     fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
@@ -431,6 +666,76 @@ describe('projectMake', () => {
     expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
   })
 
+  it('cleans up when a POSIX install cannot find the promoted managed executable', async () => {
+    const originalPlatform = process.platform
+
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    process.env['PATH'] = ''
+
+    const stagingRootPath = '/toolchains/.retrogbfull-make-stage'
+    const archiveName = 'make-4.4.1.tar.gz'
+    const archivePath = join(stagingRootPath, archiveName)
+    const extractRootPath = join(stagingRootPath, 'source')
+    const sourceRootPath = join(extractRootPath, 'make-4.4.1')
+    const stagedInstallPath = join(stagingRootPath, 'install')
+    let installationPromoted = false
+
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      text: async () => `<a href="${archiveName}">${archiveName}</a>`
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
+    })
+
+    fsMocks.stat.mockRejectedValue(new Error('missing'))
+    fsMocks.mkdir.mockResolvedValue(undefined)
+    fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
+    fsMocks.writeFile.mockResolvedValue(undefined)
+    fsMocks.rm.mockResolvedValue(undefined)
+    fsMocks.rename.mockImplementation(async (fromPath: string, toPath: string) => {
+      if (fromPath === stagedInstallPath && toPath === INSTALL_PATH) {
+        installationPromoted = true
+        return
+      }
+
+      throw new Error(`Unexpected rename from ${fromPath} to ${toPath}`)
+    })
+    fsMocks.readdir.mockImplementation(async (targetPath: string) => {
+      if (targetPath === extractRootPath) {
+        return [
+          {
+            name: 'make-4.4.1',
+            isDirectory: () => true,
+            isFile: () => false
+          }
+        ]
+      }
+
+      if (targetPath === INSTALL_PATH && installationPromoted) {
+        return []
+      }
+
+      throw new Error(`Missing directory: ${targetPath}`)
+    })
+    spawnMock.mockImplementation(() => createSuccessfulChild('build ok\n'))
+
+    try {
+      await expect(installLatestMakeToolchain()).rejects.toThrow(
+        'GNU Make was installed, but the managed executable could not be found afterwards.'
+      )
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+
+    expect(tarExtractMock).toHaveBeenCalledWith({
+      cwd: extractRootPath,
+      file: archivePath,
+      gzip: true
+    })
+    expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
+  })
+
   it('cleans up and reports when automatic installation is unavailable on the current platform', async () => {
     const originalPlatform = process.platform
     const stagingRootPath = '/toolchains/.retrogbfull-make-stage'
@@ -441,15 +746,13 @@ describe('projectMake', () => {
     Object.defineProperty(process, 'platform', { value: 'freebsd' })
     process.env['PATH'] = ''
 
-    FETCH_MOCK
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => `<a href="${archiveName}">${archiveName}</a>`
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
-      })
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      text: async () => `<a href="${archiveName}">${archiveName}</a>`
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
+    })
 
     fsMocks.stat.mockRejectedValue(new Error('missing'))
     fsMocks.mkdir.mockResolvedValue(undefined)

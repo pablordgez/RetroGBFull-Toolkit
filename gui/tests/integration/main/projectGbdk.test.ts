@@ -86,7 +86,9 @@ const getRuntimeReleaseAssetName = (): string => {
   const assetName = assetNamesByRuntime[`${process.platform}:${process.arch}`]
 
   if (!assetName) {
-    throw new Error(`Unsupported test runtime for projectGbdk.test.ts: ${process.platform}:${process.arch}`)
+    throw new Error(
+      `Unsupported test runtime for projectGbdk.test.ts: ${process.platform}:${process.arch}`
+    )
   }
 
   return assetName
@@ -171,13 +173,9 @@ describe('projectGbdk', () => {
     expect(selectGbdkReleaseAsset(assets, 'win32', 'x64').name).toBe('gbdk-win64.zip')
     expect(selectGbdkReleaseAsset(assets, 'win32', 'ia32').name).toBe('gbdk-win32.zip')
     expect(selectGbdkReleaseAsset(assets, 'linux', 'x64').name).toBe('gbdk-linux64.tar.gz')
-    expect(selectGbdkReleaseAsset(assets, 'linux', 'arm64').name).toBe(
-      'gbdk-linux-arm64.tar.gz'
-    )
+    expect(selectGbdkReleaseAsset(assets, 'linux', 'arm64').name).toBe('gbdk-linux-arm64.tar.gz')
     expect(selectGbdkReleaseAsset(assets, 'darwin', 'x64').name).toBe('gbdk-macos.tar.gz')
-    expect(selectGbdkReleaseAsset(assets, 'darwin', 'arm64').name).toBe(
-      'gbdk-macos-arm64.tar.gz'
-    )
+    expect(selectGbdkReleaseAsset(assets, 'darwin', 'arm64').name).toBe('gbdk-macos-arm64.tar.gz')
   })
 
   it('throws useful errors when the platform is unsupported or an asset is missing', () => {
@@ -218,6 +216,50 @@ describe('projectGbdk', () => {
     expect(status.message).toContain('GBDK is available')
   })
 
+  it('reports installed directories when metadata cannot be read', async () => {
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (
+        targetPath === INSTALL_PATH ||
+        targetPath === join(INSTALL_PATH, 'include') ||
+        targetPath === join(INSTALL_PATH, 'lib')
+      ) {
+        return createDirectoryStats()
+      }
+
+      if (targetPath === EXECUTABLE_PATH) {
+        return createFileStats()
+      }
+
+      throw new Error(`Unexpected stat path: ${targetPath}`)
+    })
+    fsMocks.readFile.mockRejectedValue(new Error('missing metadata'))
+
+    const status = await getGbdkToolchainStatus()
+
+    expect(status.installed).toBe(true)
+    expect(status.version).toBeNull()
+  })
+
+  it('reports invalid gbdk directories as missing without reading metadata', async () => {
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (targetPath === INSTALL_PATH || targetPath === join(INSTALL_PATH, 'lib')) {
+        return createDirectoryStats()
+      }
+
+      if (targetPath === join(INSTALL_PATH, 'include') || targetPath === EXECUTABLE_PATH) {
+        return createFileStats()
+      }
+
+      throw new Error(`Unexpected stat path: ${targetPath}`)
+    })
+
+    const status = await getGbdkToolchainStatus()
+
+    expect(status.installed).toBe(false)
+    expect(status.version).toBeNull()
+    expect(fsMocks.readFile).not.toHaveBeenCalled()
+  })
+
   it('downloads, extracts, and installs the latest toolchain release', async () => {
     const releaseTag = 'gbdk-4.5.0'
     const assetName = getRuntimeReleaseAssetName()
@@ -239,28 +281,32 @@ describe('projectGbdk', () => {
         return createDirectoryStats()
       }
 
-      if (targetPath === join(extractRootPath, 'bin', process.platform === 'win32' ? 'lcc.exe' : 'lcc')) {
+      if (
+        targetPath ===
+        join(extractRootPath, 'bin', process.platform === 'win32' ? 'lcc.exe' : 'lcc')
+      ) {
         return createFileStats()
       }
 
       throw new Error(`Missing path: ${targetPath}`)
     })
-    FETCH_MOCK
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          tag_name: releaseTag,
-          assets: [
-            { name: assetName, browser_download_url: `https://example.com/${assetName}` },
-            { name: 'gbdk-win64.zip', browser_download_url: 'https://example.com/gbdk-win64.zip' },
-            { name: 'gbdk-linux64.tar.gz', browser_download_url: 'https://example.com/gbdk-linux64.tar.gz' }
-          ]
-        })
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        tag_name: releaseTag,
+        assets: [
+          { name: assetName, browser_download_url: `https://example.com/${assetName}` },
+          { name: 'gbdk-win64.zip', browser_download_url: 'https://example.com/gbdk-win64.zip' },
+          {
+            name: 'gbdk-linux64.tar.gz',
+            browser_download_url: 'https://example.com/gbdk-linux64.tar.gz'
+          }
+        ]
       })
-      .mockResolvedValueOnce({
-        ok: true,
-        arrayBuffer: async () => Uint8Array.from([1, 2, 3, 4]).buffer
-      })
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3, 4]).buffer
+    })
 
     const result = await installLatestGbdkToolchain()
 
@@ -296,6 +342,167 @@ describe('projectGbdk', () => {
     expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
   })
 
+  it('reports when the latest release metadata cannot be fetched', async () => {
+    const stagingRootPath = '/toolchains/.retrogbfull-gbdk-stage'
+
+    fsMocks.mkdir.mockResolvedValue(undefined)
+    fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
+    fsMocks.rm.mockResolvedValue(undefined)
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable'
+    })
+
+    await expect(installLatestGbdkToolchain()).rejects.toThrow(
+      'Could not fetch the latest GBDK release from GitHub. (503 Service Unavailable)'
+    )
+    expect(fsMocks.writeFile).not.toHaveBeenCalled()
+  })
+
+  it('cleans up when the release archive download fails', async () => {
+    const releaseTag = 'gbdk-4.5.2'
+    const assetName = getRuntimeReleaseAssetName()
+    const stagingRootPath = '/toolchains/.retrogbfull-gbdk-stage'
+
+    fsMocks.mkdir.mockResolvedValue(undefined)
+    fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
+    fsMocks.writeFile.mockResolvedValue(undefined)
+    fsMocks.rm.mockResolvedValue(undefined)
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        tag_name: releaseTag,
+        assets: [{ name: assetName, browser_download_url: `https://example.com/${assetName}` }]
+      })
+    }).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found'
+    })
+
+    await expect(installLatestGbdkToolchain()).rejects.toThrow(
+      `Could not download ${assetName} from GitHub. (404 Not Found)`
+    )
+    expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
+  })
+
+  it('installs a valid gbdk directory nested inside the extracted archive', async () => {
+    const releaseTag = 'gbdk-4.5.4'
+    const assetName = getRuntimeReleaseAssetName()
+    const stagingRootPath = '/toolchains/.retrogbfull-gbdk-stage'
+    const extractRootPath = join(stagingRootPath, 'extracted')
+    const nestedGbdkPath = join(extractRootPath, 'gbdk')
+
+    fsMocks.mkdir.mockResolvedValue(undefined)
+    fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
+    fsMocks.writeFile.mockResolvedValue(undefined)
+    fsMocks.rename.mockResolvedValue(undefined)
+    fsMocks.rm.mockResolvedValue(undefined)
+    fsMocks.readdir.mockImplementation(async (targetPath: string) => {
+      if (targetPath === extractRootPath) {
+        return [
+          {
+            name: 'README.txt',
+            isDirectory: () => false,
+            isFile: () => true
+          },
+          {
+            name: 'gbdk',
+            isDirectory: () => true,
+            isFile: () => false
+          }
+        ]
+      }
+
+      throw new Error(`Missing directory: ${targetPath}`)
+    })
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (targetPath === extractRootPath) {
+        return createDirectoryStats()
+      }
+
+      if (
+        targetPath === nestedGbdkPath ||
+        targetPath === join(nestedGbdkPath, 'include') ||
+        targetPath === join(nestedGbdkPath, 'lib')
+      ) {
+        return createDirectoryStats()
+      }
+
+      if (
+        targetPath === join(nestedGbdkPath, 'bin', process.platform === 'win32' ? 'lcc.exe' : 'lcc')
+      ) {
+        return createFileStats()
+      }
+
+      throw new Error(`Missing path: ${targetPath}`)
+    })
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        tag_name: releaseTag,
+        assets: [{ name: assetName, browser_download_url: `https://example.com/${assetName}` }]
+      })
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
+    })
+
+    const result = await installLatestGbdkToolchain()
+
+    expect(result.installed).toBe(true)
+    expect(fsMocks.rename).toHaveBeenCalledWith(nestedGbdkPath, INSTALL_PATH)
+  })
+
+  it('cleans up when the extracted gbdk archive has no valid toolchain root', async () => {
+    const releaseTag = 'gbdk-4.5.5'
+    const assetName = getRuntimeReleaseAssetName()
+    const stagingRootPath = '/toolchains/.retrogbfull-gbdk-stage'
+    const extractRootPath = join(stagingRootPath, 'extracted')
+    const nestedDirectoryPath = join(extractRootPath, 'docs')
+
+    fsMocks.mkdir.mockResolvedValue(undefined)
+    fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
+    fsMocks.writeFile.mockResolvedValue(undefined)
+    fsMocks.rm.mockResolvedValue(undefined)
+    fsMocks.readdir.mockImplementation(async (targetPath: string) => {
+      if (targetPath === extractRootPath) {
+        return [
+          {
+            name: 'docs',
+            isDirectory: () => true,
+            isFile: () => false
+          }
+        ]
+      }
+
+      throw new Error(`Missing directory: ${targetPath}`)
+    })
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (targetPath === extractRootPath || targetPath === nestedDirectoryPath) {
+        return createDirectoryStats()
+      }
+
+      throw new Error(`Missing path: ${targetPath}`)
+    })
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        tag_name: releaseTag,
+        assets: [{ name: assetName, browser_download_url: `https://example.com/${assetName}` }]
+      })
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
+    })
+
+    await expect(installLatestGbdkToolchain()).rejects.toThrow(
+      'The downloaded GBDK archive did not contain a valid toolchain directory.'
+    )
+    expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
+  })
+
   it('reports when the install replaced an existing managed toolchain', async () => {
     const releaseTag = 'gbdk-4.5.1'
     const assetName = getRuntimeReleaseAssetName()
@@ -317,24 +524,25 @@ describe('projectGbdk', () => {
         return createDirectoryStats()
       }
 
-      if (targetPath === join(extractRootPath, 'bin', process.platform === 'win32' ? 'lcc.exe' : 'lcc')) {
+      if (
+        targetPath ===
+        join(extractRootPath, 'bin', process.platform === 'win32' ? 'lcc.exe' : 'lcc')
+      ) {
         return createFileStats()
       }
 
       throw new Error(`Missing path: ${targetPath}`)
     })
-    FETCH_MOCK
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          tag_name: releaseTag,
-          assets: [{ name: assetName, browser_download_url: `https://example.com/${assetName}` }]
-        })
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        tag_name: releaseTag,
+        assets: [{ name: assetName, browser_download_url: `https://example.com/${assetName}` }]
       })
-      .mockResolvedValueOnce({
-        ok: true,
-        arrayBuffer: async () => Uint8Array.from([9, 8, 7]).buffer
-      })
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([9, 8, 7]).buffer
+    })
 
     const result = await installLatestGbdkToolchain()
 
@@ -345,5 +553,82 @@ describe('projectGbdk', () => {
       expect.stringContaining('.retrogbfull-gbdk-backup-')
     )
     expect(fsMocks.rename).toHaveBeenNthCalledWith(2, extractRootPath, INSTALL_PATH)
+  })
+
+  it('restores the previous managed install when promotion fails', async () => {
+    const releaseTag = 'gbdk-4.5.3'
+    const assetName = getRuntimeReleaseAssetName()
+    const stagingRootPath = '/toolchains/.retrogbfull-gbdk-stage'
+    const extractRootPath = join(stagingRootPath, 'extracted')
+    let installMovedToBackup = false
+
+    fsMocks.mkdir.mockResolvedValue(undefined)
+    fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
+    fsMocks.writeFile.mockResolvedValue(undefined)
+    fsMocks.rm.mockResolvedValue(undefined)
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (targetPath === INSTALL_PATH) {
+        if (installMovedToBackup) {
+          throw new Error('install moved')
+        }
+
+        return createDirectoryStats()
+      }
+
+      if (
+        targetPath === extractRootPath ||
+        targetPath === join(extractRootPath, 'include') ||
+        targetPath === join(extractRootPath, 'lib')
+      ) {
+        return createDirectoryStats()
+      }
+
+      if (
+        targetPath ===
+        join(extractRootPath, 'bin', process.platform === 'win32' ? 'lcc.exe' : 'lcc')
+      ) {
+        return createFileStats()
+      }
+
+      if (targetPath.includes('.retrogbfull-gbdk-backup-') && installMovedToBackup) {
+        return createDirectoryStats()
+      }
+
+      throw new Error(`Missing path: ${targetPath}`)
+    })
+    fsMocks.rename.mockImplementation(async (fromPath: string, toPath: string) => {
+      if (fromPath === INSTALL_PATH && toPath.includes('.retrogbfull-gbdk-backup-')) {
+        installMovedToBackup = true
+        return
+      }
+
+      if (fromPath === extractRootPath && toPath === INSTALL_PATH) {
+        throw new Error('promotion failed')
+      }
+
+      if (fromPath.includes('.retrogbfull-gbdk-backup-') && toPath === INSTALL_PATH) {
+        installMovedToBackup = false
+        return
+      }
+
+      throw new Error(`Unexpected rename from ${fromPath} to ${toPath}`)
+    })
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        tag_name: releaseTag,
+        assets: [{ name: assetName, browser_download_url: `https://example.com/${assetName}` }]
+      })
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
+    })
+
+    await expect(installLatestGbdkToolchain()).rejects.toThrow('promotion failed')
+    expect(fsMocks.rename).toHaveBeenCalledWith(
+      expect.stringContaining('.retrogbfull-gbdk-backup-'),
+      INSTALL_PATH
+    )
+    expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
   })
 })
