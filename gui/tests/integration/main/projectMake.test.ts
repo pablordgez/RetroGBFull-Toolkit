@@ -791,6 +791,217 @@ describe('projectMake', () => {
     expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
   })
 
+  it('retries the Windows managed make build with GCC when the MSVC flow fails', async () => {
+    const originalPlatform = process.platform
+
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    process.env['PATH'] = '/mingw/bin'
+
+    const stagingRootPath = '/toolchains/.retrogbfull-make-stage'
+    const archiveName = 'make-4.4.1.tar.gz'
+    const archivePath = join(stagingRootPath, archiveName)
+    const extractRootPath = join(stagingRootPath, 'source')
+    const sourceRootPath = join(extractRootPath, 'make-4.4.1')
+    const stagedInstallPath = join(stagingRootPath, 'install')
+    const stagedManagedExecutablePath = join(stagedInstallPath, 'bin', 'make.exe')
+    const installedManagedExecutablePath = join(INSTALL_PATH, 'bin', 'make.exe')
+    const gccBuiltExecutablePath = join(sourceRootPath, 'GccRel', 'gnumake.exe')
+    let installationPromoted = false
+
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      text: async () => `<a href="${archiveName}">${archiveName}</a>`
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
+    })
+
+    fsMocks.mkdir.mockResolvedValue(undefined)
+    fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
+    fsMocks.writeFile.mockResolvedValue(undefined)
+    fsMocks.copyFile.mockResolvedValue(undefined)
+    fsMocks.rm.mockResolvedValue(undefined)
+    fsMocks.rename.mockImplementation(async (fromPath: string, toPath: string) => {
+      if (fromPath === stagedInstallPath && toPath === INSTALL_PATH) {
+        installationPromoted = true
+        return
+      }
+
+      throw new Error(`Unexpected rename from ${fromPath} to ${toPath}`)
+    })
+    fsMocks.readdir.mockImplementation(async (targetPath: string) => {
+      if (targetPath === extractRootPath) {
+        return [
+          {
+            name: 'make-4.4.1',
+            isDirectory: () => true,
+            isFile: () => false
+          }
+        ]
+      }
+
+      throw new Error(`Missing directory: ${targetPath}`)
+    })
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (
+        targetPath === join('/mingw/bin', 'gcc.exe') ||
+        targetPath === gccBuiltExecutablePath ||
+        targetPath === stagedManagedExecutablePath ||
+        (installationPromoted && targetPath === installedManagedExecutablePath)
+      ) {
+        return createFileStats()
+      }
+
+      throw new Error(`Missing path: ${targetPath}`)
+    })
+    spawnMock.mockImplementation((command: string, args: string[]) => {
+      if (args.includes('--version')) {
+        return createSuccessfulChild('GNU Make 4.4.1\n')
+      }
+
+      if (args.includes('gcc')) {
+        return createSuccessfulChild('gcc build ok\n')
+      }
+
+      return createErroredChild(new Error('MSVC build failed'))
+    })
+
+    try {
+      const result = await installLatestMakeToolchain()
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          installed: true,
+          installPath: INSTALL_PATH,
+          executablePath: installedManagedExecutablePath,
+          version: '4.4.1',
+          releaseVersion: '4.4.1',
+          archiveName,
+          replacedExisting: false
+        })
+      )
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+
+    expect(tarExtractMock).toHaveBeenCalledWith({
+      cwd: extractRootPath,
+      file: archivePath,
+      gzip: true
+    })
+    expect(spawnMock).toHaveBeenCalledWith(
+      'cmd.exe',
+      ['/d', '/c', 'build_w32.bat', '--without-guile'],
+      {
+        cwd: sourceRootPath,
+        shell: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
+      }
+    )
+    expect(spawnMock).toHaveBeenCalledWith(
+      'cmd.exe',
+      ['/d', '/c', 'build_w32.bat', '--without-guile', 'gcc'],
+      {
+        cwd: sourceRootPath,
+        shell: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
+      }
+    )
+    expect(fsMocks.copyFile).toHaveBeenCalledWith(
+      gccBuiltExecutablePath,
+      join(stagedInstallPath, 'bin', 'gnumake.exe')
+    )
+    expect(fsMocks.copyFile).toHaveBeenCalledWith(
+      gccBuiltExecutablePath,
+      join(stagedInstallPath, 'bin', 'make.exe')
+    )
+    expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
+  })
+
+  it('reports Windows build output when no GNU Make executable is produced', async () => {
+    const originalPlatform = process.platform
+
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    process.env['PATH'] = '/mingw/bin'
+
+    const stagingRootPath = '/toolchains/.retrogbfull-make-stage'
+    const archiveName = 'make-4.4.1.tar.gz'
+    const archivePath = join(stagingRootPath, archiveName)
+    const extractRootPath = join(stagingRootPath, 'source')
+    const sourceRootPath = join(extractRootPath, 'make-4.4.1')
+
+    FETCH_MOCK.mockResolvedValueOnce({
+      ok: true,
+      text: async () => `<a href="${archiveName}">${archiveName}</a>`
+    }).mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer
+    })
+
+    fsMocks.mkdir.mockResolvedValue(undefined)
+    fsMocks.mkdtemp.mockResolvedValue(stagingRootPath)
+    fsMocks.writeFile.mockResolvedValue(undefined)
+    fsMocks.rm.mockResolvedValue(undefined)
+    fsMocks.stat.mockImplementation(async (targetPath: string) => {
+      if (targetPath === join('/mingw/bin', 'gcc.exe')) {
+        return createFileStats()
+      }
+
+      throw new Error(`Missing path: ${targetPath}`)
+    })
+    fsMocks.readdir.mockImplementation(async (targetPath: string) => {
+      if (targetPath === extractRootPath) {
+        return [
+          {
+            name: 'make-4.4.1',
+            isDirectory: () => true,
+            isFile: () => false
+          }
+        ]
+      }
+
+      if (targetPath === sourceRootPath) {
+        return []
+      }
+
+      throw new Error(`Missing directory: ${targetPath}`)
+    })
+    spawnMock.mockImplementation((command: string, args: string[]) => {
+      if (args.includes('gcc')) {
+        return createSuccessfulChild('gcc build finished without an executable\n')
+      }
+
+      return createErroredChild(new Error('MSVC build failed'))
+    })
+
+    try {
+      await expect(installLatestMakeToolchain()).rejects.toThrow(
+        'GNU Make finished building, but the expected Windows executable was not found.'
+      )
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+
+    expect(tarExtractMock).toHaveBeenCalledWith({
+      cwd: extractRootPath,
+      file: archivePath,
+      gzip: true
+    })
+    expect(spawnMock).toHaveBeenCalledWith(
+      'cmd.exe',
+      ['/d', '/c', 'build_w32.bat', '--without-guile', 'gcc'],
+      {
+        cwd: sourceRootPath,
+        shell: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
+      }
+    )
+    expect(fsMocks.rm).toHaveBeenCalledWith(stagingRootPath, { recursive: true, force: true })
+  })
+
   it('cleans up when a POSIX install cannot find the promoted managed executable', async () => {
     const originalPlatform = process.platform
 
