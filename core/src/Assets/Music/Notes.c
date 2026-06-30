@@ -1,4 +1,3 @@
-#pragma bank 255
 #include "Notes.h"
 
 const uint16_t NOTE_FREQUENCIES[] = {

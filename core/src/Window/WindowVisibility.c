@@ -11,8 +11,10 @@ typedef struct {
 
 static WindowVisibilityBand window_visibility_bands[WINDOW_VISIBILITY_MAX_BANDS];
 static WindowVisibilityBand window_visibility_merged_bands[WINDOW_VISIBILITY_MAX_BANDS];
+static WindowVisibilityBand window_visibility_applied_bands[WINDOW_VISIBILITY_MAX_BANDS];
 static uint8_t window_visibility_band_count = 0;
 static uint8_t window_visibility_merged_count = 0;
+static uint8_t window_visibility_applied_count = 0;
 
 // Hardware WX is biased by 7 pixels: WX_REG 7 places the window at screen X 0.
 #define WINDOW_VISIBILITY_VISIBLE_WX 7
@@ -20,12 +22,13 @@ static uint8_t window_visibility_merged_count = 0;
 #define WINDOW_VISIBILITY_STAT_MODE_MASK 0x03U
 
 static void window_visibility_vblank_isr(void) NONBANKED{
-    if(window_visibility_merged_count != 0){
-        WY_REG = window_visibility_merged_bands[0].start_ly;
+    if(window_visibility_applied_count != 0){
+        WY_REG = window_visibility_applied_bands[0].start_ly;
         WX_REG = WINDOW_VISIBILITY_VISIBLE_WX;
         SHOW_WIN;
     } else{
         WY_REG = 0;
+        WX_REG = WINDOW_VISIBILITY_HIDDEN_WX;
         HIDE_WIN;
     }
 }
@@ -54,6 +57,7 @@ static void window_visibility_clear_interrupts(void){
 void init_window_visibility_system(void) BANKED{
     window_visibility_band_count = 0;
     window_visibility_merged_count = 0;
+    window_visibility_applied_count = 0;
     window_visibility_clear_interrupts();
     WX_REG = WINDOW_VISIBILITY_HIDDEN_WX;
     WY_REG = 0;
@@ -141,6 +145,33 @@ static void window_visibility_merge_bands(void){
     }
 }
 
+static uint8_t window_visibility_matches_applied_bands(void){
+    uint8_t band_index;
+
+    if(window_visibility_merged_count != window_visibility_applied_count){
+        return 0;
+    }
+
+    for(band_index = 0; band_index < window_visibility_merged_count; band_index++){
+        if(window_visibility_merged_bands[band_index].start_ly != window_visibility_applied_bands[band_index].start_ly ||
+            window_visibility_merged_bands[band_index].end_ly != window_visibility_applied_bands[band_index].end_ly
+        ){
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static void window_visibility_save_applied_bands(void){
+    uint8_t band_index;
+
+    window_visibility_applied_count = window_visibility_merged_count;
+    for(band_index = 0; band_index < window_visibility_merged_count; band_index++){
+        window_visibility_applied_bands[band_index] = window_visibility_merged_bands[band_index];
+    }
+}
+
 static uint8_t window_visibility_hblank_transition_ly(uint8_t target_ly) NONBANKED{
     return target_ly > 1U ? (uint8_t)(target_ly - 2U) : 0;
 }
@@ -148,15 +179,20 @@ static uint8_t window_visibility_hblank_transition_ly(uint8_t target_ly) NONBANK
 uint8_t window_visibility_apply(void) BANKED{
     uint8_t band_index;
 
-    window_visibility_clear_interrupts();
     window_visibility_merge_bands();
 
-    if(window_visibility_merged_count == 0){
-        HIDE_WIN;
+    if(window_visibility_matches_applied_bands()){
         return 1;
     }
 
-    add_vblank_interrupt_callback(window_visibility_vblank_isr);
+    window_visibility_clear_interrupts();
+
+    if(window_visibility_merged_count == 0){
+        WX_REG = WINDOW_VISIBILITY_HIDDEN_WX;
+        HIDE_WIN;
+        window_visibility_applied_count = 0;
+        return 1;
+    }
 
     for(band_index = 0; band_index < window_visibility_merged_count; band_index++){
         WindowVisibilityBand* band = &window_visibility_merged_bands[band_index];
@@ -170,6 +206,7 @@ uint8_t window_visibility_apply(void) BANKED{
         ){
             window_visibility_clear_interrupts();
             HIDE_WIN;
+            window_visibility_applied_count = 0;
             return 0;
         }
 
@@ -182,6 +219,7 @@ uint8_t window_visibility_apply(void) BANKED{
         ){
             window_visibility_clear_interrupts();
             HIDE_WIN;
+            window_visibility_applied_count = 0;
             return 0;
         }
     }
@@ -189,6 +227,8 @@ uint8_t window_visibility_apply(void) BANKED{
     WY_REG = window_visibility_merged_bands[0].start_ly;
     WX_REG = WINDOW_VISIBILITY_VISIBLE_WX;
     SHOW_WIN;
+    window_visibility_save_applied_bands();
+    add_vblank_interrupt_callback(window_visibility_vblank_isr);
 
     return 1;
 }

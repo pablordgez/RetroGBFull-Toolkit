@@ -78,15 +78,16 @@ uint8_t vwf_print_render(const unsigned char ch) {
 
         if (vwf_current_offset > 7u) {
             vwf_current_offset -= 8u;
-            set_bkg_1bpp_data(vwf_current_tile, (vwf_current_offset) ? 2 : 1, vwf_tile_data);
+            if (vwf_mode & VWF_MODE_TILES) set_bkg_1bpp_data(vwf_current_tile, (vwf_current_offset) ? 2 : 1, vwf_tile_data);
             vwf_current_tile++;
             vwf_swap_tiles();
             return TRUE;
         };
-        set_bkg_1bpp_data(vwf_current_tile, 1, vwf_tile_data);
+        if (vwf_mode & VWF_MODE_TILES) set_bkg_1bpp_data(vwf_current_tile, 1, vwf_tile_data);
         return FALSE;
     } else {
-        vwf_set_banked_data(vwf_current_tile++, 1, bitmap, vwf_current_font_bank);
+        if (vwf_mode & VWF_MODE_TILES) vwf_set_banked_data(vwf_current_tile, 1, bitmap, vwf_current_font_bank);
+        vwf_current_tile++;
         vwf_current_offset = 0;
         return TRUE;
     }
@@ -135,10 +136,10 @@ uint8_t vwf_draw_text_y_offset_banked(uint8_t x, uint8_t y, uint8_t base_tile, c
                 break; 
             default:
                 if (vwf_print_render(ch)) {
-                    if (vwf_mode & VWF_MODE_PRINT) set_vram_byte(ui_dest_ptr, vwf_current_tile - 1);
+                    if (vwf_mode & VWF_MODE_TILEMAP) set_vram_byte(ui_dest_ptr, vwf_current_tile - 1);
                     ui_dest_ptr += DEVICE_SCREEN_MAP_ENTRY_SIZE;
                 }
-                if ((vwf_current_offset) && (vwf_mode & VWF_MODE_PRINT)) set_vram_byte(ui_dest_ptr, vwf_current_tile);
+                if ((vwf_current_offset) && (vwf_mode & VWF_MODE_TILEMAP)) set_vram_byte(ui_dest_ptr, vwf_current_tile);
                 break;
         }
         ui_text_ptr++;

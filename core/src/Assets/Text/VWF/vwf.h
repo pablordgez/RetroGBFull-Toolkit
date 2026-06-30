@@ -11,8 +11,11 @@
 #define RECODE_7BIT 1
 #define FONT_VWF 2
 
-#define VWF_MODE_RENDER 0
-#define VWF_MODE_PRINT 1
+#define VWF_MODE_TILEMAP 1
+#define VWF_MODE_TILES 2
+#define VWF_MODE_RENDER VWF_MODE_TILES
+#define VWF_MODE_PRINT_ONLY VWF_MODE_TILEMAP
+#define VWF_MODE_PRINT (VWF_MODE_TILEMAP | VWF_MODE_TILES)
 
 typedef struct vwf_farptr_t {
     UINT8 bank;

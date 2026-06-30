@@ -176,6 +176,41 @@ static void update_channel_sequence(uint8_t channel) NONBANKED{
     }
 }
 
+static uint8_t find_channel_sequence_end_banked(const Pattern* const* sequence, uint8_t sequence_length, uint8_t bank, uint8_t* trimmed_sequence_length, uint8_t* end_step) NONBANKED{
+    uint8_t prev_bank;
+    uint8_t local_sequence_length = sequence_length;
+    uint8_t step_index = 0;
+    uint8_t found_sound = 0;
+    const Pattern* pattern;
+
+    prev_bank = _current_bank;
+    SWITCH_ROM(bank);
+
+    while(local_sequence_length != 0 && found_sound == 0){
+        pattern = sequence[(uint8_t)(local_sequence_length - 1U)];
+        if(pattern != NULL){
+            step_index = PATTERN_LENGTH;
+            while(step_index != 0){
+                step_index--;
+                if(pattern->steps[step_index].note_index != NOTE_REST){
+                    found_sound = 1;
+                    break;
+                }
+            }
+        }
+
+        if(found_sound == 0){
+            local_sequence_length--;
+        }
+    }
+
+    SWITCH_ROM(prev_bank);
+
+    *trimmed_sequence_length = local_sequence_length;
+    *end_step = step_index;
+    return found_sound;
+}
+
 static void music_timer_callback(void) NONBANKED{
     if(current_song != NULL && current_song_paused == 0){
         current_tick++;
@@ -366,11 +401,8 @@ void stop_music(void) NONBANKED {
 
 void play_music_channel_sequence_banked(MusicChannel channel, const Pattern* const* sequence, uint8_t sequence_length, const Instrument* instruments, uint8_t speed, uint8_t bank) BANKED {
     ChannelSequence* channel_sequence;
-    uint8_t prev_bank;
     uint8_t trimmed_sequence_length;
     uint8_t step_index = 0;
-    uint8_t found_sound = 0;
-    const Pattern* pattern;
 
     if(channel >= MUSIC_CHANNEL_COUNT){
         return;
@@ -387,31 +419,7 @@ void play_music_channel_sequence_banked(MusicChannel channel, const Pattern* con
     NR51_REG = 0xFF;
     NR50_REG = 0x77;
 
-    prev_bank = _current_bank;
-    SWITCH_ROM(bank);
-    trimmed_sequence_length = sequence_length;
-
-    while(trimmed_sequence_length != 0 && found_sound == 0){
-        pattern = sequence[(uint8_t)(trimmed_sequence_length - 1U)];
-        if(pattern != NULL){
-            step_index = PATTERN_LENGTH;
-            while(step_index != 0){
-                step_index--;
-                if(pattern->steps[step_index].note_index != NOTE_REST){
-                    found_sound = 1;
-                    break;
-                }
-            }
-        }
-
-        if(found_sound == 0){
-            trimmed_sequence_length--;
-        }
-    }
-
-    SWITCH_ROM(prev_bank);
-
-    if(found_sound == 0){
+    if(find_channel_sequence_end_banked(sequence, sequence_length, bank, &trimmed_sequence_length, &step_index) == 0){
         channel_sequences[channel].active = 0;
         restore_music_channel(channel);
         if((current_song != NULL && current_song_paused == 0) || any_channel_sequence_active()){
