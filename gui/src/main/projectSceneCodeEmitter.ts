@@ -171,7 +171,8 @@ const addSceneCoordinate = (value: number, offset: number): number => {
 }
 
 const buildScriptPropertyValueExpression = (
-  actorName: string,
+  ownerKind: 'Actor' | 'Scene',
+  ownerName: string,
   propertyName: string,
   value: ScriptPropertyValue,
   spriteAssetsByPath: Map<string, ProjectAssetRecordLike>
@@ -196,7 +197,7 @@ const buildScriptPropertyValueExpression = (
 
   if (value.toLowerCase().endsWith('.rgbsprite.json')) {
     throw new ProjectLauncherError(
-      `Actor "${actorName}" script property "${propertyName}" references a missing sprite resource: ${value}`
+      `${ownerKind} "${ownerName}" script property "${propertyName}" references a missing sprite resource: ${value}`
     )
   }
 
@@ -205,7 +206,7 @@ const buildScriptPropertyValueExpression = (
   }
 
   throw new ProjectLauncherError(
-    `Actor "${actorName}" script property "${propertyName}" has an unsupported value: ${value}`
+    `${ownerKind} "${ownerName}" script property "${propertyName}" has an unsupported value: ${value}`
   )
 }
 
@@ -235,6 +236,7 @@ const emitActorScriptProperties = (
 
     lines.push(
       `    ((${actorType}*) ${actorVariable})->${propertyName} = ${buildScriptPropertyValueExpression(
+        'Actor',
         node.name,
         propertyName,
         propertyValue,
@@ -242,6 +244,40 @@ const emitActorScriptProperties = (
       )};`
     )
   }
+}
+
+export const buildSceneScriptPropertyAssignmentLines = (
+  scene: ProjectAssetRecordLike,
+  sceneType: string | null,
+  spriteAssetsByPath: Map<string, ProjectAssetRecordLike> = new Map()
+): string[] => {
+  if (!sceneType) {
+    return []
+  }
+
+  const document = scene.document as SceneAssetDocument
+
+  if (!document.scriptProperties) {
+    return []
+  }
+
+  return (Object.entries(document.scriptProperties) as Array<[string, ScriptPropertyValue]>)
+    .filter(([propertyName]) => propertyName !== 'base')
+    .map(([propertyName, propertyValue]) => {
+      if (!C_IDENTIFIER_PATTERN.test(propertyName)) {
+        throw new ProjectLauncherError(
+          `Scene "${scene.name}" has an invalid script property name: ${propertyName}`
+        )
+      }
+
+      return `    ((${sceneType}*) THIS_SCENE)->${propertyName} = ${buildScriptPropertyValueExpression(
+        'Scene',
+        scene.name,
+        propertyName,
+        propertyValue,
+        spriteAssetsByPath
+      )};`
+    })
 }
 
 // builds a function that generates code for an editor scene node and its children

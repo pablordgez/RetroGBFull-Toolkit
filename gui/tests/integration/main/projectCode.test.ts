@@ -877,11 +877,35 @@ describe('projectCode integration', () => {
 
     const loadedScene = await loadProjectAssetFile(project.path, scene.resourcePath)
     const loadedTilemap = await loadProjectAssetFile(project.path, tilemap.resourcePath)
+    const loadedSceneScript = await loadProjectScriptResource(
+      project.path,
+      sceneScript.resourcePath,
+      'scene'
+    )
 
     if (loadedScene.document.kind !== 'scene' || loadedTilemap.document.kind !== 'tilemap') {
       throw new Error('Expected scene and tilemap documents.')
     }
 
+    await saveProjectScriptResource(
+      project.path,
+      sceneScript.resourcePath,
+      'scene',
+      loadedSceneScript.editableSourceContent,
+      [
+        '#ifndef ROOMLOGIC_H',
+        '#define ROOMLOGIC_H',
+        '#include "Scene/Scene.h"',
+        '',
+        'typedef struct {',
+        '    Scene base;',
+        '    uint8_t gravity;',
+        '} RoomLogic;',
+        '',
+        '#endif // ROOMLOGIC_H',
+        ''
+      ].join('\n')
+    )
     await saveProjectAssetFile(project.path, tilemap.resourcePath, {
       ...loadedTilemap.document,
       tilesetPath: tileset.resourcePath
@@ -889,7 +913,10 @@ describe('projectCode integration', () => {
     await saveProjectAssetFile(project.path, scene.resourcePath, {
       ...loadedScene.document,
       tilemapPath: tilemap.resourcePath,
-      scriptPath: sceneScript.resourcePath
+      scriptPath: sceneScript.resourcePath,
+      scriptProperties: {
+        gravity: 7
+      }
     })
     await updateProjectStartingScene(project.path, scene.resourcePath)
 
@@ -913,7 +940,14 @@ describe('projectCode integration', () => {
     expect(mainSource).toContain('Scene* ss = create_scene(_room);')
     expect(mainSource).toContain('set_scene(ss);')
     expect(roomLogicSource).toContain('// BEGIN GENERATED SCENE INITIALIZATION')
+    expect(roomLogicSource).toContain('((RoomLogic*) THIS_SCENE)->gravity = 7;')
     expect(roomLogicSource).toContain('set_scene_map(maps[dungeon]);')
+    expect(roomLogicSource.indexOf('init_scene(&scene->base);')).toBeLessThan(
+      roomLogicSource.indexOf('((RoomLogic*) THIS_SCENE)->gravity = 7;')
+    )
+    expect(roomLogicSource.indexOf('((RoomLogic*) THIS_SCENE)->gravity = 7;')).toBeLessThan(
+      roomLogicSource.indexOf('set_scene_map(maps[dungeon]);')
+    )
     expect(sceneRegistry).toContain('_SCENE_IMPL(room, RoomLogic)')
     expect(sceneRegistrySource).toContain('#include "CustomScenes/RoomLogic.h"')
     expect(sceneRegistrySource).toContain(
@@ -1102,6 +1136,11 @@ describe('projectCode integration', () => {
     const loadedSecondScene = await loadProjectAssetFile(project.path, secondScene.resourcePath)
     const loadedFirstTilemap = await loadProjectAssetFile(project.path, firstTilemap.resourcePath)
     const loadedSecondTilemap = await loadProjectAssetFile(project.path, secondTilemap.resourcePath)
+    const loadedSceneScript = await loadProjectScriptResource(
+      project.path,
+      sceneScript.resourcePath,
+      'scene'
+    )
 
     if (
       loadedFirstScene.document.kind !== 'scene' ||
@@ -1112,6 +1151,25 @@ describe('projectCode integration', () => {
       throw new Error('Expected scene and tilemap documents.')
     }
 
+    await saveProjectScriptResource(
+      project.path,
+      sceneScript.resourcePath,
+      'scene',
+      loadedSceneScript.editableSourceContent,
+      [
+        '#ifndef SHAREDROOMLOGIC_H',
+        '#define SHAREDROOMLOGIC_H',
+        '#include "Scene/Scene.h"',
+        '',
+        'typedef struct {',
+        '    Scene base;',
+        '    uint8_t room_number;',
+        '} SharedRoomLogic;',
+        '',
+        '#endif // SHAREDROOMLOGIC_H',
+        ''
+      ].join('\n')
+    )
     await saveProjectAssetFile(project.path, firstTilemap.resourcePath, {
       ...loadedFirstTilemap.document,
       tilesetPath: tileset.resourcePath
@@ -1123,12 +1181,18 @@ describe('projectCode integration', () => {
     await saveProjectAssetFile(project.path, firstScene.resourcePath, {
       ...loadedFirstScene.document,
       tilemapPath: firstTilemap.resourcePath,
-      scriptPath: sceneScript.resourcePath
+      scriptPath: sceneScript.resourcePath,
+      scriptProperties: {
+        room_number: 1
+      }
     })
     await saveProjectAssetFile(project.path, secondScene.resourcePath, {
       ...loadedSecondScene.document,
       tilemapPath: secondTilemap.resourcePath,
-      scriptPath: sceneScript.resourcePath
+      scriptPath: sceneScript.resourcePath,
+      scriptProperties: {
+        room_number: 2
+      }
     })
 
     await buildProjectCode(project.path)
@@ -1154,9 +1218,23 @@ describe('projectCode integration', () => {
     expect(firstSceneSource).toContain(
       'FAR_CALL(TO_FAR_PTR(scene_init_state_SharedRoomLogic, BANK(SharedRoomLogic_bankref)), RVoid_PVoid_BANKED);'
     )
+    expect(firstSceneSource).toContain('((first_room*) THIS_SCENE)->room_number = 1;')
+    expect(firstSceneSource.indexOf('((first_room*) THIS_SCENE)->room_number = 1;')).toBeLessThan(
+      firstSceneSource.indexOf(
+        'FAR_CALL(TO_FAR_PTR(scene_init_state_SharedRoomLogic, BANK(SharedRoomLogic_bankref)), RVoid_PVoid_BANKED);'
+      )
+    )
     expect(firstSceneSource).toContain('set_scene_map(maps[first_dungeon]);')
     expect(secondSceneSource).toContain(
       'FAR_CALL(TO_FAR_PTR(scene_init_state_SharedRoomLogic, BANK(SharedRoomLogic_bankref)), RVoid_PVoid_BANKED);'
+    )
+    expect(secondSceneSource).toContain('((second_room*) THIS_SCENE)->room_number = 2;')
+    expect(
+      secondSceneSource.indexOf('((second_room*) THIS_SCENE)->room_number = 2;')
+    ).toBeLessThan(
+      secondSceneSource.indexOf(
+        'FAR_CALL(TO_FAR_PTR(scene_init_state_SharedRoomLogic, BANK(SharedRoomLogic_bankref)), RVoid_PVoid_BANKED);'
+      )
     )
     expect(secondSceneSource).toContain('set_scene_map(maps[second_dungeon]);')
     expect(sceneRegistry).toContain('// BEGIN GENERATED SCENE REGISTRY ENTRIES')

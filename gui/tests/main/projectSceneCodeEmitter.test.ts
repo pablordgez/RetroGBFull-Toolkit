@@ -3,6 +3,7 @@ import { ProjectLauncherError } from '../../src/main/projectLauncherPrimitives'
 import type { ProjectAssetRecordLike } from '../../src/main/projectBuildCodeTypes'
 import type { ProjectScriptRecordResolved } from '../../src/main/projectCodeScripts'
 import {
+  buildSceneScriptPropertyAssignmentLines,
   buildSceneInitializationLines,
   createNodeEmitter
 } from '../../src/main/projectSceneCodeEmitter'
@@ -342,6 +343,70 @@ describe('projectSceneCodeEmitter', () => {
         vi.fn()
       )
     ).toThrow('Scene "Broken" references a missing window resource: missing')
+  })
+
+  it('emits scene script property assignments', () => {
+    const spriteAssets = new Map([
+      [
+        'background.rgbsprite.json',
+        asset(
+          'sprite',
+          'BackgroundSprite',
+          {
+            kind: 'sprite',
+            width: 8,
+            height: 8,
+            palette: ['#ffffff', '#aaaaaa', '#555555', '#000000']
+          },
+          2,
+          'background.rgbsprite.json'
+        )
+      ]
+    ])
+
+    expect(
+      buildSceneScriptPropertyAssignmentLines(
+        asset(
+          'scene',
+          'Room',
+          sceneDocument({
+            scriptProperties: {
+              gravity: 3,
+              storm: false,
+              background: 'background.rgbsprite.json',
+              mode: 'ROOM_MODE_DARK',
+              optional_background: null
+            }
+          })
+        ),
+        'RoomLogic',
+        spriteAssets
+      )
+    ).toEqual([
+      '    ((RoomLogic*) THIS_SCENE)->gravity = 3;',
+      '    ((RoomLogic*) THIS_SCENE)->storm = 0;',
+      '    ((RoomLogic*) THIS_SCENE)->background = (Animation*) animations[BackgroundSprite];',
+      '    ((RoomLogic*) THIS_SCENE)->mode = ROOM_MODE_DARK;',
+      '    ((RoomLogic*) THIS_SCENE)->optional_background = 0;'
+    ])
+
+    expect(() =>
+      buildSceneScriptPropertyAssignmentLines(
+        asset(
+          'scene',
+          'Room',
+          sceneDocument({
+            scriptProperties: {
+              background: 'missing.rgbsprite.json'
+            }
+          })
+        ),
+        'RoomLogic',
+        spriteAssets
+      )
+    ).toThrow(
+      'Scene "Room" script property "background" references a missing sprite resource: missing.rgbsprite.json'
+    )
   })
 
   it('emits window visibility bands for non-full windows', () => {

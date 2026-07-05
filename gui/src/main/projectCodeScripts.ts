@@ -407,7 +407,8 @@ export const buildManagedScriptedSceneFileContents = (
   bank: number,
   sceneScriptIdentifier: string,
   sceneScriptHeaderPath: string,
-  initializationLines: string[]
+  initializationLines: string[],
+  preInitializationLines: string[] = []
 ): { headerContent: string; sourceContent: string } => {
   const scriptIncludePath = sceneScriptHeaderPath.replace(/\\/g, '/').replace(/^src\//, '')
   const headerGuard = escapeHeaderGuardName(sceneIdentifier)
@@ -437,6 +438,7 @@ export const buildManagedScriptedSceneFileContents = (
       `void scene_update_${sceneScriptIdentifier}(void) BANKED;`,
       '',
       'void SINIT(void) BANKED{',
+      ...preInitializationLines,
       `    FAR_CALL(TO_FAR_PTR(scene_init_state_${sceneScriptIdentifier}, BANK(${sceneScriptIdentifier}_bankref)), RVoid_PVoid_BANKED);`,
       ...generatedInitializationBlock,
       '}',

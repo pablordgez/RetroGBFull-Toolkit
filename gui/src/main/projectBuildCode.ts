@@ -68,6 +68,7 @@ import {
 } from './projectCCodeEmitters'
 import {
   MANAGED_DEFAULT_ACTOR_IDENTIFIER,
+  buildSceneScriptPropertyAssignmentLines,
   buildSceneInitializationLines,
   createNodeEmitter
 } from './projectSceneCodeEmitter'
@@ -535,6 +536,15 @@ export const buildProjectCode = async (
 
   // build initialization lines for each scene and write CustomScenes files
   for (const sceneRecord of sceneRecords) {
+    const sceneScriptPropertyLines = buildSceneScriptPropertyAssignmentLines(
+      sceneRecord.asset,
+      sceneRecord.sceneScript
+        ? sceneRecord.usesManagedWrapper
+          ? sceneRecord.identifier
+          : sceneRecord.sceneScript.identifier
+        : null,
+      spriteAssetsByPath
+    )
     const initializationLines = buildSceneInitializationLines(
       sceneRecord.asset,
       tilemapAssetsByPath,
@@ -548,7 +558,7 @@ export const buildProjectCode = async (
         await rewriteScriptedSceneInitialization(
           normalizedProjectPath,
           sceneRecord.sceneScript,
-          initializationLines
+          [...sceneScriptPropertyLines, ...initializationLines]
         )
       )
       continue
@@ -560,7 +570,8 @@ export const buildProjectCode = async (
           sceneRecord.bank,
           sceneRecord.sceneScript.identifier,
           getProjectScriptHeaderPath(sceneRecord.sceneScript.path),
-          initializationLines
+          initializationLines,
+          sceneScriptPropertyLines
         )
       : buildManagedSceneFileContents(sceneRecord.identifier, sceneRecord.bank, initializationLines)
     if (!sceneRecord.sourcePath) {
