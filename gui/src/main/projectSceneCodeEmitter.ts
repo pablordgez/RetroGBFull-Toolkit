@@ -1,6 +1,7 @@
 import { ProjectLauncherError } from './projectLauncherPrimitives'
 import type { ProjectScriptRecordResolved } from './projectCodeScripts'
 import type { ProjectAssetRecordLike } from './projectBuildCodeTypes'
+import type { ScriptPropertyValue } from '../shared/projectScriptProperties'
 import {
   normalizeSceneCameraDeadzone,
   normalizeWindowVisibilityTileBands,
@@ -28,6 +29,8 @@ const PHYSICS_MODE_ENUM_BY_SCENE_VALUE: Record<SceneActorPhysicsMode, string> = 
   balanced: 'BALANCED',
   highFidelity: 'HIGH_FIDELITY'
 }
+
+const C_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 const findFirstSpritePalette = (
   nodes: SceneAssetNode[],
@@ -167,6 +170,80 @@ const addSceneCoordinate = (value: number, offset: number): number => {
   return Math.min(0xffff, Math.max(0, value + offset))
 }
 
+const buildScriptPropertyValueExpression = (
+  actorName: string,
+  propertyName: string,
+  value: ScriptPropertyValue,
+  spriteAssetsByPath: Map<string, ProjectAssetRecordLike>
+): string => {
+  if (value === null) {
+    return '0'
+  }
+
+  if (typeof value === 'number') {
+    return `${Math.trunc(value)}`
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? '1' : '0'
+  }
+
+  const spriteResource = spriteAssetsByPath.get(value)
+
+  if (spriteResource) {
+    return `(Animation*) animations[${spriteResource.identifier}]`
+  }
+
+  if (value.toLowerCase().endsWith('.rgbsprite.json')) {
+    throw new ProjectLauncherError(
+      `Actor "${actorName}" script property "${propertyName}" references a missing sprite resource: ${value}`
+    )
+  }
+
+  if (C_IDENTIFIER_PATTERN.test(value)) {
+    return value
+  }
+
+  throw new ProjectLauncherError(
+    `Actor "${actorName}" script property "${propertyName}" has an unsupported value: ${value}`
+  )
+}
+
+const emitActorScriptProperties = (
+  node: SceneAssetNode,
+  actorVariable: string,
+  actorType: string,
+  spriteAssetsByPath: Map<string, ProjectAssetRecordLike>,
+  lines: string[]
+): void => {
+  if (node.type !== 'actor' || !node.scriptProperties) {
+    return
+  }
+
+  for (const [propertyName, propertyValue] of Object.entries(node.scriptProperties) as Array<
+    [string, ScriptPropertyValue]
+  >) {
+    if (propertyName === 'base') {
+      continue
+    }
+
+    if (!C_IDENTIFIER_PATTERN.test(propertyName)) {
+      throw new ProjectLauncherError(
+        `Actor "${node.name}" has an invalid script property name: ${propertyName}`
+      )
+    }
+
+    lines.push(
+      `    ((${actorType}*) ${actorVariable})->${propertyName} = ${buildScriptPropertyValueExpression(
+        node.name,
+        propertyName,
+        propertyValue,
+        spriteAssetsByPath
+      )};`
+    )
+  }
+}
+
 // builds a function that generates code for an editor scene node and its children
 export const createNodeEmitter = (
   spriteAssetsByPath: Map<string, ProjectAssetRecordLike>,
@@ -277,6 +354,9 @@ export const createNodeEmitter = (
     counters.actor += 1
     lines.push(`    Actor* ${actorVariable} = create_actor(_${actorType});`)
     lines.push(`    THIS_ACTOR = ${actorVariable};`)
+    if (script) {
+      emitActorScriptProperties(node, actorVariable, actorType, spriteAssetsByPath, lines)
+    }
     lines.push(
       `    ${actorVariable}->physics_mode = ${PHYSICS_MODE_ENUM_BY_SCENE_VALUE[node.physicsMode]};`
     )

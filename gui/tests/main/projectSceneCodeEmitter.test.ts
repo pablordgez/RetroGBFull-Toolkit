@@ -94,6 +94,21 @@ describe('projectSceneCodeEmitter', () => {
           2,
           'hero.rgbsprite.json'
         )
+      ],
+      [
+        'run.rgbsprite.json',
+        asset(
+          'sprite',
+          'RunSprite',
+          {
+            kind: 'sprite',
+            width: 8,
+            height: 8,
+            palette: ['#ffffff', '#aaaaaa', '#555555', '#000000']
+          },
+          2,
+          'run.rgbsprite.json'
+        )
       ]
     ])
     const scripts = new Map([['hero.c', script('hero.c', 'HeroActor')]])
@@ -123,6 +138,13 @@ describe('projectSceneCodeEmitter', () => {
             x: 4,
             y: 5,
             physicsMode: 'highFidelity',
+            scriptProperties: {
+              speed: 7,
+              active: true,
+              idle_animation: 'run.rgbsprite.json',
+              state: 'STATE_RUN',
+              optional_animation: null
+            },
             followCamera: true,
             cameraDeadzone: {
               left: 8,
@@ -149,6 +171,15 @@ describe('projectSceneCodeEmitter', () => {
 
     expect(emitted).toBeNull()
     expect(lines.join('\n')).toContain('Actor* generated_actor_0 = create_actor(_HeroActor);')
+    expect(lines.join('\n')).toContain('((HeroActor*) generated_actor_0)->speed = 7;')
+    expect(lines.join('\n')).toContain('((HeroActor*) generated_actor_0)->active = 1;')
+    expect(lines.join('\n')).toContain(
+      '((HeroActor*) generated_actor_0)->idle_animation = (Animation*) animations[RunSprite];'
+    )
+    expect(lines.join('\n')).toContain('((HeroActor*) generated_actor_0)->state = STATE_RUN;')
+    expect(lines.join('\n')).toContain(
+      '((HeroActor*) generated_actor_0)->optional_animation = 0;'
+    )
     expect(lines.join('\n')).toContain('generated_actor_0->physics_mode = HIGH_FIDELITY;')
     expect(lines.join('\n')).toContain('set_actor_position(260, 389);')
     expect(lines.join('\n')).toContain('set_animation_props(S_PALETTE, 16, 24);')
@@ -178,6 +209,28 @@ describe('projectSceneCodeEmitter', () => {
     expect(() =>
       emitNode(actorNode({ spritePath: 'missing.rgbsprite.json' }) as never, null, [], { actor: 0 })
     ).toThrow('Actor "Hero" references a missing sprite resource: missing.rgbsprite.json')
+
+    const scriptPropertyEmitter = createNodeEmitter(
+      new Map(),
+      new Map([['hero.c', script('hero.c', 'HeroActor')]]),
+      [],
+      5,
+      new Map()
+    )
+
+    expect(() =>
+      scriptPropertyEmitter(
+        actorNode({
+          scriptPath: 'hero.c',
+          scriptProperties: { idle_animation: 'missing.rgbsprite.json' }
+        }) as never,
+        null,
+        [],
+        { actor: 0 }
+      )
+    ).toThrow(
+      'Actor "Hero" script property "idle_animation" references a missing sprite resource: missing.rgbsprite.json'
+    )
 
     const callbackEmitter = createNodeEmitter(new Map(), new Map(), [], 5, new Map())
     expect(() =>
