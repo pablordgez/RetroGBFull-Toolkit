@@ -322,6 +322,7 @@ describe('projectGbdk', () => {
       })
     )
     expect(fsMocks.mkdir).toHaveBeenCalledWith('/toolchains', { recursive: true })
+    expect(fsMocks.mkdir).toHaveBeenCalledWith(extractRootPath, { recursive: true })
     expect(fsMocks.writeFile).toHaveBeenCalledWith(archivePath, expect.any(Buffer))
     if (assetName.endsWith('.zip')) {
       expect(extractZipMock).toHaveBeenCalledWith(archivePath, { dir: extractRootPath })

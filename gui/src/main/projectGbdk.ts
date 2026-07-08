@@ -137,6 +137,8 @@ const extractReleaseArchive = async (
   assetName: string,
   destinationPath: string
 ): Promise<void> => {
+  await mkdir(destinationPath, { recursive: true })
+
   if (assetName.endsWith('.zip')) {
     await extractZip(archivePath, { dir: destinationPath })
     return
