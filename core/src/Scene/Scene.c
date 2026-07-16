@@ -6,6 +6,7 @@
 #include "Window/WindowVisibility.h"
 
 Scene* THIS_SCENE;
+uint8_t DEFERRED_ACTOR_REMOVALS_PENDING;
 
 /* Internal fixed-point map bounds used by actor movement. */
 uint8_t actor_map_bounds_active;
@@ -42,40 +43,87 @@ void add_actor(Actor* actor) BANKED{
 }
 
 void remove_actor(Actor* actor) BANKED{
-    for(int i = 0; i < THIS_SCENE->num_actors; i++){
-        if(THIS_SCENE->actors[i] == actor){
-            for(int j = i; j < THIS_SCENE->num_actors - 1; j++){
-                THIS_SCENE->actors[j] = THIS_SCENE->actors[j + 1];
+    Actor* previous_actor;
+
+    if(actor == NULL || THIS_SCENE == NULL){
+        return;
+    }
+
+    for(uint8_t index = 0; index < THIS_SCENE->num_actors; index++){
+        if(THIS_SCENE->actors[index] != actor){
+            continue;
+        }
+        actor->pending_removal = 0U;
+        previous_actor = THIS_ACTOR;
+        for(uint8_t next = index; next + 1U < THIS_SCENE->num_actors; next++){
+            THIS_SCENE->actors[next] = THIS_SCENE->actors[next + 1U];
+        }
+        THIS_SCENE->num_actors--;
+        destroy_actor(actor);
+        THIS_ACTOR = previous_actor == actor ? NULL : previous_actor;
+        if(THIS_SCENE->num_actors == 0U){
+            free(THIS_SCENE->actors);
+            THIS_SCENE->actors = NULL;
+        } else{
+            Actor** next_actors = realloc(THIS_SCENE->actors, sizeof(Actor*) * THIS_SCENE->num_actors);
+            if(next_actors != NULL){
+                THIS_SCENE->actors = next_actors;
             }
-            THIS_SCENE->num_actors--;
-            destroy_actor(actor);
-            if(THIS_SCENE->num_actors == 0){
-                free(THIS_SCENE->actors);
-                THIS_SCENE->actors = NULL;
-            } else{
-                Actor** next_actors = realloc(THIS_SCENE->actors, sizeof(Actor*) * THIS_SCENE->num_actors);
-                if(next_actors != NULL){
-                    THIS_SCENE->actors = next_actors;
-                }
-            }
-            break;
+        }
+        return;
+    }
+}
+
+void remove_actor_deferred(Actor* actor) BANKED{
+    if(actor == NULL || actor->pending_removal){
+        return;
+    }
+    actor->pending_removal = 1U;
+    DEFERRED_ACTOR_REMOVALS_PENDING = 1U;
+    if(actor->collider != NULL){
+        disable_collider_deferred(actor->collider);
+    }
+}
+
+void flush_deferred_actor_removals(void) BANKED{
+    uint8_t index = 0U;
+
+    DEFERRED_ACTOR_REMOVALS_PENDING = 0U;
+    if(THIS_SCENE == NULL){
+        return;
+    }
+    while(index < THIS_SCENE->num_actors){
+        if(THIS_SCENE->actors[index]->pending_removal){
+            Actor* actor = THIS_SCENE->actors[index];
+            actor->pending_removal = 0U;
+            remove_actor(actor);
+        } else{
+            index++;
         }
     }
 }
 
 void update_actors(void) NONBANKED{
     for(int i = 0; i < THIS_SCENE->num_actors; i++){
-        THIS_ACTOR = THIS_SCENE->actors[i];
-        FAR_CALL(actor_update_functions[THIS_ACTOR->type], RVoid_PVoid_BANKED);
-        if(THIS_ACTOR->followed){
-            update_camera(THIS_ACTOR->x, THIS_ACTOR->y);
+        Actor* actor = THIS_SCENE->actors[i];
+
+        if(actor->pending_removal){
+            continue;
+        }
+        THIS_ACTOR = actor;
+        FAR_CALL(actor_update_functions[actor->type], RVoid_PVoid_BANKED);
+        if(!actor->pending_removal && actor->followed){
+            update_camera(actor->x, actor->y);
         }
     }
 }
 
 void draw_actors(void) NONBANKED {
-    for(int i = 0; i < THIS_SCENE->num_actors; i++){ 
-        THIS_ACTOR = THIS_SCENE->actors[i]; 
+    for(int i = 0; i < THIS_SCENE->num_actors; i++){
+        if(THIS_SCENE->actors[i]->pending_removal){
+            continue;
+        }
+        THIS_ACTOR = THIS_SCENE->actors[i];
         draw(); 
     }
 }
@@ -83,6 +131,9 @@ void draw_actors(void) NONBANKED {
 void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t* out_count) BANKED{
     uint8_t count = 0;
     for(int i = 0; i < THIS_SCENE->num_actors && count < result_limit; i++){
+        if(THIS_SCENE->actors[i]->pending_removal){
+            continue;
+        }
         for(int j = 0; j < 5; j++){
             if(THIS_SCENE->actors[i]->tags[j] == tag){
                 result[count++] = THIS_SCENE->actors[i];

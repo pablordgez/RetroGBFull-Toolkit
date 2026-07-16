@@ -30,6 +30,7 @@ Header: `core/src/Actor/Actor.h`
 | `parent` | `Actor*` | Parent actor, if any. |
 | `physics_mode` | `PhysicsMode` | Movement collision mode. |
 | `followed` | `uint8_t` | Nonzero when the camera follows this actor. |
+| `pending_removal` | `uint8_t` | Internal flag set when removal must wait for the current actor or collision pass to finish. |
 
 ### Globals
 
@@ -52,6 +53,7 @@ Header: `core/src/Actor/Actor.h`
 ### Behavior notes
 
 - Actors own their colliders. Replacing or destroying an actor frees the collider it holds.
+- Destroying an actor detaches it from its parent and leaves its children alive as independent scene actors.
 - Movement also applies to child actors.
 - An axis-aligned move on a childless actor with no blocking collider uses a short path. Both horizontal and vertical variants preserve the moved axis's map bound and collider synchronization; diagonal, zero-delta, hierarchy, and blocking-physics cases use the full path.
 - Scene map bounds are cached by `set_scene_map()`. Use that function to replace a scene map instead of assigning `THIS_SCENE->map` directly.
@@ -132,6 +134,7 @@ Inside a callback, use `THIS_COLLIDER` and `OTHER_COLLIDER` to inspect the colli
 | `num_collision_callbacks` | `uint8_t` | Number of valid collision callbacks. |
 | `num_collision_exit_callbacks` | `uint8_t` | Number of valid exit callbacks. |
 | `parent` | `struct Actor*` | Owning actor assigned by `set_collider()`. May be `NULL` for an unattached collider. |
+| `pending_disable` | `uint8_t` | Internal flag set when structural removal from the active-collider list is deferred. |
 
 ### Globals
 
@@ -160,6 +163,9 @@ Header: `core/src/Collisions/CollisionManager.h`
 
 | Function | Description |
 | --- | --- |
+| `void enable_collider(Collider* collider) BANKED;` | Cancels a pending disable, returns if the collider is already active, or adds an inactive collider to the active list. |
+| `void disable_collider(Collider* collider) BANKED;` | Immediately removes an active collider. Do not call it while the collision manager is iterating callbacks. |
+| `void disable_collider_deferred(Collider* collider) BANKED;` | Logically disables a collider immediately and queues its physical removal for the next Game Manager safe point. |
 | `void set_collision_callback(Collider* collider, CollisionCallback callback) BANKED;` | Appends a collision callback if there is capacity. |
 | `void set_collision_exit_callback(Collider* collider, CollisionCallback callback) BANKED;` | Appends an exit callback if there is capacity. |
 | `void check_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_collisions) BANKED;` | Collects colliders overlapping `THIS_COLLIDER`. |
@@ -172,6 +178,9 @@ Header: `core/src/Collisions/CollisionManager.h`
 - Active colliders are capped by `MAX_ACTIVE_COLLIDERS`.
 - Callback arrays are capped by `MAX_COLLISION_CALLBACKS`.
 - Collision query functions only collect overlaps. Collision and exit callbacks are dispatched by `run_collision_callbacks()`, which is called from `update_game()` when `COLLISION_CALLBACKS_EVERY_FRAME` is enabled.
+- Use `disable_collider_deferred()` from collision and exit callbacks. The collider is skipped immediately and removed from the compact active list at the next Game Manager safe point. Once either collider is marked disabled, remaining callbacks for that pair do not run.
+- Call `remove_actor_deferred()`, rather than `remove_actor()` or `destroy_actor()`, when removing a scene actor from a callback. Immediate removal, direct destruction, and collider replacement must not be done while collision callbacks are running.
+- Enabling a previously inactive collider is not deferred. Do it before or after the collision callback pass. Enabling an active collider with a pending deferred disable cancels that disable without registering the collider twice.
 
 ## `ColliderRegistry.h`
 

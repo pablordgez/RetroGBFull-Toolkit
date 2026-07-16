@@ -67,6 +67,7 @@ void init_actor(Actor* actor) BANKED{
     actor->collider = NULL;
     actor->physics_mode = BALANCED;
     actor->followed = 0;
+    actor->pending_removal = 0;
 }
 
 void set_tag(Tags tag, uint8_t index) BANKED{
@@ -113,6 +114,8 @@ void set_collider(Collider* collider) BANKED{
     THIS_ACTOR->collider = collider;
     if(collider != NULL){
         collider->parent = THIS_ACTOR;
+        collider->id = 255U;
+        collider->pending_disable = 0U;
         collider->num_collision_callbacks = 0;
         collider->num_collision_exit_callbacks = 0;
         memset(collider->on_collision, 0, sizeof(collider->on_collision));
@@ -358,6 +361,15 @@ void detach_child(Actor* child) BANKED{
 void destroy_actor(Actor* actor) BANKED{
     if(actor == NULL){
         return;
+    }
+
+    if(actor->parent != NULL){
+        THIS_ACTOR = actor->parent;
+        detach_child(actor);
+    }
+    while(actor->child != NULL){
+        THIS_ACTOR = actor;
+        detach_child(actor->child);
     }
 
     THIS_ACTOR = actor;

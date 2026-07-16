@@ -23,6 +23,7 @@ typedef struct {
     uint8_t num_collision_callbacks;
     uint8_t num_collision_exit_callbacks;
     struct Actor* parent;
+    uint8_t pending_disable;
 } Collider;
 
 extern Collider* THIS_COLLIDER;

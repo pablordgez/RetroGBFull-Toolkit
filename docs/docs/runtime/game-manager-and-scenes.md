@@ -32,6 +32,7 @@ Header: `core/src/GameManager/GameManager.h`
 - `set_scene()` frees any different queued scene before replacing the active one.
 - `set_scene_deferred()` ignores `NULL`.
 - Prefer `set_scene_deferred()` from actor update code so the current frame can finish cleanly.
+- `update_game()` owns two safe deferred-operation points: after the scene script and after collision callbacks. Only operations explicitly requested through a deferred API are applied there.
 
 ## `Scene.h`
 
@@ -58,7 +59,8 @@ Header: `core/src/Scene/Scene.h`
 | Function | Description |
 | --- | --- |
 | `void add_actor(Actor* actor) BANKED;` | Appends an actor to `THIS_SCENE`. On allocation failure it destroys the actor. |
-| `void remove_actor(Actor* actor) BANKED;` | Removes and destroys an actor from `THIS_SCENE`. |
+| `void remove_actor(Actor* actor) BANKED;` | Immediately removes and destroys an actor from `THIS_SCENE`. |
+| `void remove_actor_deferred(Actor* actor) BANKED;` | Logically removes an actor and queues its destruction for the next Game Manager safe point. |
 | `void get_actors_by_tag(Tags tag, Actor* result[], uint8_t result_limit, uint8_t* out_count) BANKED;` | Collects matching actors from `THIS_SCENE` up to `result_limit`. |
 | `void set_scene_map(Map* map) BANKED;` | Replaces the current background map on `THIS_SCENE`. |
 | `void set_scene_window(Map* map) BANKED;` | Replaces the current window map and updates window visibility. |
@@ -66,6 +68,8 @@ Header: `core/src/Scene/Scene.h`
 ### Behavior notes
 
 - Scenes own their actors. `remove_actor()` destroys the actor it removes.
+- Use `remove_actor_deferred()` from actor updates and collision callbacks. Pending actors are skipped by later updates, drawing, tag queries, and collision pairs. The Game Manager destroys them at its next safe point. Repeated deferred requests are harmless.
+- Use `remove_actor()` for scene-owned actors. Calling `destroy_actor()` directly does not remove the pointer from the scene and is not deferred.
 - `set_scene_map()` clears any changed-map-tile overrides before loading the replacement background map.
 - Actors with `followed != 0` drive the camera during the scene update.
 

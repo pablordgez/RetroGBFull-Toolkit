@@ -6,6 +6,7 @@ typedef void (*CollisionCallbackFunction)(void) BANKED;
 
 Collider* active_colliders[MAX_ACTIVE_COLLIDERS];
 uint8_t num_active_colliders = 0;
+uint8_t DEFERRED_COLLIDER_DISABLES_PENDING;
 
 static uint8_t collision_state[MAX_COLLISION_STATE_BYTES];
 
@@ -64,7 +65,27 @@ static uint8_t reserve_collider_id(void){
     return 255;
 }
 
+void flush_deferred_collider_disables(void) BANKED{
+    uint8_t index = 0U;
+
+    DEFERRED_COLLIDER_DISABLES_PENDING = 0U;
+    while(index < num_active_colliders){
+        if(active_colliders[index]->pending_disable){
+            active_colliders[index]->pending_disable = 0U;
+            disable_collider(active_colliders[index]);
+        } else{
+            index++;
+        }
+    }
+}
+
 void enable_collider(Collider* collider) BANKED{
+    if(collider->pending_disable){
+        collider->pending_disable = 0U;
+    }
+    if(collider->id != 255U){
+        return;
+    }
     if(num_active_colliders < MAX_ACTIVE_COLLIDERS){
         uint8_t id = reserve_collider_id();
         if(id == 255){
@@ -76,8 +97,8 @@ void enable_collider(Collider* collider) BANKED{
 }
 
 void disable_collider(Collider* collider) BANKED{
+    collider->pending_disable = 0U;
     clear_collision_states_for_collider(collider);
-
     for(int i = 0; i < num_active_colliders; i++){
         if(active_colliders[i] == collider){
             for(int j = i; j < num_active_colliders - 1; j++){
@@ -88,6 +109,14 @@ void disable_collider(Collider* collider) BANKED{
         }
     }
     collider->id = 255;
+}
+
+void disable_collider_deferred(Collider* collider) BANKED{
+    if(collider == NULL || collider->id == 255U || collider->pending_disable){
+        return;
+    }
+    collider->pending_disable = 1U;
+    DEFERRED_COLLIDER_DISABLES_PENDING = 1U;
 }
 
 void set_collision_exit_callback(Collider* collider, CollisionCallback callback) BANKED{
@@ -114,6 +143,9 @@ static void invoke_collision_callbacks(Collider* this_collider, Collider* other_
     }
 
     for(uint8_t i = 0; i < num_callbacks; i++){
+        if(this_collider->pending_disable || other_collider->pending_disable){
+            break;
+        }
         CollisionCallback callback = callbacks[i];
         if(callback == 0){
             continue;
@@ -171,6 +203,7 @@ void check_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_coll
     uint8_t count = 0;
     for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
         if(active_colliders[i] == THIS_COLLIDER) continue;
+        if(active_colliders[i]->pending_disable) continue;
         OTHER_COLLIDER = active_colliders[i];
         if(check_collision()){
             out[count++] = active_colliders[i];
@@ -185,13 +218,16 @@ void run_collision_callbacks(void) BANKED{
 
     for(int i = 0; i < num_active_colliders; i++){
         Collider* first = active_colliders[i];
-        if(first == NULL){
+        if(first == NULL || first->pending_disable){
             continue;
         }
 
         for(int j = i + 1; j < num_active_colliders; j++){
             Collider* second = active_colliders[j];
-            if(second == NULL){
+            if(first->pending_disable){
+                break;
+            }
+            if(second == NULL || second->pending_disable){
                 continue;
             }
             uint8_t has_collision_callbacks = first->num_collision_callbacks != 0 ||
@@ -226,6 +262,7 @@ void check_collisions_with_tags(Collider* out[], uint8_t max_collisions, uint8_t
     uint8_t count = 0;
     for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
         if(active_colliders[i] == THIS_COLLIDER) continue;
+        if(active_colliders[i]->pending_disable) continue;
         OTHER_COLLIDER = active_colliders[i];
         for(uint8_t _tag = 0; _tag < 5; _tag++){
             if(OTHER_COLLIDER->tags[_tag] == tag && check_collision()){
@@ -242,6 +279,7 @@ void check_blocking_collisions(Collider* out[], uint8_t max_collisions, uint8_t*
     uint8_t count = 0;
     for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
         if(active_colliders[i] == THIS_COLLIDER) continue;
+        if(active_colliders[i]->pending_disable) continue;
         OTHER_COLLIDER = active_colliders[i];
         if(active_colliders[i]->is_blocking && check_collision()){
             out[count++] = active_colliders[i];
@@ -254,6 +292,7 @@ void check_blocking_collisions_with_tags(Collider* out[], uint8_t max_collisions
     uint8_t count = 0;
     for(int i = 0; i < num_active_colliders && count < max_collisions; i++){
         if(active_colliders[i] == THIS_COLLIDER) continue;
+        if(active_colliders[i]->pending_disable) continue;
         OTHER_COLLIDER = active_colliders[i];
         for(uint8_t _tag = 0; _tag < 5; _tag++){
             if(OTHER_COLLIDER->tags[_tag] == tag && OTHER_COLLIDER->is_blocking && check_collision()){

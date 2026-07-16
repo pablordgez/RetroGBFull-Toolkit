@@ -26,6 +26,7 @@ typedef struct Actor {
     struct Actor* parent;
     PhysicsMode physics_mode;
     uint8_t followed;
+    uint8_t pending_removal;
 } Actor;
 
 

@@ -1,6 +1,16 @@
 #include "GameManager.h"
+#include "Collisions/CollisionManager.h"
 
 GameManager* THIS_GAME_MANAGER;
+
+static void apply_deferred_operations(void){
+    if(DEFERRED_COLLIDER_DISABLES_PENDING){
+        flush_deferred_collider_disables();
+    }
+    if(DEFERRED_ACTOR_REMOVALS_PENDING){
+        flush_deferred_actor_removals();
+    }
+}
 
 static uint8_t apply_pending_scene(void){
     Scene* scene = THIS_GAME_MANAGER->pending_scene;
@@ -20,11 +30,13 @@ void update_game(void){
         return;
     }
     FAR_CALL(scene_update_functions[THIS_SCENE->type], RVoid_PVoid_BANKED);
+    apply_deferred_operations();
     if(apply_pending_scene()){
         return;
     }
 #if COLLISION_CALLBACKS_EVERY_FRAME
     run_collision_callbacks();
+    apply_deferred_operations();
     apply_pending_scene();
 #endif
 }
