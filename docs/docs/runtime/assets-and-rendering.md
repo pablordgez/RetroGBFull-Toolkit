@@ -24,7 +24,57 @@ Header: `core/src/Assets/Animations/Animation.h`
 | `animation_id` | `uint8_t` | Index into generated animation registries. |
 | `metasprite` | `metasprite_t*` | Layout for multi-sprite animations. |
 
-`set_animation_props(props, x, y)` applies the same property flags to single-sprite and metasprite animations, then redraws the current frame at `x`, `y`. For metasprites, `S_FLIPX` and `S_FLIPY` mirror the complete metasprite layout around its pivot as well as flipping its component sprites; the remaining flags keep their normal base-property behavior.
+### `AnimationState`
+
+Each actor with an active animation owns an `AnimationState`. The `Animation` describes the shared asset, while `AnimationState` stores the playback and rendering state for that particular actor.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `speed_modifier` | `uint8_t` | Amount added to the animation timer on each update. It defaults to `1`; `0` pauses frame advancement. |
+| `current_frame` | `uint8_t` | Zero-based frame currently being displayed. |
+| `sprite_slot` | `uint8_t` | First hardware sprite slot allocated to this animation instance. |
+| `props` | `uint8_t` | Current Game Boy sprite properties, including palette, priority, and flip flags. |
+| `time_since_last_frame` | `uint8_t` | Accumulated animation ticks since the last frame change. |
+
+The engine allocates and initializes this state when `set_actor_animation()` selects an animation, and releases it when that animation is removed or replaced. Game code can adjust fields such as `speed_modifier`, but it should not change `sprite_slot` because the animation system owns that allocation.
+
+### Animation context
+
+The low-level animation functions operate on the global `THIS_ANIMATION` and `THIS_ANIMATION_STATE` pointers. `set_animation_context()` copies the current `THIS_ACTOR->current_animation` and `THIS_ACTOR->animation_state` into those pointers.
+
+Call `set_animation_context()` after selecting the target through `THIS_ACTOR` and before directly calling any function that uses the current animation context:
+
+- `load_animation()`
+- `unload_animation()`
+- `set_animation_props()`
+- `move_animation()`
+- `update_animation()`
+- `hide_animation()`
+
+In normal game code, `load_animation()` and `unload_animation()` should remain managed by `set_actor_animation()`. The most common direct use is changing properties:
+
+```c
+THIS_ACTOR = actor;
+set_animation_context();
+set_animation_props(S_FLIPX, sprite_x, sprite_y);
+```
+
+Set the context again whenever `THIS_ACTOR` changes before another direct animation call. The context is global and remains pointed at the last selected actor; restoring `THIS_ACTOR` by itself does not restore `THIS_ANIMATION` or `THIS_ANIMATION_STATE`.
+
+You do **not** need to call `set_animation_context()`:
+
+- Before `set_actor_animation()`, because that function manages the context needed to load or unload an animation.
+- For normal scene rendering through the actor draw loop, because `draw()` sets the context before updating the animation.
+- When using actor movement, positioning, tags, or collision functions that do not call the low-level animation API.
+- Before `init_animation_state(state)`, because it receives the state pointer explicitly.
+
+If you call a low-level animation function immediately after `set_actor_animation()`, still set the context explicitly. `set_actor_animation()` returns early when the requested animation is already active, so relying on its internal context changes can target the wrong actor.
+
+### Animation properties
+
+`set_animation_props(props, x, y)` stores the properties in the current `AnimationState` and redraws the current frame at `x`, `y`. It requires the animation context described above.
+
+The same property flags apply to single-sprite and metasprite animations. For metasprites, `S_FLIPX` and `S_FLIPY` mirror the complete metasprite layout around its pivot as well as flipping its component sprites; the remaining flags keep their normal base-property behavior.
 
 ## `AnimationRegistry.h`
 
