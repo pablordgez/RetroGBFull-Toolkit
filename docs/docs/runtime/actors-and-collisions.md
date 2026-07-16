@@ -53,6 +53,9 @@ Header: `core/src/Actor/Actor.h`
 
 - Actors own their colliders. Replacing or destroying an actor frees the collider it holds.
 - Movement also applies to child actors.
+- An axis-aligned move on a childless actor with no blocking collider uses a short path. Both horizontal and vertical variants preserve the moved axis's map bound and collider synchronization; diagonal, zero-delta, hierarchy, and blocking-physics cases use the full path.
+- Scene map bounds are cached by `set_scene_map()`. Use that function to replace a scene map instead of assigning `THIS_SCENE->map` directly.
+- An axis-aligned short path assumes the unchanged coordinate is already valid. Use `set_actor_position()` or `move_actor(0, 0)` if project code has deliberately placed the actor beyond the other map bound and needs both axes clamped.
 
 ## `ActorRegistry.h`
 

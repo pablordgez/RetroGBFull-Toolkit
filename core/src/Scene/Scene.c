@@ -7,6 +7,11 @@
 
 Scene* THIS_SCENE;
 
+/* Internal fixed-point map bounds used by actor movement. */
+uint8_t actor_map_bounds_active;
+uint16_t actor_map_max_x;
+uint16_t actor_map_max_y;
+
 static void configure_window_visibility(Map* map){
     window_visibility_clear_owner(WINDOW_VISIBILITY_OWNER_SCENE);
 
@@ -111,7 +116,12 @@ void set_scene_map(Map* map) BANKED{
     THIS_SCENE->map = map;
     THIS_MAP = map;
     if(THIS_SCENE->map != NULL){
+        actor_map_max_x = ((THIS_SCENE->map->width << 3) + 7u) << 4;
+        actor_map_max_y = ((THIS_SCENE->map->height << 3) + 15u) << 4;
+        actor_map_bounds_active = 1;
         load_map(0);
+    } else{
+        actor_map_bounds_active = 0;
     }
 }
 

@@ -5,29 +5,53 @@
 
 Actor* THIS_ACTOR;
 
+extern uint8_t actor_map_bounds_active;
+extern uint16_t actor_map_max_x;
+extern uint16_t actor_map_max_y;
+
 #define UPDATE_ACTOR_AND_COLLIDER_AXIS(actor_pos, collider_pos, delta) do { \
     uint16_t old_pos = (actor_pos); \
     UPDATE_COORD_SAFE((actor_pos), (delta)); \
     (collider_pos) += (int16_t)((actor_pos) - old_pos); \
 } while(0)
 
+#define UPDATE_NONBLOCKING_ACTOR_AXIS(actor_pos, collider_pos, delta, max_pos) do { \
+    if((delta) < 0 && (actor_pos) < (uint16_t)-(delta)){ \
+        if(THIS_ACTOR->collider != NULL){ \
+            (collider_pos) -= (actor_pos); \
+        } \
+        (actor_pos) = 0; \
+    } else{ \
+        (actor_pos) += (delta); \
+        if(THIS_ACTOR->collider != NULL){ \
+            (collider_pos) += (delta); \
+        } \
+        if(actor_map_bounds_active && (actor_pos) > (max_pos)){ \
+            uint16_t correction = (actor_pos) - (max_pos); \
+            (actor_pos) = (max_pos); \
+            if(THIS_ACTOR->collider != NULL){ \
+                (collider_pos) -= correction; \
+            } \
+        } \
+    } \
+} while(0)
+
 static void clamp_actor_to_map(Actor* actor) NONBANKED{
-    if (THIS_SCENE == NULL || THIS_SCENE->map == NULL) {
+    if (!actor_map_bounds_active) {
         return;
     }
 
-    uint16_t max_x = ((THIS_SCENE->map->width << 3) + 7u) << 4;
-    uint16_t max_y = ((THIS_SCENE->map->height << 3) + 15u) << 4;
-
-    uint16_t old_x = actor->x;
-    uint16_t old_y = actor->y;
-
-    if (actor->x > max_x) actor->x = max_x;
-    if (actor->y > max_y) actor->y = max_y;
-
-    if (actor->collider != NULL) {
-        if (actor->x < old_x) actor->collider->x -= (old_x - actor->x);
-        if (actor->y < old_y) actor->collider->y -= (old_y - actor->y);
+    if (actor->x > actor_map_max_x) {
+        if (actor->collider != NULL) {
+            actor->collider->x -= actor->x - actor_map_max_x;
+        }
+        actor->x = actor_map_max_x;
+    }
+    if (actor->y > actor_map_max_y) {
+        if (actor->collider != NULL) {
+            actor->collider->y -= actor->y - actor_map_max_y;
+        }
+        actor->y = actor_map_max_y;
     }
 }
 
@@ -166,7 +190,7 @@ void balanced_physics(int16_t dx, int16_t dy) BANKED{
     clamp_actor_to_map(THIS_ACTOR);
 }
 
-void move_actor(int16_t dx, int16_t dy) BANKED{
+void move_actor_hierarchy(int16_t dx, int16_t dy) BANKED{
     Actor* parent = THIS_ACTOR;
     Actor* stack[STACK_SIZE];
     uint8_t sp = 0;
@@ -242,6 +266,32 @@ void move_actor(int16_t dx, int16_t dy) BANKED{
         }
     }
     THIS_ACTOR = parent;
+}
+
+void move_actor(int16_t dx, int16_t dy) BANKED{
+    if(THIS_ACTOR->child == NULL &&
+        (THIS_ACTOR->collider == NULL || THIS_ACTOR->collider->is_blocking == 0)){
+        if(dy == 0 && dx != 0){
+            UPDATE_NONBLOCKING_ACTOR_AXIS(
+                THIS_ACTOR->x,
+                THIS_ACTOR->collider->x,
+                dx,
+                actor_map_max_x
+            );
+            return;
+        }
+        if(dx == 0 && dy != 0){
+            UPDATE_NONBLOCKING_ACTOR_AXIS(
+                THIS_ACTOR->y,
+                THIS_ACTOR->collider->y,
+                dy,
+                actor_map_max_y
+            );
+            return;
+        }
+    }
+
+    move_actor_hierarchy(dx, dy);
 }
 
 void set_actor_position(uint16_t x, uint16_t y) BANKED{
