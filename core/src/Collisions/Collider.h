@@ -5,6 +5,8 @@
 #include "Actor/ActorRegistry.h"
 #include "ColliderRegistry.h"
 
+struct Actor;
+
 typedef FAR_PTR CollisionCallback;
 
 typedef struct {
@@ -20,6 +22,7 @@ typedef struct {
     CollisionCallback on_collision_exit[MAX_COLLISION_CALLBACKS];
     uint8_t num_collision_callbacks;
     uint8_t num_collision_exit_callbacks;
+    struct Actor* parent;
 } Collider;
 
 extern Collider* THIS_COLLIDER;

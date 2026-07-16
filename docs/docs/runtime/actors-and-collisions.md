@@ -47,7 +47,7 @@ Header: `core/src/Actor/Actor.h`
 | `void set_actor_position(uint16_t x, uint16_t y) BANKED;` | Moves `THIS_ACTOR` and its children to a new position. Check [Coordinate model](../architecture#coordinate-model) for important notes on absolute movement. |
 | `void attach_child(Actor* child) BANKED;` | Appends `child` to the end of `THIS_ACTOR`'s child list. |
 | `void detach_child(Actor* child) BANKED;` | Removes `child` from `THIS_ACTOR`'s child list. |
-| `void set_collider(Collider* collider) BANKED;` | Replaces the current collider. The new collider starts with no callbacks, so add them after attaching it. |
+| `void set_collider(Collider* collider) BANKED;` | Replaces the current collider, records `THIS_ACTOR` in `collider->parent`, and enables it. The new collider starts with no callbacks, so add them after attaching it. |
 
 ### Behavior notes
 
@@ -115,7 +115,7 @@ Header: `core/src/Collisions/Collider.h`
 
 `typedef FAR_PTR CollisionCallback;`
 
-Inside a callback, use `THIS_COLLIDER` and `OTHER_COLLIDER` to inspect the collision pair.
+Inside a callback, use `THIS_COLLIDER` and `OTHER_COLLIDER` to inspect the collision pair. Each collider exposes its owning actor through `parent`, so callbacks can use `THIS_COLLIDER->parent` and `OTHER_COLLIDER->parent` without searching the scene.
 
 ### `Collider`
 
@@ -131,6 +131,7 @@ Inside a callback, use `THIS_COLLIDER` and `OTHER_COLLIDER` to inspect the colli
 | `on_collision_exit` | `CollisionCallback[MAX_COLLISION_CALLBACKS]` | Exit callbacks. |
 | `num_collision_callbacks` | `uint8_t` | Number of valid collision callbacks. |
 | `num_collision_exit_callbacks` | `uint8_t` | Number of valid exit callbacks. |
+| `parent` | `struct Actor*` | Owning actor assigned by `set_collider()`. May be `NULL` for an unattached collider. |
 
 ### Globals
 

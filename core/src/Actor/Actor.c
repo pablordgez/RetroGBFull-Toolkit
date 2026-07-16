@@ -112,6 +112,7 @@ void set_collider(Collider* collider) BANKED{
     }
     THIS_ACTOR->collider = collider;
     if(collider != NULL){
+        collider->parent = THIS_ACTOR;
         collider->num_collision_callbacks = 0;
         collider->num_collision_exit_callbacks = 0;
         memset(collider->on_collision, 0, sizeof(collider->on_collision));
