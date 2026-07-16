@@ -24,6 +24,8 @@ Header: `core/src/Assets/Animations/Animation.h`
 | `animation_id` | `uint8_t` | Index into generated animation registries. |
 | `metasprite` | `metasprite_t*` | Layout for multi-sprite animations. |
 
+`set_animation_props(props, x, y)` applies the same property flags to single-sprite and metasprite animations, then redraws the current frame at `x`, `y`. For metasprites, `S_FLIPX` and `S_FLIPY` mirror the complete metasprite layout around its pivot as well as flipping its component sprites; the remaining flags keep their normal base-property behavior.
+
 ## `AnimationRegistry.h`
 
 Header: `core/src/Assets/Animations/AnimationRegistry.h`

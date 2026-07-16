@@ -17,6 +17,26 @@ SpaceManager sprite_tile_manager;
 #define ANIMATION_TILES_PER_SPRITE 1
 #endif
 
+static void move_animation_metasprite(uint8_t base_tile, uint8_t x, uint8_t y) NONBANKED{
+    uint8_t flip = THIS_ANIMATION_STATE->props & (S_FLIPX | S_FLIPY);
+    uint8_t base_props = THIS_ANIMATION_STATE->props & (uint8_t)~(S_FLIPX | S_FLIPY);
+
+    switch(flip){
+        case S_FLIPX:
+            move_metasprite_flipx(THIS_ANIMATION->metasprite, base_tile, base_props, THIS_ANIMATION_STATE->sprite_slot, x, y);
+            break;
+        case S_FLIPY:
+            move_metasprite_flipy(THIS_ANIMATION->metasprite, base_tile, base_props, THIS_ANIMATION_STATE->sprite_slot, x, y);
+            break;
+        case S_FLIPX | S_FLIPY:
+            move_metasprite_flipxy(THIS_ANIMATION->metasprite, base_tile, base_props, THIS_ANIMATION_STATE->sprite_slot, x, y);
+            break;
+        default:
+            move_metasprite_ex(THIS_ANIMATION->metasprite, base_tile, base_props, THIS_ANIMATION_STATE->sprite_slot, x, y);
+            break;
+    }
+}
+
 void init_animation_system(void) BANKED{
     init_space_manager(&sprite_space_manager, 40);
     init_space_manager(&sprite_tile_manager, 128);
@@ -58,7 +78,7 @@ uint8_t load_animation(uint8_t x, uint8_t y) NONBANKED{
             set_sprite_prop(THIS_ANIMATION_STATE->sprite_slot, THIS_ANIMATION_STATE->props);
             move_sprite(THIS_ANIMATION_STATE->sprite_slot, x, y);
         } else{
-            move_metasprite_ex(THIS_ANIMATION->metasprite, animation_tiles[THIS_ANIMATION->animation_id], THIS_ANIMATION_STATE->props, THIS_ANIMATION_STATE->sprite_slot, x, y);
+            move_animation_metasprite(animation_tiles[THIS_ANIMATION->animation_id], x, y);
         }
     
     } else{
@@ -76,7 +96,7 @@ void move_animation(uint8_t x, uint8_t y) NONBANKED{
         const AssetEntry* entry = &animation_data[THIS_ANIMATION->animation_id];
         uint8_t prev_bank = _current_bank;
         SWITCH_ROM(entry->bank);
-        move_metasprite_ex(THIS_ANIMATION->metasprite, animation_tiles[THIS_ANIMATION->animation_id], THIS_ANIMATION_STATE->props, THIS_ANIMATION_STATE->sprite_slot, x, y);
+        move_animation_metasprite(animation_tiles[THIS_ANIMATION->animation_id], x, y);
         SWITCH_ROM(prev_bank);
     }
 }
@@ -97,11 +117,8 @@ void set_animation_props(uint8_t props, uint8_t x, uint8_t y) NONBANKED{
         uint8_t sprite_count = ((THIS_ANIMATION->width + 7u) >> 3) * ((THIS_ANIMATION->height + (ANIMATION_SPRITE_HEIGHT - 1u)) / ANIMATION_SPRITE_HEIGHT);
         uint8_t frame_tile_count = sprite_count * ANIMATION_TILES_PER_SPRITE;
         SWITCH_ROM(entry->bank);
-        move_metasprite_ex(
-            THIS_ANIMATION->metasprite,
+        move_animation_metasprite(
             animation_tiles[THIS_ANIMATION->animation_id] + (THIS_ANIMATION_STATE->current_frame * frame_tile_count),
-            THIS_ANIMATION_STATE->props,
-            THIS_ANIMATION_STATE->sprite_slot,
             x,
             y
         );
@@ -128,7 +145,7 @@ void update_animation(uint8_t x, uint8_t y) NONBANKED{
         uint8_t sprite_count = ((THIS_ANIMATION->width + 7u) >> 3) * ((THIS_ANIMATION->height + (ANIMATION_SPRITE_HEIGHT - 1u)) / ANIMATION_SPRITE_HEIGHT);
         uint8_t frame_tile_count = sprite_count * ANIMATION_TILES_PER_SPRITE;
         SWITCH_ROM(entry->bank);
-        move_metasprite_ex(THIS_ANIMATION->metasprite, animation_tiles[THIS_ANIMATION->animation_id] + (THIS_ANIMATION_STATE->current_frame * frame_tile_count), THIS_ANIMATION_STATE->props, THIS_ANIMATION_STATE->sprite_slot, x, y);
+        move_animation_metasprite(animation_tiles[THIS_ANIMATION->animation_id] + (THIS_ANIMATION_STATE->current_frame * frame_tile_count), x, y);
         SWITCH_ROM(prev_bank);
     }   
 }
