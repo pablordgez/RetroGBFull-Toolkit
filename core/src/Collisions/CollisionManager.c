@@ -9,6 +9,7 @@ uint8_t num_active_colliders = 0;
 uint8_t DEFERRED_COLLIDER_DISABLES_PENDING;
 
 static uint8_t collision_state[MAX_COLLISION_STATE_BYTES];
+static Collider* ordered_collision_colliders[MAX_ACTIVE_COLLIDERS];
 
 static uint16_t get_collision_state_bit(Collider* first, Collider* second){
     uint8_t first_id = first->id;
@@ -215,28 +216,49 @@ void check_collisions(Collider* out[], uint8_t max_collisions, uint8_t* num_coll
 void run_collision_callbacks(void) BANKED{
     Collider* previous_this = THIS_COLLIDER;
     Collider* previous_other = OTHER_COLLIDER;
+    uint8_t num_ordered_colliders = 0;
 
-    for(int i = 0; i < num_active_colliders; i++){
-        Collider* first = active_colliders[i];
-        if(first == NULL || first->pending_disable){
+    for(uint8_t i = 0; i < num_active_colliders; i++){
+        Collider* collider = active_colliders[i];
+        if(collider != NULL && !collider->pending_disable &&
+            (collider->num_collision_callbacks != 0 ||
+            collider->num_collision_exit_callbacks != 0)){
+            ordered_collision_colliders[num_ordered_colliders++] = collider;
+        }
+    }
+    uint8_t num_callback_owners = num_ordered_colliders;
+    if(num_callback_owners == 0){
+        return;
+    }
+
+    for(uint8_t i = 0; i < num_active_colliders; i++){
+        Collider* collider = active_colliders[i];
+        if(collider != NULL && !collider->pending_disable &&
+            collider->num_collision_callbacks == 0 &&
+            collider->num_collision_exit_callbacks == 0){
+            ordered_collision_colliders[num_ordered_colliders++] = collider;
+        }
+    }
+
+    for(uint8_t i = 0; i < num_callback_owners; i++){
+        Collider* first = ordered_collision_colliders[i];
+        if(first->pending_disable){
             continue;
         }
 
-        for(int j = i + 1; j < num_active_colliders; j++){
-            Collider* second = active_colliders[j];
+        for(uint8_t j = i + 1; j < num_ordered_colliders; j++){
+            Collider* second = ordered_collision_colliders[j];
             if(first->pending_disable){
                 break;
             }
-            if(second == NULL || second->pending_disable){
+            if(second->pending_disable){
                 continue;
             }
+
             uint8_t has_collision_callbacks = first->num_collision_callbacks != 0 ||
                 second->num_collision_callbacks != 0;
             uint8_t has_exit_callbacks = first->num_collision_exit_callbacks != 0 ||
                 second->num_collision_exit_callbacks != 0;
-            if(!has_collision_callbacks && !has_exit_callbacks){
-                continue;
-            }
 
             THIS_COLLIDER = first;
             OTHER_COLLIDER = second;
