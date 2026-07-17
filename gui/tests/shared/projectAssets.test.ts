@@ -41,6 +41,7 @@ describe('projectAssets scene parsing', () => {
     expect(document.nodes[0]).toMatchObject({
       type: 'actor',
       physicsMode: 'balanced',
+      drawAt30Hz: false,
       followCamera: false,
       cameraDeadzone: {
         left: 20,
@@ -49,6 +50,38 @@ describe('projectAssets scene parsing', () => {
         bottom: 20
       }
     })
+    expect(document.collisionCallbacksAt30Hz).toBe(false)
+  })
+
+  it('round-trips optional 30 Hz scene and actor settings', () => {
+    const document = parseProjectAssetDocument({
+      kind: 'scene',
+      version: 1,
+      tilemapPath: null,
+      windowPath: null,
+      scriptPath: null,
+      collisionCallbacksAt30Hz: true,
+      nodes: [
+        {
+          id: 'enemy',
+          type: 'actor',
+          name: 'Enemy',
+          isCollapsed: false,
+          spritePath: null,
+          x: 0,
+          y: 0,
+          physicsMode: 'balanced',
+          drawAt30Hz: true,
+          followCamera: false,
+          children: []
+        }
+      ]
+    }) as SceneAssetDocument
+
+    expect(document.collisionCallbacksAt30Hz).toBe(true)
+    expect(document.nodes[0]).toMatchObject({ type: 'actor', drawAt30Hz: true })
+    expect(serializeProjectAssetDocument(document)).toContain('"collisionCallbacksAt30Hz": true')
+    expect(serializeProjectAssetDocument(document)).toContain('"drawAt30Hz": true')
   })
 
   it('parses and serializes scene collision nodes', () => {
@@ -568,17 +601,13 @@ describe('projectAssets scene parsing', () => {
       { start: 24, end: 32 }
     ])
 
-    expect(normalizeLegacyWindowVisibilityBands(0, 8, 18)).toEqual([
-      { start: 0, end: 144 }
-    ])
+    expect(normalizeLegacyWindowVisibilityBands(0, 8, 18)).toEqual([{ start: 0, end: 144 }])
     expect(normalizeLegacyWindowVisibilityBands(4, 0, 18)).toEqual([{ start: 0, end: 32 }])
     expect(normalizeLegacyWindowVisibilityBands(4, 2, 18)).toEqual([
       { start: 0, end: 32 },
       { start: 40, end: 144 }
     ])
-    expect(normalizeLegacyWindowVisibilityBands(4, 15, 18, 112)).toEqual([
-      { start: 112, end: 144 }
-    ])
+    expect(normalizeLegacyWindowVisibilityBands(4, 15, 18, 112)).toEqual([{ start: 112, end: 144 }])
   })
 
   it('builds file names and resolves asset kinds and display names case-insensitively', () => {

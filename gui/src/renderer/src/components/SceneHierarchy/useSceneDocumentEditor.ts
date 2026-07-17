@@ -63,6 +63,7 @@ export interface SceneDocumentEditor {
   nodes: SceneAssetNode[]
   scriptPath: string | null
   sceneScriptProperties: SceneAssetDocument['scriptProperties']
+  collisionCallbacksAt30Hz: boolean
   tilemapPath: string | null
   windowPath: string | null
   spritePalettes: SceneSpritePalettes
@@ -97,12 +98,14 @@ export interface SceneDocumentEditor {
         | 'spritePath'
         | 'scriptPath'
         | 'physicsMode'
+        | 'drawAt30Hz'
         | 'spritePaletteIndex'
         | 'cameraDeadzone'
       >
     >
   ) => void
   setSceneScriptProperty: (propertyName: string, propertyValue: ScriptPropertyValue) => void
+  setCollisionCallbacksAt30Hz: (enabled: boolean) => void
   setSpritePalette: (paletteIndex: SceneSpritePaletteIndex, nextPalette: string[] | null) => void
   setBackgroundPalette: (nextPalette: string[] | null) => void
   setActorSpritePaletteIndex: (nodeId: string, spritePaletteIndex: SceneSpritePaletteIndex) => void
@@ -143,6 +146,7 @@ export const useSceneDocumentEditor = ({
     scene ?? {
       scriptPath: null,
       scriptProperties: undefined,
+      collisionCallbacksAt30Hz: false,
       tilemapPath: null,
       windowPath: null,
       spritePalettes: [null, null],
@@ -172,6 +176,7 @@ export const useSceneDocumentEditor = ({
         ...scene,
         scriptPath: clonedSnapshot.scriptPath,
         scriptProperties: clonedSnapshot.scriptProperties,
+        collisionCallbacksAt30Hz: clonedSnapshot.collisionCallbacksAt30Hz,
         tilemapPath: clonedSnapshot.tilemapPath,
         windowPath: clonedSnapshot.windowPath,
         spritePalettes: clonedSnapshot.spritePalettes,
@@ -187,6 +192,7 @@ export const useSceneDocumentEditor = ({
       publishDocumentSnapshot({
         scriptPath: nextState.scriptPath,
         scriptProperties: nextState.scriptProperties,
+        collisionCallbacksAt30Hz: nextState.collisionCallbacksAt30Hz,
         tilemapPath: nextState.tilemapPath,
         windowPath: nextState.windowPath,
         spritePalettes: nextState.spritePalettes,
@@ -211,6 +217,10 @@ export const useSceneDocumentEditor = ({
           nextValues && 'scriptProperties' in nextValues
             ? nextValues.scriptProperties
             : documentSnapshot.scriptProperties,
+        collisionCallbacksAt30Hz:
+          nextValues && 'collisionCallbacksAt30Hz' in nextValues
+            ? Boolean(nextValues.collisionCallbacksAt30Hz)
+            : documentSnapshot.collisionCallbacksAt30Hz,
         tilemapPath:
           nextValues && 'tilemapPath' in nextValues
             ? (nextValues.tilemapPath ?? null)
@@ -243,6 +253,7 @@ export const useSceneDocumentEditor = ({
       documentSnapshot.nodes,
       documentSnapshot.scriptPath,
       documentSnapshot.scriptProperties,
+      documentSnapshot.collisionCallbacksAt30Hz,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
       documentSnapshot.spritePalettes,
@@ -379,6 +390,7 @@ export const useSceneDocumentEditor = ({
       publishDocumentSnapshot({
         scriptPath: documentSnapshot.scriptPath,
         scriptProperties: documentSnapshot.scriptProperties,
+        collisionCallbacksAt30Hz: documentSnapshot.collisionCallbacksAt30Hz,
         tilemapPath: documentSnapshot.tilemapPath,
         windowPath: documentSnapshot.windowPath,
         spritePalettes: documentSnapshot.spritePalettes,
@@ -393,6 +405,7 @@ export const useSceneDocumentEditor = ({
       documentSnapshot.nodes,
       documentSnapshot.scriptPath,
       documentSnapshot.scriptProperties,
+      documentSnapshot.collisionCallbacksAt30Hz,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
       documentSnapshot.spritePalettes,
@@ -477,6 +490,7 @@ export const useSceneDocumentEditor = ({
           | 'spritePath'
           | 'scriptPath'
           | 'physicsMode'
+          | 'drawAt30Hz'
           | 'spritePaletteIndex'
           | 'cameraDeadzone'
         >
@@ -506,6 +520,17 @@ export const useSceneDocumentEditor = ({
       commitHistoryValues({ scriptPath: nextScriptPath })
     },
     [commitHistoryValues, documentSnapshot.scriptPath, editingNode, scene]
+  )
+
+  const setCollisionCallbacksAt30Hz = useCallback(
+    (enabled: boolean) => {
+      if (!scene || editingNode || enabled === documentSnapshot.collisionCallbacksAt30Hz) {
+        return
+      }
+
+      commitHistoryValues({ collisionCallbacksAt30Hz: enabled })
+    },
+    [commitHistoryValues, documentSnapshot.collisionCallbacksAt30Hz, editingNode, scene]
   )
 
   const setSceneScriptProperty = useCallback(
@@ -611,6 +636,7 @@ export const useSceneDocumentEditor = ({
       publishDocumentSnapshot({
         scriptPath: documentSnapshot.scriptPath,
         scriptProperties: documentSnapshot.scriptProperties,
+        collisionCallbacksAt30Hz: documentSnapshot.collisionCallbacksAt30Hz,
         tilemapPath: documentSnapshot.tilemapPath,
         windowPath: documentSnapshot.windowPath,
         spritePalettes: documentSnapshot.spritePalettes,
@@ -622,6 +648,7 @@ export const useSceneDocumentEditor = ({
       documentSnapshot.nodes,
       documentSnapshot.scriptPath,
       documentSnapshot.scriptProperties,
+      documentSnapshot.collisionCallbacksAt30Hz,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
       documentSnapshot.spritePalettes,
@@ -750,6 +777,7 @@ export const useSceneDocumentEditor = ({
       publishDocumentSnapshot({
         scriptPath: documentSnapshot.scriptPath,
         scriptProperties: documentSnapshot.scriptProperties,
+        collisionCallbacksAt30Hz: documentSnapshot.collisionCallbacksAt30Hz,
         tilemapPath: documentSnapshot.tilemapPath,
         windowPath: documentSnapshot.windowPath,
         spritePalettes: documentSnapshot.spritePalettes,
@@ -761,6 +789,7 @@ export const useSceneDocumentEditor = ({
       documentSnapshot.nodes,
       documentSnapshot.scriptPath,
       documentSnapshot.scriptProperties,
+      documentSnapshot.collisionCallbacksAt30Hz,
       documentSnapshot.tilemapPath,
       documentSnapshot.windowPath,
       documentSnapshot.spritePalettes,
@@ -827,6 +856,7 @@ export const useSceneDocumentEditor = ({
     nodes: documentSnapshot.nodes,
     scriptPath: documentSnapshot.scriptPath,
     sceneScriptProperties: documentSnapshot.scriptProperties,
+    collisionCallbacksAt30Hz: documentSnapshot.collisionCallbacksAt30Hz,
     tilemapPath: documentSnapshot.tilemapPath,
     windowPath: documentSnapshot.windowPath,
     spritePalettes: documentSnapshot.spritePalettes,
@@ -853,6 +883,7 @@ export const useSceneDocumentEditor = ({
     pasteNodes,
     updateActor,
     setSceneScriptProperty,
+    setCollisionCallbacksAt30Hz,
     setSpritePalette,
     setBackgroundPalette,
     setActorSpritePaletteIndex,

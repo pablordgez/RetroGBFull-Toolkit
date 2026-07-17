@@ -307,6 +307,7 @@ describe('SceneInspectorPane component integration', () => {
     expect(screen.getByLabelText('active')).toBeChecked()
     expect(screen.getByText('HeroIdle')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /physics mode/i })).toHaveValue('balanced')
+    expect(screen.getByLabelText('Draw at 30 Hz')).not.toBeChecked()
     expect(screen.getByRole('combobox', { name: /mood/i })).toHaveValue('MOOD_ALERT')
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Sprite' }))
@@ -361,6 +362,9 @@ describe('SceneInspectorPane component integration', () => {
       target: { value: 'highFidelity' }
     })
     expect(screen.getByRole('combobox', { name: /physics mode/i })).toHaveValue('highFidelity')
+
+    fireEvent.click(screen.getByLabelText('Draw at 30 Hz'))
+    expect(screen.getByLabelText('Draw at 30 Hz')).toBeChecked()
   })
 
   it('shows and updates scene script properties when the scene root is selected', () => {
@@ -374,6 +378,10 @@ describe('SceneInspectorPane component integration', () => {
     expect(screen.getByText('Background/Window Palette')).toBeInTheDocument()
     expect(screen.getByText(/Background\/window palette differs: Hud/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Sprite Palette 0 color 0')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Collision callbacks at 30 Hz')).not.toBeChecked()
+
+    fireEvent.click(screen.getByLabelText('Collision callbacks at 30 Hz'))
+    expect(screen.getByLabelText('Collision callbacks at 30 Hz')).toBeChecked()
 
     const dataTransfer = {
       value: '',

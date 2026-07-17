@@ -12,6 +12,7 @@ typedef struct Scene {
     SceneType type;
     Map* map;
     Map* window;
+    uint8_t collision_callbacks_30hz;
 } Scene;
 
 void init_scene(Scene* scene) BANKED;

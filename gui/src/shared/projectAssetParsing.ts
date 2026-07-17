@@ -102,11 +102,7 @@ export const normalizeWindowVisibilityBands = (
 
   const sortedBands = value
     .flatMap((entry): WindowVisibilityBand[] => {
-      if (
-        !isRecord(entry) ||
-        !Number.isInteger(entry.start) ||
-        !Number.isInteger(entry.end)
-      ) {
+      if (!isRecord(entry) || !Number.isInteger(entry.start) || !Number.isInteger(entry.end)) {
         return []
       }
 
@@ -445,6 +441,7 @@ const normalizeSceneAssetNode = (value: unknown): SceneAssetNode | null => {
     physicsMode: isSceneActorPhysicsMode(value.physicsMode)
       ? value.physicsMode
       : DEFAULT_SCENE_ACTOR_PHYSICS_MODE,
+    drawAt30Hz: typeof value.drawAt30Hz === 'boolean' ? value.drawAt30Hz : false,
     followCamera: typeof value.followCamera === 'boolean' ? value.followCamera : false,
     cameraDeadzone: normalizeSceneCameraDeadzone(value.cameraDeadzone)
   }
@@ -564,6 +561,10 @@ export const parseProjectAssetDocument = (rawDocument: unknown): ProjectAssetDoc
         spritePalette: normalizeOptionalPalette(rawDocument.spritePalette),
         backgroundPalette: normalizeOptionalPalette(rawDocument.backgroundPalette),
         scriptPath: rawDocument.scriptPath ?? null,
+        collisionCallbacksAt30Hz:
+          typeof rawDocument.collisionCallbacksAt30Hz === 'boolean'
+            ? rawDocument.collisionCallbacksAt30Hz
+            : false,
         ...(normalizeScriptProperties(rawDocument.scriptProperties)
           ? { scriptProperties: normalizeScriptProperties(rawDocument.scriptProperties) }
           : {}),

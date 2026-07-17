@@ -2,6 +2,7 @@
 #include "Collisions/CollisionManager.h"
 
 GameManager* THIS_GAME_MANAGER;
+uint8_t HALF_RATE_PHASE;
 
 static void apply_deferred_operations(void){
     if(DEFERRED_COLLIDER_DISABLES_PENDING){
@@ -29,15 +30,18 @@ void update_game(void){
         apply_pending_scene();
         return;
     }
+    HALF_RATE_PHASE ^= 1U;
     FAR_CALL(scene_update_functions[THIS_SCENE->type], RVoid_PVoid_BANKED);
     apply_deferred_operations();
     if(apply_pending_scene()){
         return;
     }
 #if COLLISION_CALLBACKS_EVERY_FRAME
-    run_collision_callbacks();
-    apply_deferred_operations();
-    apply_pending_scene();
+    if(!THIS_SCENE->collision_callbacks_30hz || HALF_RATE_PHASE){
+        run_collision_callbacks();
+        apply_deferred_operations();
+        apply_pending_scene();
+    }
 #endif
 }
 

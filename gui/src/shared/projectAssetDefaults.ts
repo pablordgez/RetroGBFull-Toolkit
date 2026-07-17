@@ -17,6 +17,7 @@ export const createDefaultSceneActorNode = (name = 'Actor'): SceneAssetActorNode
     x: 0,
     y: 0,
     physicsMode: DEFAULT_SCENE_ACTOR_PHYSICS_MODE,
+    drawAt30Hz: false,
     followCamera: false,
     cameraDeadzone: { ...DEFAULT_SCENE_CAMERA_DEADZONE },
     spritePaletteIndex: 0,
@@ -83,6 +84,7 @@ export const createDefaultProjectAssetDocument = (
         spritePalettes: [null, null],
         backgroundPalette: null,
         scriptPath: null,
+        collisionCallbacksAt30Hz: false,
         nodes: []
       }
     case 'actor':

@@ -47,6 +47,7 @@ Header: `core/src/Scene/Scene.h`
 | `type` | `SceneType` | Generated scene type. |
 | `map` | `Map*` | Active background map. |
 | `window` | `Map*` | Active window map. |
+| `collision_callbacks_30hz` | `uint8_t` | Nonzero when callback collision passes run on alternating updates. |
 
 ### Globals
 
@@ -72,6 +73,9 @@ Header: `core/src/Scene/Scene.h`
 - Use `remove_actor()` for scene-owned actors. Calling `destroy_actor()` directly does not remove the pointer from the scene and is not deferred.
 - `set_scene_map()` clears any changed-map-tile overrides before loading the replacement background map.
 - Actors with `followed != 0` drive the camera during the scene update.
+- The scene editor's **Collision callbacks at 30 Hz** checkbox initializes `collision_callbacks_30hz`. Unchecked and older scenes default to callback checks on every update.
+- Half-rate callback passes run opposite actors using **Draw at 30 Hz**, spreading the two workloads across alternating updates. Blocking collision resolution performed by actor movement is not reduced to 30 Hz.
+- Half-rate callbacks can add one update of latency and may miss overlaps that begin and end between sampled updates, so keep full-rate callbacks for fast small objects or precision-sensitive contacts.
 
 ## `SceneRegistry.h`
 

@@ -76,6 +76,7 @@ const serializeSceneAssetNode = (
     x: node.x,
     y: node.y,
     physicsMode: node.physicsMode,
+    drawAt30Hz: node.drawAt30Hz ?? false,
     followCamera: node.followCamera,
     cameraDeadzone: normalizeSceneCameraDeadzone(node.cameraDeadzone),
     children: childNodes.map((childNode) => serializeSceneAssetNode(childNode, includeResourcePath))
@@ -104,6 +105,7 @@ export const serializeProjectAssetDocument = (assetDocument: ProjectAssetDocumen
           ? normalizeProjectPalette(assetDocument.backgroundPalette)
           : null,
         scriptPath: assetDocument.scriptPath ?? null,
+        collisionCallbacksAt30Hz: assetDocument.collisionCallbacksAt30Hz ?? false,
         ...(assetDocument.scriptProperties && Object.keys(assetDocument.scriptProperties).length > 0
           ? { scriptProperties: assetDocument.scriptProperties }
           : {}),

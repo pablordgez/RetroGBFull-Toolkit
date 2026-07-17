@@ -4,6 +4,7 @@
 #include "Camera/Camera.h"
 #include "Assets/Text/Text.h"
 #include "Window/WindowVisibility.h"
+#include "GameManager/GameManager.h"
 
 Scene* THIS_SCENE;
 uint8_t DEFERRED_ACTOR_REMOVALS_PENDING;
@@ -30,6 +31,7 @@ void init_scene(Scene* scene) BANKED{
     scene->actors = NULL;
     scene->map = NULL;
     scene->window = NULL;
+    scene->collision_callbacks_30hz = 0;
 }
 
 void add_actor(Actor* actor) BANKED{
@@ -120,10 +122,11 @@ void update_actors(void) NONBANKED{
 
 void draw_actors(void) NONBANKED {
     for(int i = 0; i < THIS_SCENE->num_actors; i++){
-        if(THIS_SCENE->actors[i]->pending_removal){
+        Actor* actor = THIS_SCENE->actors[i];
+        if(actor->pending_removal || (actor->draw_30hz && HALF_RATE_PHASE)){
             continue;
         }
-        THIS_ACTOR = THIS_SCENE->actors[i];
+        THIS_ACTOR = actor;
         draw(); 
     }
 }

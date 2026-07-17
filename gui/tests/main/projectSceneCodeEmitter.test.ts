@@ -139,6 +139,7 @@ describe('projectSceneCodeEmitter', () => {
             x: 4,
             y: 5,
             physicsMode: 'highFidelity',
+            drawAt30Hz: true,
             scriptProperties: {
               speed: 7,
               active: true,
@@ -178,10 +179,9 @@ describe('projectSceneCodeEmitter', () => {
       '((HeroActor*) generated_actor_0)->idle_animation = (Animation*) animations[RunSprite];'
     )
     expect(lines.join('\n')).toContain('((HeroActor*) generated_actor_0)->state = STATE_RUN;')
-    expect(lines.join('\n')).toContain(
-      '((HeroActor*) generated_actor_0)->optional_animation = 0;'
-    )
+    expect(lines.join('\n')).toContain('((HeroActor*) generated_actor_0)->optional_animation = 0;')
     expect(lines.join('\n')).toContain('generated_actor_0->physics_mode = HIGH_FIDELITY;')
+    expect(lines.join('\n')).toContain('generated_actor_0->draw_30hz = 1;')
     expect(lines.join('\n')).toContain('set_actor_position(260, 389);')
     expect(lines.join('\n')).toContain('set_animation_props(S_PALETTE, 16, 24);')
     expect(lines.join('\n')).toContain('deadzone_left = 8;')
@@ -300,6 +300,7 @@ describe('projectSceneCodeEmitter', () => {
         sceneDocument({
           tilemapPath: 'map',
           windowPath: 'window',
+          collisionCallbacksAt30Hz: true,
           nodes: [actorNode({ name: 'Hero', spritePath: 'hero' })]
         }),
         2,
@@ -317,6 +318,7 @@ describe('projectSceneCodeEmitter', () => {
         '    BGP_REG = 0xE4;',
         '    OBP0_REG = 0x1B;',
         '    OBP1_REG = 0x1B;',
+        '    THIS_SCENE->collision_callbacks_30hz = 1;',
         '    set_scene_map(maps[ForestMap]);',
         '    set_scene_window(maps[DialogWindow]);',
         '    emitted Hero;'

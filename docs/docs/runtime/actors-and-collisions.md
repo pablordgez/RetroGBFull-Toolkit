@@ -31,6 +31,7 @@ Header: `core/src/Actor/Actor.h`
 | `physics_mode` | `PhysicsMode` | Movement collision mode. |
 | `followed` | `uint8_t` | Nonzero when the camera follows this actor. |
 | `pending_removal` | `uint8_t` | Internal flag set when removal must wait for the current actor or collision pass to finish. |
+| `draw_30hz` | `uint8_t` | Nonzero when `draw_actors()` draws this actor on alternating updates. Actor updates are unaffected. |
 
 ### Globals
 
@@ -53,6 +54,8 @@ Header: `core/src/Actor/Actor.h`
 ### Behavior notes
 
 - Actors own their colliders. Replacing or destroying an actor frees the collider it holds.
+- The scene editor's **Draw at 30 Hz** checkbox initializes `draw_30hz`. Unchecked and older actors default to full-rate drawing.
+- Half-rate actors retain their previous OAM state on skipped draws. Their movement, scripts, colliders, and animation state still update normally.
 - Destroying an actor detaches it from its parent and leaves its children alive as independent scene actors.
 - Movement also applies to child actors.
 - An axis-aligned move on a childless actor with no blocking collider uses a short path. Both horizontal and vertical variants preserve the moved axis's map bound and collider synchronization; diagonal, zero-delta, hierarchy, and blocking-physics cases use the full path.
@@ -177,7 +180,7 @@ Header: `core/src/Collisions/CollisionManager.h`
 
 - Active colliders are capped by `MAX_ACTIVE_COLLIDERS`.
 - Callback arrays are capped by `MAX_COLLISION_CALLBACKS`.
-- Collision query functions only collect overlaps. Collision and exit callbacks are dispatched by `run_collision_callbacks()`, which is called from `update_game()` when `COLLISION_CALLBACKS_EVERY_FRAME` is enabled.
+- Collision query functions only collect overlaps. Collision and exit callbacks are dispatched by `run_collision_callbacks()`, which is called from `update_game()` when `COLLISION_CALLBACKS_EVERY_FRAME` is enabled. A scene can schedule this pass on alternating updates with **Collision callbacks at 30 Hz**.
 - Use `disable_collider_deferred()` from collision and exit callbacks. The collider is skipped immediately and removed from the compact active list at the next Game Manager safe point. Once either collider is marked disabled, remaining callbacks for that pair do not run.
 - Call `remove_actor_deferred()`, rather than `remove_actor()` or `destroy_actor()`, when removing a scene actor from a callback. Immediate removal, direct destruction, and collider replacement must not be done while collision callbacks are running.
 - Enabling a previously inactive collider is not deferred. Do it before or after the collision callback pass. Enabling an active collider with a pending deferred disable cancels that disable without registering the collider twice.

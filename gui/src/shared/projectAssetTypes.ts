@@ -44,6 +44,7 @@ export interface SceneAssetActorNode extends BaseSceneAssetNode {
   x: number
   y: number
   physicsMode: SceneActorPhysicsMode
+  drawAt30Hz?: boolean
   followCamera: boolean
   cameraDeadzone?: SceneCameraDeadzone
 }
@@ -165,7 +166,8 @@ export interface TilemapAssetDocument {
 
 export const WINDOW_VISIBILITY_SCREEN_HEIGHT = 144
 export const WINDOW_VISIBILITY_TILE_SIZE = 8
-export const WINDOW_VISIBILITY_TILE_ROWS = WINDOW_VISIBILITY_SCREEN_HEIGHT / WINDOW_VISIBILITY_TILE_SIZE
+export const WINDOW_VISIBILITY_TILE_ROWS =
+  WINDOW_VISIBILITY_SCREEN_HEIGHT / WINDOW_VISIBILITY_TILE_SIZE
 export const WINDOW_VISIBILITY_MAX_BANDS = 8
 
 export interface WindowVisibilityBand {
@@ -195,6 +197,7 @@ export interface SceneAssetDocument {
   backgroundPalette?: string[] | null
   scriptPath: string | null
   scriptProperties?: ScriptPropertyMap
+  collisionCallbacksAt30Hz?: boolean
   nodes: SceneAssetNode[]
 }
 

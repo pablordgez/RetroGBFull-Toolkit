@@ -26,6 +26,7 @@ export interface SceneHierarchyClipboardState {
 export interface SceneHierarchyHistoryState {
   scriptPath: string | null
   scriptProperties?: ScriptPropertyMap
+  collisionCallbacksAt30Hz: boolean
   tilemapPath: string | null
   windowPath: string | null
   spritePalettes: SceneSpritePalettes
@@ -50,6 +51,7 @@ export interface SceneNodeRecord {
 export interface SceneEditorDocumentSnapshot {
   scriptPath: string | null
   scriptProperties?: ScriptPropertyMap
+  collisionCallbacksAt30Hz: boolean
   tilemapPath: string | null
   windowPath: string | null
   spritePalettes: SceneSpritePalettes
@@ -125,6 +127,7 @@ export const cloneSceneDocumentSnapshot = (
   return {
     scriptPath: document.scriptPath,
     ...(document.scriptProperties ? { scriptProperties: { ...document.scriptProperties } } : {}),
+    collisionCallbacksAt30Hz: document.collisionCallbacksAt30Hz ?? false,
     tilemapPath: document.tilemapPath,
     windowPath: document.windowPath,
     spritePalettes: document.spritePalettes
@@ -518,6 +521,7 @@ export const buildDefaultSceneNode = (
     x: 0,
     y: 0,
     physicsMode: 'balanced',
+    drawAt30Hz: false,
     followCamera: false,
     cameraDeadzone: { ...DEFAULT_SCENE_CAMERA_DEADZONE },
     spritePaletteIndex: 0,

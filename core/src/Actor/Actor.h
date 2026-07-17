@@ -27,6 +27,7 @@ typedef struct Actor {
     PhysicsMode physics_mode;
     uint8_t followed;
     uint8_t pending_removal;
+    uint8_t draw_30hz;
 } Actor;
 
 

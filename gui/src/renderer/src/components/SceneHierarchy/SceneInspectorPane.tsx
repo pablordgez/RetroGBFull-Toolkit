@@ -1057,6 +1057,20 @@ export const SceneInspectorPane = ({
                 </strong>
               </div>
 
+              <label className="scene-inspector-pane__toggle">
+                <input
+                  type="checkbox"
+                  checked={editor.collisionCallbacksAt30Hz}
+                  onChange={(event) => {
+                    editor.setCollisionCallbacksAt30Hz(event.target.checked)
+                  }}
+                />
+                <span>Collision callbacks at 30 Hz</span>
+              </label>
+              <p className="scene-inspector-pane__hint">
+                Runs opposite actors using 30 Hz drawing to stagger their workload.
+              </p>
+
               {activeScriptPropertyDefinitions.length > 0 && (
                 <>
                   <div className="scene-inspector-pane__section-title">Script Properties</div>
@@ -1187,6 +1201,17 @@ export const SceneInspectorPane = ({
                   ))}
                 </select>
               </div>
+
+              <label className="scene-inspector-pane__toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedActor.drawAt30Hz ?? false}
+                  onChange={(event) => {
+                    editor.updateActor(selectedActor.id, { drawAt30Hz: event.target.checked })
+                  }}
+                />
+                <span>Draw at 30 Hz</span>
+              </label>
 
               <div className="scene-inspector-pane__field">
                 <span>Scene Bounds</span>

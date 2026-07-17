@@ -344,7 +344,9 @@ export const createNodeEmitter = (
         : `${collisionNode.y}`
       // if it doesn't have a parent, we create one to attach the collider to
       if (!parentActor) {
-        lines.push(`    Actor* ${actorVariable} = create_actor(_${MANAGED_DEFAULT_ACTOR_IDENTIFIER});`)
+        lines.push(
+          `    Actor* ${actorVariable} = create_actor(_${MANAGED_DEFAULT_ACTOR_IDENTIFIER});`
+        )
         lines.push(`    THIS_ACTOR = ${actorVariable};`)
         lines.push(`    set_actor_position(${collisionNode.x}, ${collisionNode.y});`)
         lines.push(`    add_actor(${actorVariable});`)
@@ -396,6 +398,9 @@ export const createNodeEmitter = (
     lines.push(
       `    ${actorVariable}->physics_mode = ${PHYSICS_MODE_ENUM_BY_SCENE_VALUE[node.physicsMode]};`
     )
+    if (node.drawAt30Hz) {
+      lines.push(`    ${actorVariable}->draw_30hz = 1;`)
+    }
     const anchorOffset = getSpriteAnchorOffset(node.spritePath, spriteAssetsByPath)
     const runtimeX = addSceneCoordinate(node.x, anchorOffset.x)
     const runtimeY = addSceneCoordinate(node.y, anchorOffset.y)
@@ -470,6 +475,10 @@ export const buildSceneInitializationLines = (
     getMapTilesetPalette(document.tilemapPath, tilemapAssetsByPath, tilesetAssetsByPath) ??
     getMapTilesetPalette(document.windowPath, windowAssetsByPath, tilesetAssetsByPath)
   const spritePalettes = getSceneSpritePalettes(document, spriteAssetsByPath)
+
+  if (document.collisionCallbacksAt30Hz) {
+    lines.push('    THIS_SCENE->collision_callbacks_30hz = 1;')
+  }
 
   if (backgroundPalette) {
     lines.push(`    BGP_REG = ${formatHexByte(buildDmgPaletteRegisterValue(backgroundPalette))};`)

@@ -289,6 +289,7 @@ export const buildActorUpdateChange = (
       | 'spritePath'
       | 'scriptPath'
       | 'physicsMode'
+      | 'drawAt30Hz'
       | 'spritePaletteIndex'
       | 'cameraDeadzone'
     >
@@ -322,6 +323,7 @@ export const buildActorUpdateChange = (
     nextActor.spritePath === actor.spritePath &&
     nextActor.scriptPath === actor.scriptPath &&
     nextActor.physicsMode === actor.physicsMode &&
+    nextActor.drawAt30Hz === actor.drawAt30Hz &&
     nextActor.spritePaletteIndex === actor.spritePaletteIndex &&
     !didDeadzoneChange
   ) {
@@ -348,6 +350,7 @@ export const buildActorUpdateChange = (
         spritePath: nextActor.spritePath,
         scriptPath: nextActor.scriptPath,
         physicsMode: nextActor.physicsMode,
+        drawAt30Hz: nextActor.drawAt30Hz,
         spritePaletteIndex: nextActor.spritePaletteIndex,
         followCamera: nextActor.followCamera,
         cameraDeadzone: nextDeadzone

@@ -68,6 +68,7 @@ void init_actor(Actor* actor) BANKED{
     actor->physics_mode = BALANCED;
     actor->followed = 0;
     actor->pending_removal = 0;
+    actor->draw_30hz = 0;
 }
 
 void set_tag(Tags tag, uint8_t index) BANKED{
