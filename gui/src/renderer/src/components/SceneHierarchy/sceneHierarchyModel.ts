@@ -570,8 +570,13 @@ export const clampSceneActorPosition = (
   }
 }
 
-const getSceneCollisionAxisExtent = (mapTileCount: number | null): number => {
-  return mapTileCount === null ? SCENE_COORD_MAX : (mapTileCount << 3) << 4
+const getSceneCollisionAxisExtent = (
+  mapTileCount: number | null,
+  edgePadding: number
+): number => {
+  return mapTileCount === null
+    ? SCENE_COORD_MAX
+    : ((mapTileCount << 3) + edgePadding) << 4
 }
 
 const clampSceneCollisionSize = (value: number, axisExtent: number): number => {
@@ -596,8 +601,8 @@ export const clampSceneCollisionRect = (
     height: number
   } | null
 ): { x: number; y: number; width: number; height: number } => {
-  const axisWidth = getSceneCollisionAxisExtent(mapSize?.width ?? null)
-  const axisHeight = getSceneCollisionAxisExtent(mapSize?.height ?? null)
+  const axisWidth = getSceneCollisionAxisExtent(mapSize?.width ?? null, 7)
+  const axisHeight = getSceneCollisionAxisExtent(mapSize?.height ?? null, 15)
   const nextWidth = clampSceneCollisionSize(width, axisWidth)
   const nextHeight = clampSceneCollisionSize(height, axisHeight)
   const nextX = clampSceneCollisionOrigin(x, nextWidth, axisWidth)

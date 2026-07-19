@@ -199,8 +199,8 @@ describe('useSceneDocumentEditor', () => {
     })
 
     expect(result.current.nodes[0]).toMatchObject({
-      x: 680,
-      y: 424,
+      x: 792,
+      y: 664,
       width: 600,
       height: 600
     })

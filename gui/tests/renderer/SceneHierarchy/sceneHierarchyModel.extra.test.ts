@@ -285,7 +285,7 @@ describe('sceneDocumentEditorCommands edge cases', () => {
     ]
     const clamped = clampSceneNodesToMap(nodes, { width: 4, height: 4 })
     expect(clamped[0]).toMatchObject({ x: 496, y: 496 })
-    expect(clamped[0].children[0]).toMatchObject({ x: -496, y: 0, width: 512, height: 16 })
+    expect(clamped[0].children[0]).toMatchObject({ x: -496, y: 100, width: 624, height: 16 })
     expect(buildTilemapPathChange(nodes)).toBe(nodes)
 
     expect(buildActorUpdateChange(nodes, 'missing', { x: 1 })).toBeNull()
@@ -303,6 +303,27 @@ describe('sceneDocumentEditorCommands edge cases', () => {
       isBlocking: false
     })
     expect(buildCollisionUpdateChange(nodes, 'missing', { x: 0 })).toBeNull()
+  })
+
+  it('uses the actor map margins when clamping colliders', () => {
+    const nodes = [
+      actor({
+        id: 'pooled-actor',
+        y: 2416,
+        children: [collision({ id: 'hitbox', x: 0, y: 0, width: 128, height: 128 })]
+      })
+    ]
+
+    const clamped = clampSceneNodesToMap(nodes, { width: 20, height: 18 })
+
+    expect(clamped[0]).toMatchObject({ y: 2288 })
+    expect(clamped[0].children[0]).toMatchObject({ x: 0, y: 0, width: 128, height: 128 })
+    expect(clampSceneCollisionRect(99999, 99999, 128, 128, { width: 20, height: 18 })).toEqual({
+      x: 2544,
+      y: 2416,
+      width: 128,
+      height: 128
+    })
   })
 
   it('builds clipboard, paste, rename, tag, resource, script, and callback changes', () => {
